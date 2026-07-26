@@ -220,6 +220,37 @@ describe("paper entry planner") do
     end
   end
 
+  test("flattens the short and stops when JitoSOL exit depth disappears") do
+    let shallow = %{snapshot(OracleValid, 1000000, 0) |
+      jitosol_exit_depth_lamports : Lamports { atoms : 0 }
+    }
+    case evaluate_snapshot(shallow) do
+      Ok(opportunity) -> case plan_position(
+        shallow,
+        opportunity,
+        PaperPosition {
+          variant : JitoSolCarry,
+          spot_quantity : TokenAtoms { atoms : 2000000000 },
+          perp_short_quantity : Lamports { atoms : 2467333332 },
+          prior_nav_lamports : Lamports { atoms : 1234567890 },
+          prior_market_rate_lamports : Lamports { atoms : 1233666666 },
+          state_version : 4,
+          random_state : Random.seed(42)
+        },
+        50
+      ) do
+        Ok(plan) -> do
+          assert(plan.action == EmergencyPosition)
+          assert(plan.reason == "paper_spot_close_partial")
+          assert(plan.next_perp_short_quantity.atoms == 0)
+          assert(plan.next_spot_quantity.atoms == 2000000000)
+        end
+        Err(error) -> assert(false)
+      end
+      Err(error) -> assert(false)
+    end
+  end
+
   test("preserves an authenticated operator reason on a forced exit") do
     let current = snapshot(OracleValid, 1000000, 0)
     case evaluate_snapshot(current) do

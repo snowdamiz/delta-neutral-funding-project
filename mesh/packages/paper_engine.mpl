@@ -201,16 +201,33 @@ fn paper_order(side :: OrderSide,
 quantity :: QuantityAtoms,
 price :: PriceMicros,
 snapshot :: MarketSnapshot,
+fill_rate :: RatePpm,
 fee :: RatePpm) -> PaperOrder do
   PaperOrder {
     side : side,
     quantity : quantity,
     quantity_scale : 1000000000,
     quoted_price : price,
-    fill_rate : snapshot.fill_rate_ppm,
+    fill_rate : fill_rate,
     slippage_rate : snapshot.slippage_ppm,
     fee_rate : fee
   }
+end
+
+fn fill_rate_for_depth(
+  required :: Lamports,
+  available :: Lamports,
+  configured :: RatePpm
+) -> RatePpm ! String do
+  if required.atoms <= 0 || available.atoms >= required.atoms do
+    Ok(configured)
+  else
+    let depth_rate = (available.atoms
+      |> Checked.mul_div(1000000, required.atoms, :floor)) ?
+    Ok(RatePpm {
+      atoms : if depth_rate < configured.atoms do depth_rate else configured.atoms end
+    })
+  end
 end
 
 fn no_fill() -> LegFill do
@@ -282,6 +299,7 @@ fn plan_perp(snapshot :: MarketSnapshot, entry :: PerpEntry, random_state :: Int
       QuantityAtoms { atoms : entry.opportunity.hedge_lamports.atoms },
       snapshot.perp_bid_price_usd_micros,
       snapshot,
+      snapshot.fill_rate_ppm,
       snapshot.perp_fee_ppm)
       let fill = simulate_fill(order) ?
       case fill.status do
@@ -365,6 +383,7 @@ random_state :: Int) -> PaperPlan ! String do
       leg.quantity,
       leg.price,
       snapshot,
+      snapshot.fill_rate_ppm,
       snapshot.spot_fee_ppm)) ?
       case fill.status do
         Filled -> do
@@ -593,6 +612,8 @@ valuation :: PaperValuation) -> PositionPlan ! String do
   QuantityAtoms { atoms : quantity_atoms },
   price,
   snapshot,
+  (Lamports { atoms : quantity_atoms }
+    |> fill_rate_for_depth(snapshot.perp_exit_depth_lamports, snapshot.fill_rate_ppm)) ?,
   snapshot.perp_fee_ppm)) ?
   if fill.status != Filled do
     let next_perp_atoms = if side == Sell do
@@ -652,6 +673,8 @@ reason :: String) -> PositionPlan ! String do
   QuantityAtoms { atoms : position.perp_short_quantity.atoms },
   snapshot.perp_ask_price_usd_micros,
   snapshot,
+  (position.perp_short_quantity
+    |> fill_rate_for_depth(snapshot.perp_exit_depth_lamports, snapshot.fill_rate_ppm)) ?,
   snapshot.perp_fee_ppm)) ?
   if perp_fill.status != Filled do
     let next_perp_atoms = (position.perp_short_quantity.atoms
@@ -687,6 +710,15 @@ reason :: String) -> PositionPlan ! String do
   QuantityAtoms { atoms : position.spot_quantity.atoms },
   spot_price,
   snapshot,
+  (valuation.spot_equivalent_lamports
+    |> fill_rate_for_depth(
+      if position.variant == SolControl do
+        snapshot.sol_exit_depth_lamports
+      else
+        snapshot.jitosol_exit_depth_lamports
+      end,
+      snapshot.fill_rate_ppm
+    )) ?,
   snapshot.spot_fee_ppm)) ?
   if spot_fill.status != Filled do
     let next_spot_atoms = (position.spot_quantity.atoms
@@ -742,6 +774,14 @@ rebalance_delta_bps :: Int) -> PositionPlan ! String do
   end
   if oracle_valid(snapshot.oracle_status) == false do
     return plan_exit(snapshot, position, valuation, "oracle_invalid")
+  end
+  let spot_exit_depth = if position.variant == SolControl do
+    snapshot.sol_exit_depth_lamports
+  else
+    snapshot.jitosol_exit_depth_lamports
+  end
+  if spot_exit_depth.atoms < valuation.spot_equivalent_lamports.atoms || snapshot.perp_exit_depth_lamports.atoms < position.perp_short_quantity.atoms do
+    return plan_exit(snapshot, position, valuation, "exit_depth_insufficient")
   end
   if net_carry.atoms <= 0 do
     return plan_exit(snapshot, position, valuation, "carry_non_positive")
