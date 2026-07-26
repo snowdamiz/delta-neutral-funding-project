@@ -80,7 +80,11 @@ case "$command" in
     case "${2:-}" in
       sol-control) portfolio=local-sol-control ;;
       jitosol-carry) portfolio=local-jitosol-carry ;;
-      local-sol-control | local-jitosol-carry) portfolio=$2 ;;
+      sync-sol-control) portfolio=local-sync-sol-control ;;
+      sync-jitosol-carry) portfolio=local-sync-jitosol-carry ;;
+      local-sol-control | local-jitosol-carry | local-sync-sol-control | local-sync-jitosol-carry)
+        portfolio=$2
+        ;;
       *)
         printf 'unknown paper portfolio\n' >&2
         exit 2

@@ -3,7 +3,7 @@ set -eu
 
 project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 mesh_dir="$project_dir/../mesh-lang"
-expected_mesh=105b55e1029ceba615161901c84d08a9a64885ea
+expected_mesh=9cf951c6ef6961b3a1a4f1ee40289c1413018840
 
 test "$(git -C "$mesh_dir" rev-parse HEAD)" = "$expected_mesh" || {
   printf 'Mesh checkout does not match the project pin\n' >&2

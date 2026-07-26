@@ -29,6 +29,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/root/.cargo/git,sharing=locked \
     --mount=type=cache,target=/workspace/target,sharing=locked \
     cargo build --locked -q -p mesh-rt -p meshc \
+    && cargo test --locked -q -p meshc --test e2e_stdlib e2e_list_contains \
     && cd /workspace/project \
     && /workspace/target/debug/meshc test mesh \
     && /workspace/target/debug/meshc build mesh \

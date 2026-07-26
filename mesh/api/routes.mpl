@@ -715,7 +715,12 @@ end
 pub fn handle_portfolio_exit(request :: Request) -> Response do
   case Request.param(request, "portfolio") do
     Some(portfolio_id) -> do
-      if portfolio_id != "local-sol-control" && portfolio_id != "local-jitosol-carry" do
+      if List.contains([
+        "local-sol-control",
+        "local-jitosol-carry",
+        "local-sync-sol-control",
+        "local-sync-jitosol-carry"
+      ], portfolio_id) == false do
         return error_response(404, "not_found", "paper portfolio not found")
       end
       operator_response(request, "exit_position", portfolio_id)
@@ -748,9 +753,9 @@ end
 pub fn handle_build(_request :: Request) -> Response do
   HTTP.response(200, json {
     codeCommit : Env.get("CODE_COMMIT", "development"),
-    meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
+    meshCommit : Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 20
+    schemaVersion : 21
   })
 end
 
@@ -775,7 +780,7 @@ pub fn handle_status(_request :: Request) -> Response do
         activePortfolios : Map.get(row, "active_portfolios"),
         liveNotional : json { atoms : "0", scale : 6 },
         codeCommit : Env.get("CODE_COMMIT", "development"),
-        meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
+        meshCommit : Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840"),
         signerReachable : false,
         shutdownRequested : Process.shutdown_requested()
       })
@@ -891,7 +896,7 @@ pub fn handle_config(_request :: Request) -> Response do
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 20,
+    databaseSchemaVersion : 21,
     liveEnabled : false
   })
 end

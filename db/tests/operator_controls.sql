@@ -12,11 +12,29 @@ INSERT INTO strategy_runs (
   'local-paper-run', 'paper', repeat('0', 64), 'local-paper-build', 42, 'test'
 ) ON CONFLICT (id) DO NOTHING;
 INSERT INTO portfolio_runs (
-  id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros
+  id, strategy_run_id, comparison_group_id, variant, execution_mode,
+  initial_capital_usd_micros
 ) VALUES (
-  'local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000
+  'local-sol-control', 'local-paper-run', NULL, 'sol_control', 'paper', 1000000000
 ), (
-  'local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000
+  'local-jitosol-carry', 'local-paper-run', NULL, 'jitosol_carry', 'paper', 1000000000
+) ON CONFLICT (id) DO NOTHING;
+INSERT INTO comparison_groups (
+  id, strategy_run_id, mode, target_notional_usd_micros,
+  entry_policy_version, exit_policy_version
+) VALUES (
+  'local-paper-run:synchronized', 'local-paper-run', 'synchronized',
+  500000000, 'paper-entry-v1', 'paper-exit-v1'
+) ON CONFLICT (id) DO NOTHING;
+INSERT INTO portfolio_runs (
+  id, strategy_run_id, comparison_group_id, variant, execution_mode,
+  initial_capital_usd_micros
+) VALUES (
+  'local-sync-sol-control', 'local-paper-run', 'local-paper-run:synchronized',
+  'sol_control', 'paper', 1000000000
+), (
+  'local-sync-jitosol-carry', 'local-paper-run', 'local-paper-run:synchronized',
+  'jitosol_carry', 'paper', 1000000000
 ) ON CONFLICT (id) DO NOTHING;
 
 DO $$
@@ -142,6 +160,30 @@ BEGIN
   IF (SELECT status FROM operator_portfolio_actions
       WHERE command_id = v_result->>'commandId') <> 'applied' THEN
     RAISE EXCEPTION 'paper exit completion was not tracked';
+  END IF;
+
+  UPDATE portfolio_runs
+  SET state = 'hedged'
+  WHERE id IN ('local-sync-sol-control', 'local-sync-jitosol-carry');
+  v_result := apply_operator_command(
+    'exit_position',
+    'local-sync-sol-control',
+    'operator-test:sync-exit',
+    'operator requested synchronized exit',
+    repeat('0', 64)
+  );
+  IF v_result->>'status' <> 'accepted'
+     OR (v_result->>'requestedActions')::integer <> 2
+     OR (SELECT count(*) FROM operator_portfolio_actions
+         WHERE command_id = v_result->>'commandId' AND status = 'pending') <> 2 THEN
+    RAISE EXCEPTION 'synchronized paper exit did not queue both books: %', v_result;
+  END IF;
+  UPDATE portfolio_runs
+  SET state = 'idle'
+  WHERE id IN ('local-sync-sol-control', 'local-sync-jitosol-carry');
+  IF (SELECT count(*) FROM operator_portfolio_actions
+      WHERE command_id = v_result->>'commandId' AND status = 'applied') <> 2 THEN
+    RAISE EXCEPTION 'synchronized paper exit completion was not tracked';
   END IF;
 
   UPDATE portfolio_runs

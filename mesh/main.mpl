@@ -14,7 +14,7 @@ fn serve(pool :: PoolHandle, port :: Int) do
         |4> bootstrap_paper_runs(
           pool,
           Env.get("CODE_COMMIT", "development"),
-          Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea")
+          Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840")
         )
       ) do
         Ok(rows) -> do
@@ -69,7 +69,7 @@ end
 fn replay(args :: List<String>) do
   case run_replay_command(
     args,
-    Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea")
+    Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840")
   ) do
     Ok(output) -> println(output)
     Err(reason) -> do

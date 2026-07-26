@@ -3,7 +3,7 @@
 | Milestone | State | Evidence |
 |---|---|---|
 | 0. Contracts and qualification | In progress | Strategy contracts and schema v1 are frozen; authoritative venue probes remain |
-| 1. Financial correctness and Mesh slice | Complete | Checked fixed-point math, cross-boundary parsers, tests, and a compiled collector are pinned to Mesh `105b55e` |
+| 1. Financial correctness and Mesh slice | Complete | Checked fixed-point math, cross-boundary parsers, tests, and a compiled collector are pinned to Mesh `9cf951c` |
 | 2. Production-like Mesh foundation | In progress | Local Docker services, fenced renewable writer lease, database-authoritative startup reconciliation, health, metrics, structured logs, and database pooling are present |
 | 3. Read-only adapter and recorder | In progress | HMAC-authenticated synthetic and opt-in Phoenix/Solana/Jupiter paper captures are normalized to integer atoms with ordered provider failover, coherent-slot checks, idempotent funding records, and gap resnapshot; credentialed soak capture remains |
 | 4. Paper broker and accounting | In progress | Dual atomic entries, fills, rehedging, exits, ledger-backed JitoSOL valuation attribution, realized funding, restart-safe partial-entry compensation, and database-isolated comparison groups are implemented |
