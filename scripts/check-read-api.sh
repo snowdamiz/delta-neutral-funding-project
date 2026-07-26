@@ -5,6 +5,14 @@ base_url=${1:-http://127.0.0.1:8080}
 
 curl -fsS "$base_url/v1/status" |
   jq -e '.executionMode == "paper" and .signerReachable == false' >/dev/null
+curl -fsS "$base_url/v1/capabilities" |
+  jq -e '
+    .buildManifestId == "local-paper-build" and
+    (.results | length) == 23 and
+    any(.results[]; .id == "MESH-FIN-001" and .status == "implemented") and
+    any(.results[]; .id == "MESH-ACTOR-001" and .status == "partial") and
+    any(.results[]; .id == "MESH-SIGNER-001" and .status == "deferred")
+  ' >/dev/null
 curl -fsS "$base_url/v1/portfolios" |
   jq -e 'length == 4 and all(.[]; (.comparisonMode == "independent" or .comparisonMode == "synchronized") and .initialCapitalUsd.scale == 6)' >/dev/null
 curl -fsS "$base_url/v1/portfolios/local-sol-control" |
@@ -52,7 +60,7 @@ curl -fsS "$base_url/v1/risk-decisions?limit=4&offset=0" |
     )
   ' >/dev/null
 curl -fsS "$base_url/v1/config" |
-  jq -e '.executionMode == "paper" and .liveEnabled == false and .databaseSchemaVersion == 26 and .targetNotionalUsdMicros == "500000000" and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
+  jq -e '.executionMode == "paper" and .liveEnabled == false and .databaseSchemaVersion == 27 and .targetNotionalUsdMicros == "500000000" and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
 
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/v1/orders?limit=101")" = "400"
 printf 'read API checks passed\n'

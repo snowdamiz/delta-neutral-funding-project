@@ -772,12 +772,21 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "b07d37d07c6442590be24e656c6f1bd5f48c5500"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 26
+    schemaVersion : 27
   })
 end
 
 pub fn handle_capabilities(_request :: Request) -> Response do
-  HTTP.response(200, "{\"schemaVersion\":1,\"implemented\":[\"MESH-FIN-001\",\"MESH-FIN-002\",\"MESH-TIME-001\",\"MESH-TEST-001\",\"MESH-TEST-002\",\"MESH-ACTOR-001-item-bound\",\"MESH-PROC-001\",\"MESH-OBS-001\",\"MESH-METRICS-001\",\"MESH-PROTO-001\"],\"bridged\":[\"MESH-BYTES-001\",\"MESH-CODEC-001\",\"MESH-NUM-001\",\"MESH-WS-001\",\"MESH-SOL-READ-001\",\"MESH-SOL-TX-001\"],\"deferred\":[\"MESH-SECRET-001\",\"MESH-CRYPTO-001\",\"MESH-SIGNER-001\"]}")
+  case Pool.query(get_pool(), "SELECT jsonb_build_object('schemaVersion', 1, 'buildManifestId', build_manifest_id, 'results', jsonb_agg(jsonb_build_object('id', capability_id, 'status', status, 'evidence', evidence) ORDER BY capability_id))::text AS body FROM language_capability_results WHERE build_manifest_id = 'local-paper-build' GROUP BY build_manifest_id", []) do
+    Ok(rows) -> do
+      if List.length(rows) == 1 do
+        HTTP.response(200, Map.get(List.head(rows), "body"))
+      else
+        error_response(503, "capabilities_unavailable", "build capability evidence is missing")
+      end
+    end
+    Err(reason) -> error_response(500, "query_failed", reason)
+  end
 end
 
 pub fn handle_status(_request :: Request) -> Response do
@@ -962,7 +971,7 @@ pub fn handle_config(_request :: Request) -> Response do
     directUnstakeCapitalDelayHaircutUsdMicros : Env.get_int("DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS", 1000000),
     directUnstakeFinalHedgeCloseCostUsdMicros : Env.get_int("DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS", 250000),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 26,
+    databaseSchemaVersion : 27,
     liveEnabled : false
   })
 end
