@@ -1,4 +1,5 @@
 from Packages.Accounting import realized_funding_usd
+from Packages.BuildIdentity import code_commit, mesh_commit
 from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
@@ -775,8 +776,8 @@ end
 pub fn handle_build(_request :: Request) -> Response do
   case load_runtime_config() do
     Ok(config) -> HTTP.response(200, json {
-      codeCommit : Env.get("CODE_COMMIT", "development"),
-      meshCommit : Env.get("MESH_COMMIT", "ac039696c3c60e2fba15e45184590212cb785c64"),
+      codeCommit : code_commit(),
+      meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
       schemaVersion : 27
     })
@@ -813,8 +814,8 @@ pub fn handle_status(_request :: Request) -> Response do
         leaderLeaseGeneration : Map.get(row, "leader_generation"),
         activePortfolios : Map.get(row, "active_portfolios"),
         liveNotional : json { atoms : "0", scale : 6 },
-        codeCommit : Env.get("CODE_COMMIT", "development"),
-        meshCommit : Env.get("MESH_COMMIT", "ac039696c3c60e2fba15e45184590212cb785c64"),
+        codeCommit : code_commit(),
+        meshCommit : mesh_commit(),
         signerReachable : false,
         shutdownRequested : Process.shutdown_requested()
       })

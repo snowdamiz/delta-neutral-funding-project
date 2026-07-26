@@ -1,3 +1,4 @@
+from Packages.BuildIdentity import code_commit, mesh_commit
 from Runtime.Registry import accepted_events, rejected_events
 
 pub fn escape_label_value(value :: String) -> String do
@@ -118,10 +119,10 @@ pub fn render(
   Ok(
     metadata()
       <> runtime_metadata()
-      <> (Env.get("MESH_COMMIT", "development")
+      <> (mesh_commit()
         |> escape_label_value
         |2> build_metric(
-          Env.get("CODE_COMMIT", "development") |> escape_label_value
+          code_commit() |> escape_label_value
         ))
       <> (Cluster.telemetry() |> runtime_metrics)
       <> ((now_ms |2> database_metrics(pool, max_age_ms)) ?)

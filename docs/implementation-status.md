@@ -23,4 +23,5 @@ transaction.
 The effective paper policy is parsed once through a shared strict Mesh contract
 and deterministically fingerprinted. A changed application commit, Mesh commit,
 or policy cannot attach to an existing strategy run or mutate its
-build/comparison metadata.
+build/comparison metadata. Application and Mesh revisions are compiled into the
+collector rather than accepted from overridable runtime environment variables.

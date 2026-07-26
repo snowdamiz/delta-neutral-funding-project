@@ -1,4 +1,5 @@
 from Api.Router import build_router
+from Packages.BuildIdentity import code_commit, mesh_commit
 from Packages.LeaderLease import acquire_startup, release, start_leader_lease_supervisor
 from Packages.Log import error, info
 from Packages.ReplayCli import run_replay_command
@@ -51,8 +52,8 @@ fn serve(pool :: PoolHandle, port :: Int, config :: RuntimeConfig) do
         |> runtime_config_hash
         |4> bootstrap_paper_runs(
           pool,
-          Env.get("CODE_COMMIT", "development"),
-          Env.get("MESH_COMMIT", "ac039696c3c60e2fba15e45184590212cb785c64"),
+          code_commit(),
+          mesh_commit(),
           config.target_notional_usd_micros
         )
       ) do
@@ -161,7 +162,7 @@ end
 fn replay(args :: List<String>) do
   case run_replay_command(
     args,
-    Env.get("MESH_COMMIT", "ac039696c3c60e2fba15e45184590212cb785c64")
+    mesh_commit()
   ) do
     Ok(output) -> println(output)
     Err(reason) -> do

@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1.7
 FROM ubuntu:22.04 AS builder
+ARG CODE_COMMIT=development
+ARG MESH_COMMIT=ac039696c3c60e2fba15e45184590212cb785c64
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,6 +41,12 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
 COPY mesh /workspace/project/mesh
 COPY replay /workspace/project/replay
 COPY tests/vectors /workspace/project/tests/vectors
+RUN sed -i \
+      -e "s/__CODE_COMMIT__/$CODE_COMMIT/g" \
+      -e "s/__MESH_COMMIT__/$MESH_COMMIT/g" \
+      /workspace/project/mesh/packages/build_identity.mpl \
+    && ! grep -q '__.*_COMMIT__' \
+      /workspace/project/mesh/packages/build_identity.mpl
 RUN --mount=type=cache,target=/workspace/target,sharing=locked \
     cd /workspace/project \
     && /workspace/target/debug/meshc test mesh \
@@ -49,8 +57,6 @@ RUN --mount=type=cache,target=/workspace/target,sharing=locked \
 FROM ubuntu:24.04 AS runtime
 ARG CODE_COMMIT=development
 ARG MESH_COMMIT=ac039696c3c60e2fba15e45184590212cb785c64
-ENV CODE_COMMIT=$CODE_COMMIT
-ENV MESH_COMMIT=$MESH_COMMIT
 LABEL org.opencontainers.image.revision=$CODE_COMMIT
 LABEL org.mesh-lang.revision=$MESH_COMMIT
 RUN apt-get update && apt-get install -y --no-install-recommends \

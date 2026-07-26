@@ -48,6 +48,13 @@ test "$(docker image inspect --format '{{.Config.User}}' "$executor")" = "65532:
 for image in "$collector" "$adapter" "$executor"; do
   test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$project_commit"
 done
+test "$(docker image inspect --format '{{index .Config.Labels "org.mesh-lang.revision"}}' "$collector")" = "$expected_mesh"
+if docker image inspect \
+  --format '{{range .Config.Env}}{{println .}}{{end}}' "$collector" |
+  grep -Eq '^(CODE_COMMIT|MESH_COMMIT)='; then
+  printf 'collector exposes overridable release identity variables\n' >&2
+  exit 1
+fi
 docker image inspect "delta-neutral-funding-collector:$project_commit-$mesh_tag" >/dev/null
 docker image inspect "delta-neutral-funding-adapter:$project_commit" >/dev/null
 docker image inspect "delta-neutral-funding-executor:$project_commit" >/dev/null
