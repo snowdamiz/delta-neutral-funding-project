@@ -3,8 +3,8 @@
 | Milestone | State | Evidence |
 |---|---|---|
 | 0. Contracts and qualification | In progress | Strategy contracts and schema v1 are frozen; authoritative venue probes remain |
-| 1. Financial correctness and Mesh slice | Complete | Checked fixed-point math, cross-boundary parsers, tests, and a compiled collector are pinned to Mesh `dc36f28` |
-| 2. Production-like Mesh foundation | In progress | Local Docker services, health, metrics, structured logs, and database pooling are present |
+| 1. Financial correctness and Mesh slice | Complete | Checked fixed-point math, cross-boundary parsers, tests, and a compiled collector are pinned to Mesh `7256eba` |
+| 2. Production-like Mesh foundation | In progress | Local Docker services, fenced renewable writer lease, health, metrics, structured logs, and database pooling are present |
 | 3. Read-only adapter and recorder | In progress | HMAC-authenticated synthetic market and funding events are recorded idempotently; live venue reads remain |
 | 4. Paper broker and accounting | In progress | Dual atomic entries, fills, rehedging, exits, valuation attribution, and realized funding ledger entries are implemented |
 | 5. State machines, opportunity, and risk | In progress | Fail-closed entry and held-position lifecycles run; reconciliation and operator controls remain |

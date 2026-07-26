@@ -1,19 +1,31 @@
 from Api.Router import build_router
+from Packages.LeaderLease import acquire_startup, start_leader_lease_supervisor
 from Packages.Log import error, info
 from Packages.Storage import bootstrap_paper_runs
 from Runtime.Registry import start_registry
 
 fn serve(pool :: PoolHandle, port :: Int) do
-  let code_commit = Env.get("CODE_COMMIT", "development")
-  let mesh_commit = Env.get("MESH_COMMIT", "dc36f28c549bc628b9106a6b90ce6a5b3c293a89")
-  let config_hash = Env.get("CONFIG_HASH", "")
-  case (config_hash |4> bootstrap_paper_runs(pool, code_commit, mesh_commit)) do
-    Ok(rows) -> do
-      start_registry(pool)
-      info("collector_started", "{\"mode\":\"paper\",\"port\":\"${port}\",\"bootstrapRows\":\"${rows}\"}")
-      build_router() |> HTTP.serve(port)
+  case acquire_startup(pool) do
+    Ok(0) -> error("leader_lease_unavailable", "{\"reason\":\"held_by_another_instance\"}")
+    Ok(generation) -> do
+      case (
+        Env.get("CONFIG_HASH", "")
+        |4> bootstrap_paper_runs(
+          pool,
+          Env.get("CODE_COMMIT", "development"),
+          Env.get("MESH_COMMIT", "7256eba370b78fb16661fad298b6538e9bdb61c0")
+        )
+      ) do
+        Ok(rows) -> do
+          start_registry(pool)
+          start_leader_lease_supervisor()
+          info("collector_started", "{\"mode\":\"paper\",\"port\":\"${port}\",\"bootstrapRows\":\"${rows}\",\"leaderGeneration\":\"${generation}\"}")
+          build_router() |> HTTP.serve(port)
+        end
+        Err(reason) -> error("bootstrap_failed", "{\"reason\":\"${reason}\"}")
+      end
     end
-    Err(reason) -> error("bootstrap_failed", "{\"reason\":\"${reason}\"}")
+    Err(reason) -> error("leader_lease_unavailable", "{\"reason\":\"${reason}\"}")
   end
 end
 

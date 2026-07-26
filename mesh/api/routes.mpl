@@ -1,5 +1,6 @@
 from Packages.Accounting import realized_funding_usd
 from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
+from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
@@ -290,6 +291,17 @@ fn operator_response(request :: Request, action :: String) do
   if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
     return error_response(400, "invalid_request", "invalid idempotency key")
   end
+  if action == "resume" do
+    case lease_held(get_pool()) do
+      Ok(true) -> ()
+      Ok(false) -> do
+        return error_response(409, "leader_required", "cannot resume without the writer lease")
+      end
+      Err(reason) -> do
+        return error_response(503, "lease_unavailable", reason)
+      end
+    end
+  end
   case Json.parse(body) do
     Err(reason) -> error_response(400, "invalid_request", reason)
     Ok(_parsed) -> do
@@ -331,7 +343,11 @@ pub fn handle_event(request :: Request) -> Response do
     warn("protocol_event_rejected", "{\"reason\":\"authentication\"}")
     error_response(401, "unauthorized", "invalid adapter signature")
   else
-    authenticated_event_response(body)
+    case lease_held(get_pool()) do
+      Ok(true) -> authenticated_event_response(body)
+      Ok(false) -> error_response(503, "leader_required", "collector does not hold the writer lease")
+      Err(reason) -> error_response(503, "lease_unavailable", reason)
+    end
   end
 end
 
@@ -353,7 +369,13 @@ end
 
 pub fn handle_health(_request :: Request) -> Response do
   case ("SELECT 1 AS ok" |2> Pool.query(get_pool(), [])) do
-    Ok(rows) -> HTTP.response(200, json { status : "ok", database : "ok", mode : "paper" })
+    Ok(_rows) -> do
+      case lease_held(get_pool()) do
+        Ok(true) -> HTTP.response(200, json { status : "ok", database : "ok", leader : true, mode : "paper" })
+        Ok(false) -> error_response(503, "not_leader", "collector does not hold the writer lease")
+        Err(reason) -> error_response(503, "lease_unavailable", reason)
+      end
+    end
     Err(reason) -> error_response(503, "database_unavailable", reason)
   end
 end
@@ -361,9 +383,9 @@ end
 pub fn handle_build(_request :: Request) -> Response do
   HTTP.response(200, json {
     codeCommit : Env.get("CODE_COMMIT", "development"),
-    meshCommit : Env.get("MESH_COMMIT", "dc36f28c549bc628b9106a6b90ce6a5b3c293a89"),
+    meshCommit : Env.get("MESH_COMMIT", "7256eba370b78fb16661fad298b6538e9bdb61c0"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 7
+    schemaVersion : 8
   })
 end
 
@@ -388,7 +410,7 @@ pub fn handle_status(_request :: Request) -> Response do
         activePortfolios : Map.get(row, "active_portfolios"),
         liveNotional : json { atoms : "0", scale : 6 },
         codeCommit : Env.get("CODE_COMMIT", "development"),
-        meshCommit : Env.get("MESH_COMMIT", "dc36f28c549bc628b9106a6b90ce6a5b3c293a89"),
+        meshCommit : Env.get("MESH_COMMIT", "7256eba370b78fb16661fad298b6538e9bdb61c0"),
         signerReachable : false,
         shutdownRequested : Process.shutdown_requested()
       })
@@ -495,7 +517,7 @@ pub fn handle_config(_request :: Request) -> Response do
     maxSourceAgeMs : Env.get_int("MAX_SOURCE_AGE_MS", 5000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 7,
+    databaseSchemaVersion : 8,
     liveEnabled : false
   })
 end
