@@ -32,7 +32,12 @@ root filesystem:
 bin/collector replay \
   --bundle replay/bundles/calm-v1.jsonl \
   --config replay/configs/baseline-v1.json
+
+scripts/check-replay.sh
 ```
+
+The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
+deterministic-failure bundles twice and checks their exact outcome hashes.
 
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).

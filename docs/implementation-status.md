@@ -8,7 +8,7 @@
 | 3. Read-only adapter and recorder | In progress | HMAC-authenticated synthetic market and funding events are recorded idempotently; live venue reads remain |
 | 4. Paper broker and accounting | In progress | Dual atomic entries, fills, rehedging, exits, valuation attribution, and realized funding ledger entries are implemented |
 | 5. State machines, opportunity, and risk | In progress | Fail-closed lifecycles, reconciliation, authenticated controls, durable exits, emergency flattening, and a guarded CLI run; margin/source breakers remain |
-| 6. Replay and differential validation | In progress | A networkless Docker CLI replays the pinned calm bundle deterministically with virtual time, ordering/duplicate checks, exact config/toolchain pins, dual decisions, and funding traces; stress bundles and differential vectors remain |
+| 6. Replay and differential validation | In progress | The networkless Docker replay gate covers pinned calm, volatile, JitoSOL liquidity-loss, epoch reward/basis, and deterministic-failure bundles with exact traces; cross-language differential vectors remain |
 | 7. 30-day paper soak | Blocked on elapsed observation time | Must not be simulated or backdated |
 | 8. Shadow | Pending | No signer reachability allowed |
 | 9. Locked executor | Pending | Local policy tests only |
