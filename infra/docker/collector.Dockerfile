@@ -22,22 +22,24 @@ ENV CARGO_TARGET_DIR=/workspace/target
 
 WORKDIR /workspace/mesh-lang
 COPY --from=mesh_lang . .
-COPY mesh /workspace/project/mesh
-COPY replay /workspace/project/replay
-COPY tests/vectors /workspace/project/tests/vectors
 RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/root/.cargo/git,sharing=locked \
     --mount=type=cache,target=/workspace/target,sharing=locked \
     cargo fmt --all -- --check \
     && cargo build --locked -q -p mesh-rt -p meshc \
     && cargo test --locked -q -p meshc --test e2e_stdlib e2e_list_contains \
+    && cargo test --locked -q -p meshc --test e2e_stdlib e2e_cluster_telemetry_is_available_as_a_typed_map \
     && cargo test --locked -q -p meshc --test e2e_stdlib e2e_http_server_drains_accepted_requests_before_returning \
     && cargo test --locked -q -p mesh-rt http::server::tests::request_parser_rejects_unbounded_or_ambiguous_input \
     && cargo test --locked -q -p mesh-rt actor::mailbox::tests::test_mailbox_concurrent_push \
     && cargo test --locked -q -p meshc --test e2e e2e_bounded_channel \
     && cargo test --locked -q -p meshc --test e2e_actors gc_bounded_memory \
-    && cargo test --locked -q -p meshc --test e2e_supervisors supervisor_restarts_crashed_permanent_child \
-    && cd /workspace/project \
+    && cargo test --locked -q -p meshc --test e2e_supervisors supervisor_restarts_crashed_permanent_child
+COPY mesh /workspace/project/mesh
+COPY replay /workspace/project/replay
+COPY tests/vectors /workspace/project/tests/vectors
+RUN --mount=type=cache,target=/workspace/target,sharing=locked \
+    cd /workspace/project \
     && /workspace/target/debug/meshc test mesh \
     && /workspace/target/debug/meshc build mesh \
       --output /tmp/funding-collector --no-color \
@@ -45,7 +47,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
 
 FROM ubuntu:24.04 AS runtime
 ARG CODE_COMMIT=development
-ARG MESH_COMMIT=ed8dc2b8254ab51d4ebefed43fe4f4d44a128d2a
+ARG MESH_COMMIT=b07d37d07c6442590be24e656c6f1bd5f48c5500
 ENV CODE_COMMIT=$CODE_COMMIT
 ENV MESH_COMMIT=$MESH_COMMIT
 LABEL org.opencontainers.image.revision=$CODE_COMMIT

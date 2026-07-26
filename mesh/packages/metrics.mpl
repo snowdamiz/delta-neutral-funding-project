@@ -11,12 +11,85 @@ fn metadata() -> String do
   "# HELP funding_collector_events_total Protocol events handled by result.\n# TYPE funding_collector_events_total counter\n# HELP funding_collector_build_info Pinned build information.\n# TYPE funding_collector_build_info gauge\n# HELP market_data_age_seconds Age of the latest protocol event.\n# TYPE market_data_age_seconds gauge\n# HELP market_updates_total Persisted protocol events.\n# TYPE market_updates_total counter\n# HELP adapter_to_mesh_latency_seconds Adapter-to-collector persistence latency.\n# TYPE adapter_to_mesh_latency_seconds histogram\n# HELP adapter_connected Whether adapter data is fresh.\n# TYPE adapter_connected gauge\n# HELP adapter_schema_compatible Whether the latest adapter schema is supported.\n# TYPE adapter_schema_compatible gauge\n# HELP funding_rate_hourly Current expected short funding rate.\n# TYPE funding_rate_hourly gauge\n# HELP spot_perp_basis_bps Current spot-to-perpetual basis.\n# TYPE spot_perp_basis_bps gauge\n# HELP jitosol_protocol_nav_rate_lamports JitoSOL protocol NAV in lamports per token.\n# TYPE jitosol_protocol_nav_rate_lamports gauge\n# HELP jitosol_executable_buy_rate_lamports Executable JitoSOL buy rate in lamports.\n# TYPE jitosol_executable_buy_rate_lamports gauge\n# HELP jitosol_executable_sell_rate_lamports Executable JitoSOL sell rate in lamports.\n# TYPE jitosol_executable_sell_rate_lamports gauge\n# HELP jitosol_nav_market_deviation_bps JitoSOL NAV-to-market deviation.\n# TYPE jitosol_nav_market_deviation_bps gauge\n# HELP jitosol_exit_depth_usd_micros Executable JitoSOL exit depth in USD micros.\n# TYPE jitosol_exit_depth_usd_micros gauge\n# HELP jitosol_reward_accrual_usd_micros Recorded JitoSOL reward accrual in USD micros.\n# TYPE jitosol_reward_accrual_usd_micros gauge\n# HELP jitosol_basis_pnl_usd_micros Recorded JitoSOL basis P&L in USD micros.\n# TYPE jitosol_basis_pnl_usd_micros gauge\n# HELP jitosol_epoch Latest observed JitoSOL epoch.\n# TYPE jitosol_epoch gauge\n# HELP strategy_state Current portfolio state.\n# TYPE strategy_state gauge\n# HELP opportunity_expected_net_usd_micros Latest expected net carry.\n# TYPE opportunity_expected_net_usd_micros gauge\n# HELP position_spot_equivalent_sol_atoms Spot-equivalent SOL atoms.\n# TYPE position_spot_equivalent_sol_atoms gauge\n# HELP position_perp_sol_atoms Perpetual short SOL atoms.\n# TYPE position_perp_sol_atoms gauge\n# HELP position_net_delta_sol_atoms Net delta in SOL atoms.\n# TYPE position_net_delta_sol_atoms gauge\n# HELP position_delta_bps Absolute portfolio delta.\n# TYPE position_delta_bps gauge\n# HELP position_gross_notional_usd_micros Gross portfolio notional in USD micros.\n# TYPE position_gross_notional_usd_micros gauge\n# HELP comparison_incremental_jitosol_pnl_usd_micros Incremental JitoSOL P&L versus SOL control.\n# TYPE comparison_incremental_jitosol_pnl_usd_micros gauge\n# HELP orders_total Recorded orders.\n# TYPE orders_total counter\n# HELP partial_fills_total Recorded partial fills.\n# TYPE partial_fills_total counter\n# HELP shadow_paper_fill_error_bps Latest shadow-to-paper price error.\n# TYPE shadow_paper_fill_error_bps gauge\n# HELP shadow_executor_results Shadow executor results.\n# TYPE shadow_executor_results gauge\n# HELP executor_policy_rejections_total Shadow executor policy rejections.\n# TYPE executor_policy_rejections_total counter\n# HELP margin_ratio_ppm Current margin ratio.\n# TYPE margin_ratio_ppm gauge\n# HELP liquidation_distance_bps Current liquidation distance.\n# TYPE liquidation_distance_bps gauge\n# HELP risk_events_total Recorded risk events.\n# TYPE risk_events_total counter\n# HELP reconciliation_mismatches_total Reconciliation mismatches.\n# TYPE reconciliation_mismatches_total counter\n# HELP funding_received_usd_micros Realized funding in USD micros.\n# TYPE funding_received_usd_micros gauge\n# HELP spot_fees_usd_micros_total Recorded spot fees in USD micros.\n# TYPE spot_fees_usd_micros_total counter\n# HELP perp_fees_usd_micros_total Recorded perpetual fees in USD micros.\n# TYPE perp_fees_usd_micros_total counter\n# HELP net_pnl_usd_micros Net recorded P&L in USD micros.\n# TYPE net_pnl_usd_micros gauge\n# HELP leader_lease_held Whether this collector owns a live writer lease.\n# TYPE leader_lease_held gauge\n# HELP mesh_runtime_up Whether the Mesh runtime is serving.\n# TYPE mesh_runtime_up gauge\n# HELP mesh_outbox_pending Pending Mesh outbox commands.\n# TYPE mesh_outbox_pending gauge\n"
 end
 
+fn runtime_metadata() -> String do
+  [
+    "# HELP mesh_runtime_active_workers Active scheduler workers.\n# TYPE mesh_runtime_active_workers gauge\n",
+    "# HELP mesh_runtime_configured_workers Configured scheduler workers.\n# TYPE mesh_runtime_configured_workers gauge\n",
+    "# HELP mesh_runtime_runnable_actors Runnable actors.\n# TYPE mesh_runtime_runnable_actors gauge\n",
+    "# HELP mesh_runtime_run_queue_messages Messages waiting in the global run queue.\n# TYPE mesh_runtime_run_queue_messages gauge\n",
+    "# HELP mesh_actor_mailbox_messages Messages queued across local actors.\n# TYPE mesh_actor_mailbox_messages gauge\n",
+    "# HELP mesh_actor_mailbox_depth Observed local actor mailbox depth.\n# TYPE mesh_actor_mailbox_depth gauge\n",
+    "# HELP mesh_scheduler_busy_seconds_total Scheduler busy time.\n# TYPE mesh_scheduler_busy_seconds_total counter\n",
+    "# HELP mesh_scheduler_idle_seconds_total Scheduler idle time.\n# TYPE mesh_scheduler_idle_seconds_total counter\n",
+    "# HELP mesh_http_connections Open HTTP connections.\n# TYPE mesh_http_connections gauge\n",
+    "# HELP mesh_http_inflight_requests HTTP requests in service.\n# TYPE mesh_http_inflight_requests gauge\n",
+    "# HELP mesh_http_queued_requests HTTP requests awaiting admission.\n# TYPE mesh_http_queued_requests gauge\n",
+    "# HELP mesh_http_queued_bytes Bytes awaiting HTTP admission.\n# TYPE mesh_http_queued_bytes gauge\n",
+    "# HELP mesh_http_rejected_requests_total HTTP requests rejected by admission control.\n# TYPE mesh_http_rejected_requests_total counter\n",
+    "# HELP mesh_http_queue_wait_p95_seconds Runtime HTTP queue-wait p95.\n# TYPE mesh_http_queue_wait_p95_seconds gauge\n",
+    "# HELP mesh_http_service_p95_seconds Runtime HTTP service-time p95.\n# TYPE mesh_http_service_p95_seconds gauge\n",
+    "# HELP mesh_http_end_to_end_p95_seconds Runtime HTTP end-to-end p95.\n# TYPE mesh_http_end_to_end_p95_seconds gauge\n",
+    "# HELP mesh_process_resident_memory_bytes Runtime process resident memory.\n# TYPE mesh_process_resident_memory_bytes gauge\n",
+    "# HELP mesh_cpu_available_parallelism Runtime-visible CPU parallelism.\n# TYPE mesh_cpu_available_parallelism gauge\n"
+  ]
+    |> String.join("")
+end
+
 fn build_metric(app_commit :: String, mesh_commit :: String) -> String do
   "funding_collector_build_info{app_commit=\"${app_commit}\",mesh_compiler_commit=\"${mesh_commit}\",mesh_runtime_commit=\"${mesh_commit}\",adapter_commit=\"${app_commit}\",executor_commit=\"${app_commit}\",schema_version=\"25\",execution_mode=\"paper\"} 1\n"
 end
 
-fn runtime_metrics() -> String do
-  "funding_collector_events_total{result=\"accepted\"} ${accepted_events()}\nfunding_collector_events_total{result=\"rejected\"} ${rejected_events()}\nmesh_runtime_up 1\n"
+fn formatted_int_sample(series :: String, value :: Int) -> String do
+  "${series} ${value}\n"
+end
+
+fn formatted_float_sample(series :: String, value :: Float) -> String do
+  "${series} ${value}\n"
+end
+
+fn metric_sample(
+  metrics :: Map<String, Int>,
+  key :: String,
+  series :: String
+) -> String do
+  Map.get(metrics, key)
+    |2> formatted_int_sample(series)
+end
+
+fn seconds_sample(
+  metrics :: Map<String, Int>,
+  key :: String,
+  series :: String
+) -> String do
+  (Float.from(Map.get(metrics, key)) / 1000000000.0)
+    |2> formatted_float_sample(series)
+end
+
+fn runtime_metrics(metrics :: Map<String, Int>) -> String do
+  [
+    "funding_collector_events_total{result=\"accepted\"} ${accepted_events()}\nfunding_collector_events_total{result=\"rejected\"} ${rejected_events()}\nmesh_runtime_up 1\n",
+    metrics |> metric_sample("active_workers", "mesh_runtime_active_workers"),
+    metrics |> metric_sample("configured_workers", "mesh_runtime_configured_workers"),
+    metrics |> metric_sample("runnable_actors", "mesh_runtime_runnable_actors"),
+    metrics |> metric_sample("global_run_queue_depth", "mesh_runtime_run_queue_messages"),
+    metrics |> metric_sample("mailbox_messages", "mesh_actor_mailbox_messages{actor=\"all\"}"),
+    metrics |> metric_sample("mailbox_depth_p50", "mesh_actor_mailbox_depth{actor=\"all\",statistic=\"p50\"}"),
+    metrics |> metric_sample("mailbox_depth_p95", "mesh_actor_mailbox_depth{actor=\"all\",statistic=\"p95\"}"),
+    metrics |> metric_sample("mailbox_depth_max", "mesh_actor_mailbox_depth{actor=\"all\",statistic=\"max\"}"),
+    metrics |> seconds_sample("scheduler_busy_nanoseconds_total", "mesh_scheduler_busy_seconds_total"),
+    metrics |> seconds_sample("scheduler_idle_nanoseconds_total", "mesh_scheduler_idle_seconds_total"),
+    metrics |> metric_sample("http_connections", "mesh_http_connections"),
+    metrics |> metric_sample("http_inflight_requests", "mesh_http_inflight_requests"),
+    metrics |> metric_sample("http_queued_requests", "mesh_http_queued_requests"),
+    metrics |> metric_sample("http_queued_bytes", "mesh_http_queued_bytes"),
+    metrics |> metric_sample("http_rejected_requests_total", "mesh_http_rejected_requests_total"),
+    metrics |> seconds_sample("http_queue_wait_p95_nanoseconds", "mesh_http_queue_wait_p95_seconds"),
+    metrics |> seconds_sample("http_service_p95_nanoseconds", "mesh_http_service_p95_seconds"),
+    metrics |> seconds_sample("http_end_to_end_p95_nanoseconds", "mesh_http_end_to_end_p95_seconds"),
+    metrics |> metric_sample("process_resident_memory_bytes", "mesh_process_resident_memory_bytes"),
+    metrics |> metric_sample("cpu_available_parallelism", "mesh_cpu_available_parallelism")
+  ]
+    |> String.join("")
 end
 
 fn database_metrics(
@@ -44,12 +117,13 @@ pub fn render(
 ) -> String ! String do
   Ok(
     metadata()
+      <> runtime_metadata()
       <> (Env.get("MESH_COMMIT", "development")
         |> escape_label_value
         |2> build_metric(
           Env.get("CODE_COMMIT", "development") |> escape_label_value
         ))
-      <> runtime_metrics()
+      <> (Cluster.telemetry() |> runtime_metrics)
       <> ((now_ms |2> database_metrics(pool, max_age_ms)) ?)
   )
 end

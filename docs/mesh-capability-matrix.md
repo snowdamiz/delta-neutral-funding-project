@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Pinned runtime commit: `ed8dc2b8254ab51d4ebefed43fe4f4d44a128d2a`
+Pinned runtime commit: `b07d37d07c6442590be24e656c6f1bd5f48c5500`
 
 The pin is a source commit, not an untracked application patch.
 
@@ -14,7 +14,7 @@ The pin is a source commit, not an untracked application patch.
 | MESH-ACTOR-001 | Partial | item-bounded reject/drop/latest channels; project overload and native concurrent-delivery probes pass; byte bounds and scheduler-aware blocking deferred |
 | MESH-PROC-001 | Implemented | async-signal-safe SIGINT/SIGTERM flag, accepted-request drain, and native `Process.exit(Int)` |
 | MESH-OBS-001 | Project-local | JSON-line logger; secret fields excluded |
-| MESH-METRICS-001 | Project-local | fixed-name counters/gauges rendered as Prometheus text |
+| MESH-METRICS-001 | Implemented | pure Mesh fixed-name Prometheus rendering over bounded runtime telemetry plus one database snapshot |
 | MESH-PROTO-001 | Project-local | JSON Schema v1 plus shared fixtures |
 | MESH-BYTES/CODEC/NUM | Bridged | TypeScript adapter transports base64 and decimal strings |
 | MESH-WS/HTTP/SOL-READ | Bridged | read-only TypeScript adapter |
@@ -34,6 +34,7 @@ cargo test -p meshc --test e2e e2e_bounded_channel
 cargo test -p mesh-rt actor::mailbox::tests::test_mailbox_concurrent_push
 cargo test -p mesh-rt http::server::tests::request_parser_rejects_unbounded_or_ambiguous_input
 cargo test -p meshc --test e2e_stdlib e2e_http_server_drains_accepted_requests_before_returning
+cargo test -p meshc --test e2e_stdlib e2e_cluster_telemetry_is_available_as_a_typed_map
 cargo test -p meshc --test e2e_actors gc_bounded_memory
 cargo test -p meshc --test e2e_supervisors supervisor_restarts_crashed_permanent_child
 cargo test -p meshc --test e2e e2e_deterministic_random

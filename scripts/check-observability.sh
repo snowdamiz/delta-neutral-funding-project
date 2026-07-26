@@ -39,6 +39,12 @@ for metric in \
   net_pnl_usd_micros \
   leader_lease_held \
   mesh_runtime_up \
+  mesh_runtime_active_workers \
+  mesh_actor_mailbox_messages \
+  mesh_scheduler_busy_seconds_total \
+  mesh_http_inflight_requests \
+  mesh_http_rejected_requests_total \
+  mesh_process_resident_memory_bytes \
   mesh_outbox_pending
 do
   grep -q "^$metric" "$metrics_file"
