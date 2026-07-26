@@ -1,6 +1,6 @@
 from Packages.Finance import Lamports, PriceMicros, RatePpm, TokenAtoms, UsdMicros
 from Packages.Opportunity import evaluate_snapshot
-from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_controlled_entry, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
+from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_controlled_entry, plan_controlled_position, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
 from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
 from Packages.StateMachine import PortfolioState
 
@@ -141,6 +141,38 @@ describe("paper entry planner") do
           end
           Err(error) -> assert(false)
         end
+      end
+      Err(error) -> assert(false)
+    end
+  end
+
+  test("keeps the SOL control open on the shared positive-carry schedule") do
+    let controlled = %{snapshot(OracleValid, 1000000, 0) |
+      costs_usd_micros : UsdMicros { atoms : 200000 },
+      risk_haircut_usd_micros : UsdMicros { atoms : 50000 }
+    }
+    case evaluate_snapshot(controlled) do
+      Ok(opportunity) -> case plan_controlled_position(
+        controlled,
+        opportunity,
+        PaperPosition {
+          variant : SolControl,
+          spot_quantity : TokenAtoms { atoms : opportunity.hedge_lamports.atoms },
+          perp_short_quantity : opportunity.hedge_lamports,
+          prior_nav_lamports : Lamports { atoms : 1000000000 },
+          prior_market_rate_lamports : Lamports { atoms : 1000000000 },
+          state_version : 4,
+          random_state : Random.seed(42)
+        },
+        runtime(Hedged, 1785024001000)
+      ) do
+        Ok(plan) -> do
+          assert(opportunity.sol_eligible == false)
+          assert(opportunity.jitosol_eligible)
+          assert(plan.action == HoldPosition)
+          assert(plan.reason == "within_delta_band")
+        end
+        Err(error) -> assert(false)
       end
       Err(error) -> assert(false)
     end

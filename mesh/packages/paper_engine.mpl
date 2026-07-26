@@ -929,9 +929,10 @@ reason :: String) -> PositionPlan ! String do
   plan_exit(snapshot, position, position_valuation(snapshot, opportunity, position) ?, reason)
 end
 
-pub fn plan_position(snapshot :: MarketSnapshot,
+fn plan_position_for_schedule(snapshot :: MarketSnapshot,
 opportunity :: OpportunitySet,
 position :: PaperPosition,
+schedule_variant :: PaperVariant,
 runtime :: PaperRuntime) -> PositionPlan ! String do
   if runtime.rebalance_delta_bps < 0 do
     return Err("rebalance delta threshold must be non-negative")
@@ -946,7 +947,7 @@ runtime :: PaperRuntime) -> PositionPlan ! String do
   if margin.approved == false do
     return plan_exit(snapshot, position, valuation, margin.code)
   end
-  let net_carry = if position.variant == SolControl do
+  let net_carry = if schedule_variant == SolControl do
     opportunity.sol_net_carry_usd_micros
   else
     opportunity.jitosol_net_carry_usd_micros
@@ -970,4 +971,28 @@ runtime :: PaperRuntime) -> PositionPlan ! String do
   else
     Ok(hold_position(position, valuation, "within_delta_band"))
   end
+end
+
+pub fn plan_position(snapshot :: MarketSnapshot,
+opportunity :: OpportunitySet,
+position :: PaperPosition,
+runtime :: PaperRuntime) -> PositionPlan ! String do
+  runtime |5> plan_position_for_schedule(
+    snapshot,
+    opportunity,
+    position,
+    position.variant
+  )
+end
+
+pub fn plan_controlled_position(snapshot :: MarketSnapshot,
+opportunity :: OpportunitySet,
+position :: PaperPosition,
+runtime :: PaperRuntime) -> PositionPlan ! String do
+  runtime |5> plan_position_for_schedule(
+    snapshot,
+    opportunity,
+    position,
+    JitoSolCarry
+  )
 end

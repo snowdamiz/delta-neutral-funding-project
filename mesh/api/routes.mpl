@@ -4,11 +4,11 @@ from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
-from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_controlled_entry, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
+from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, plan_controlled_entry, plan_controlled_position, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
 from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, PendingPaperAction, list_opportunities, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_synchronized_paper_entries
+from Packages.Storage import FundingPersistence, PendingPaperAction, list_opportunities, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_synchronized_paper_entries, persist_synchronized_position_plans
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -215,6 +215,204 @@ fn run_independent_pair(
   )
 end
 
+fn requires_controlled_exit(action :: PaperAction) -> Bool do
+  action == ExitPosition || action == EmergencyPosition
+end
+
+fn controlled_pending_reason(pool :: PoolHandle) -> String ! String do
+  case ("local-sync-sol-control" |2> load_pending_paper_action(pool)) ? do
+    PendingAction(action, reason) -> Ok(action <> ":" <> reason)
+    NoPendingAction -> case ("local-sync-jitosol-carry" |2> load_pending_paper_action(pool)) ? do
+      PendingAction(action, reason) -> Ok(action <> ":" <> reason)
+      NoPendingAction -> Ok("")
+    end
+  end
+end
+
+fn persist_controlled_positions(
+  pool :: PoolHandle,
+  snapshot :: MarketSnapshot,
+  sol_position :: PaperPosition,
+  sol_runtime :: PaperRuntime,
+  sol_risk_approved :: Bool,
+  sol_plan :: PositionPlan,
+  jito_position :: PaperPosition,
+  jito_runtime :: PaperRuntime,
+  jito_risk_approved :: Bool,
+  jito_plan :: PositionPlan
+) -> Int ! String do
+  persist_synchronized_position_plans(
+    pool,
+    "local-paper-run:synchronized",
+    snapshot,
+    "local-sync-sol-control",
+    sol_position,
+    sol_runtime,
+    sol_risk_approved,
+    sol_plan,
+    "local-sync-jitosol-carry",
+    jito_position,
+    jito_runtime,
+    jito_risk_approved,
+    jito_plan
+  )
+end
+
+fn force_controlled_exit(
+  pool :: PoolHandle,
+  snapshot :: MarketSnapshot,
+  result :: OpportunitySet,
+  sol_position :: PaperPosition,
+  sol_runtime :: PaperRuntime,
+  jito_position :: PaperPosition,
+  jito_runtime :: PaperRuntime,
+  reason :: String,
+  risk_approved :: Bool
+) -> Int ! String do
+  let sol_plan = (reason |4> plan_forced_exit(
+    snapshot,
+    result,
+    sol_position
+  )) ?
+  let jito_plan = (reason |4> plan_forced_exit(
+    snapshot,
+    result,
+    jito_position
+  )) ?
+  persist_controlled_positions(
+    pool,
+    snapshot,
+    sol_position,
+    sol_runtime,
+    risk_approved,
+    sol_plan,
+    jito_position,
+    jito_runtime,
+    risk_approved,
+    jito_plan
+  )
+end
+
+fn run_synchronized_positions(
+  pool :: PoolHandle,
+  snapshot :: MarketSnapshot,
+  result :: OpportunitySet,
+  sol_runtime :: PaperRuntime,
+  jito_runtime :: PaperRuntime
+) -> Int ! String do
+  let sol_position = ("local-sync-sol-control" |2> load_paper_position(pool)) ?
+  let jito_position = ("local-sync-jitosol-carry" |2> load_paper_position(pool)) ?
+  let pending_reason = controlled_pending_reason(pool) ?
+  if String.length(pending_reason) > 0 do
+    return force_controlled_exit(
+      pool,
+      snapshot,
+      result,
+      sol_position,
+      sol_runtime,
+      jito_position,
+      jito_runtime,
+      pending_reason,
+      true
+    )
+  end
+  if sol_runtime.pause_all || jito_runtime.pause_all do
+    return Ok(0)
+  end
+  let sol_plan = (sol_runtime |4> plan_controlled_position(
+    snapshot,
+    result,
+    sol_position
+  )) ?
+  let jito_plan = (jito_runtime |4> plan_controlled_position(
+    snapshot,
+    result,
+    jito_position
+  )) ?
+  if requires_controlled_exit(sol_plan.action) do
+    return force_controlled_exit(
+      pool,
+      snapshot,
+      result,
+      sol_position,
+      sol_runtime,
+      jito_position,
+      jito_runtime,
+      "controlled_exit:" <> sol_plan.reason,
+      false
+    )
+  end
+  if requires_controlled_exit(jito_plan.action) do
+    return force_controlled_exit(
+      pool,
+      snapshot,
+      result,
+      sol_position,
+      sol_runtime,
+      jito_position,
+      jito_runtime,
+      "controlled_exit:" <> jito_plan.reason,
+      false
+    )
+  end
+  persist_controlled_positions(
+    pool,
+    snapshot,
+    sol_position,
+    sol_runtime,
+    position_risk_approved(sol_plan),
+    sol_plan,
+    jito_position,
+    jito_runtime,
+    position_risk_approved(jito_plan),
+    jito_plan
+  )
+end
+
+fn recover_controlled_member(
+  pool :: PoolHandle,
+  snapshot :: MarketSnapshot,
+  result :: OpportunitySet,
+  portfolio_id :: String,
+  runtime :: PaperRuntime
+) -> Int ! String do
+  if runtime.state == Idle do
+    return Ok(0)
+  end
+  let position = (portfolio_id |2> load_paper_position(pool)) ?
+  if runtime.state == OpeningSpot || runtime.state == OpeningPerp || runtime.state == EmergencyFlatten do
+    let plan = (runtime.state |4> plan_recovery(
+      snapshot,
+      result,
+      position
+    )) ?
+    return plan |7> persist_position_plan(
+      pool,
+      snapshot,
+      portfolio_id,
+      position,
+      runtime,
+      false
+    )
+  end
+  if runtime.state == Hedged do
+    let plan = ("controlled_peer_recovery" |4> plan_forced_exit(
+      snapshot,
+      result,
+      position
+    )) ?
+    return plan |7> persist_position_plan(
+      pool,
+      snapshot,
+      portfolio_id,
+      position,
+      runtime,
+      true
+    )
+  end
+  Ok(0)
+end
+
 fn run_synchronized_pair(
   pool :: PoolHandle,
   snapshot :: MarketSnapshot,
@@ -223,23 +421,44 @@ fn run_synchronized_pair(
 ) -> Int ! String do
   let sol_runtime = ("local-sync-sol-control" |2> paper_runtime(pool, now_ms)) ?
   let jito_runtime = ("local-sync-jitosol-carry" |2> paper_runtime(pool, now_ms)) ?
-  if sol_runtime.state != Idle || jito_runtime.state != Idle do
-    return Ok(0)
+  if sol_runtime.state == Idle && jito_runtime.state == Idle do
+    let sol_plan = (sol_runtime |4> plan_controlled_entry(snapshot, result, SolControl)) ?
+    let jito_plan = (jito_runtime |4> plan_controlled_entry(snapshot, result, JitoSolCarry)) ?
+    return persist_synchronized_paper_entries(
+      pool,
+      "local-paper-run:synchronized",
+      snapshot,
+      result,
+      "local-sync-sol-control",
+      sol_runtime,
+      sol_plan,
+      "local-sync-jitosol-carry",
+      jito_runtime,
+      jito_plan
+    )
   end
-  let sol_plan = (sol_runtime |4> plan_controlled_entry(snapshot, result, SolControl)) ?
-  let jito_plan = (jito_runtime |4> plan_controlled_entry(snapshot, result, JitoSolCarry)) ?
-  persist_synchronized_paper_entries(
+  if sol_runtime.state == Hedged && jito_runtime.state == Hedged do
+    return run_synchronized_positions(
+      pool,
+      snapshot,
+      result,
+      sol_runtime,
+      jito_runtime
+    )
+  end
+  let sol_applied = (sol_runtime |5> recover_controlled_member(
     pool,
-    "local-paper-run:synchronized",
     snapshot,
     result,
-    "local-sync-sol-control",
-    sol_runtime,
-    sol_plan,
-    "local-sync-jitosol-carry",
-    jito_runtime,
-    jito_plan
-  )
+    "local-sync-sol-control"
+  )) ?
+  let jito_applied = (jito_runtime |5> recover_controlled_member(
+    pool,
+    snapshot,
+    result,
+    "local-sync-jitosol-carry"
+  )) ?
+  sol_applied |> Checked.add(jito_applied)
 end
 
 fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) -> Int ! String do
@@ -510,7 +729,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 16
+    schemaVersion : 18
   })
 end
 
@@ -651,7 +870,7 @@ pub fn handle_config(_request :: Request) -> Response do
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 16,
+    databaseSchemaVersion : 18,
     liveEnabled : false
   })
 end
