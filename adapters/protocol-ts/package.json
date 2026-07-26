@@ -6,11 +6,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "test": "npm run build && node --test dist/contracts.test.js"
+    "test": "npm run build && node --test dist/*.test.js"
   },
   "devDependencies": {
     "@types/node": "24.1.0",
     "typescript": "5.8.3"
   }
 }
-
