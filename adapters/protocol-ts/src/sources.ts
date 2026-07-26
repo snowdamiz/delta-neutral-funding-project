@@ -15,6 +15,7 @@ const solMint = "So11111111111111111111111111111111111111112";
 const usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const million = 1_000_000n;
 const billion = 1_000_000_000n;
+const jupiterRequestSpacingMs = 2_100;
 
 type ObjectValue = Record<string, unknown>;
 type RawJson = { raw: string; value: unknown };
@@ -507,13 +508,21 @@ async function jupiter(
       [solMint, usdcMint, solQuantityAtoms * 2n, "ExactIn"],
       [jitoMint, usdcMint, jitoQuantityAtoms * 2n, "ExactIn"],
     ] as const;
-    const responses = await Promise.all(specs.map(([input, output, amount, mode]) =>
-      fetchJson(
-        quoteUrl(endpoint, input, output, amount, mode, config.paperSlippageBps),
-        config.requestTimeoutMs,
-        request,
-      ),
-    ));
+    const responses: RawJson[] = [];
+    for (const [index, [input, output, amount, mode]] of specs.entries()) {
+      if (index > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, jupiterRequestSpacingMs)
+        );
+      }
+      responses.push(
+        await fetchJson(
+          quoteUrl(endpoint, input, output, amount, mode, config.paperSlippageBps),
+          config.requestTimeoutMs,
+          request,
+        ),
+      );
+    }
     const quotes = responses.map((response, index) => {
       const spec = specs[index]!;
       return quote(

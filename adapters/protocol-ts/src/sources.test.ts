@@ -43,6 +43,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
   let rejectDoubledQuotes = false;
   let expectedJupiterKey: string | undefined = "test-jupiter-key";
   const jupiterRequests = new Set<string>();
+  const keylessRequestTimes: number[] = [];
   const primary = await listen((_request, response) => {
     primaryRequests += 1;
     json(response, { error: "primary unavailable" }, 503);
@@ -145,6 +146,9 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
       }
       if (url.pathname === "/jupiter/quote") {
         assert.equal(request.headers["x-api-key"], expectedJupiterKey);
+        if (expectedJupiterKey === undefined) {
+          keylessRequestTimes.push(Date.now());
+        }
         const input = url.searchParams.get("inputMint");
         const output = url.searchParams.get("outputMint");
         const swapMode = url.searchParams.get("swapMode");
@@ -375,6 +379,12 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert.equal(keyless.snapshot.source, "authoritative:source-test-keyless");
     assert.equal(keyless.snapshot.payload.jitosolAtoms, "2000000000");
     assert.deepEqual(keyless.funding, captured.funding);
+    assert.equal(keylessRequestTimes.length, 6);
+    assert(
+      keylessRequestTimes
+        .slice(1)
+        .every((time, index) => time - keylessRequestTimes[index]! >= 1_900),
+    );
 
     expectedJupiterKey = "test-jupiter-key";
     mismatchMintSupply = true;

@@ -40,6 +40,7 @@ Official sources:
 - https://docs.phoenix.trade/openapi/phoenix-public-api.json
 - https://docs.phoenix.trade/
 - https://www.phoenix.trade/terms-of-service
+- https://developers.jup.ag/docs/portal/plans
 - https://www.drift.trade/updates/drift-recovery-update-june-3-2026
 - https://docs.velocity.exchange/developers/concepts/program-vault-addresses
 
@@ -50,11 +51,13 @@ JitoSOL stake-pool state from Solana RPC, and a Jupiter quote ladder. Each
 snapshot captures exact 1× buy/sell quotes plus independent 2× exact-input SOL
 and JitoSOL exit quotes. The 2× outputs, including their adverse size impact,
 become the reported executable exit depths. Decimal source fields are converted
-to checked integer atoms at the boundary. The official keyless tier is used at
-no more than 24 quote requests per minute: six quotes every 15 seconds. A key is
-optional and never grants mutation authority. Swap V1 remains necessary for
-exact-output paper quotes while Swap V2 supports only exact-input orders, and
-must be reconsidered if that contract changes.
+to checked integer atoms at the boundary. Jupiter documents keyless access at
+0.5 requests per second. The six requests in a ladder are therefore issued
+sequentially at least 2.1 seconds apart, followed by the configured 15-second
+capture interval; healthy steady-state use stays below 30 requests per minute.
+An API key is optional and never grants mutation authority. Swap V1 remains
+necessary for exact-output paper quotes while Swap V2 supports only exact-input
+orders, and must be reconsidered if that contract changes.
 Opportunity estimates may use the latest completed hourly rate, but the ledger
 settles only from a unique authoritative funding record or reconciled account
 delta.
