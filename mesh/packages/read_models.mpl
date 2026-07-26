@@ -23,6 +23,14 @@ pub fn orders(pool :: PoolHandle, limit :: Int, offset :: Int) -> String ! Strin
   read_body(pool, "WITH items AS (SELECT jsonb_build_object('id', o.id, 'intentId', o.intent_id, 'intent', ei.intent_json, 'intentHash', ei.intent_hash, 'portfolioRunId', o.portfolio_run_id, 'executionMode', o.execution_mode::text, 'variant', o.variant::text, 'status', o.status, 'requestedQuantity', jsonb_build_object('atoms', o.requested_quantity_atoms, 'scale', 9), 'filledQuantity', jsonb_build_object('atoms', o.filled_quantity_atoms, 'scale', 9), 'externalId', o.external_id, 'createdAt', o.created_at, 'updatedAt', o.updated_at) AS item FROM orders o JOIN execution_intents ei ON ei.id = o.intent_id ORDER BY o.created_at DESC, o.id DESC LIMIT $1::int OFFSET $2::int) SELECT jsonb_build_object('items', COALESCE(jsonb_agg(item), '[]'::jsonb), 'limit', $1::int, 'offset', $2::int)::text AS body FROM items", ["${limit}", "${offset}"])
 end
 
+pub fn shadow_results(
+  pool :: PoolHandle,
+  limit :: Int,
+  offset :: Int
+) -> String ! String do
+  read_body(pool, "WITH items AS (SELECT jsonb_build_object('commandId', command_id, 'intentHash', intent_hash, 'messageHash', message_hash, 'market', market, 'status', status, 'retryAllowed', status <> 'UNKNOWN', 'paperEstimate', paper_estimate_json, 'simulation', jsonb_build_object('quantityAtoms', simulated_quantity_atoms, 'averagePriceAtoms', simulated_price_atoms, 'feeAtoms', simulated_fee_atoms), 'errorAtoms', jsonb_build_object('quantity', quantity_error_atoms, 'averagePrice', price_error_atoms, 'fee', fee_error_atoms), 'action', action_json, 'report', report_json, 'reconciliationCount', reconciliation_count, 'createdAt', created_at, 'updatedAt', updated_at) AS item FROM shadow_execution_results ORDER BY updated_at DESC, command_id LIMIT $1::int OFFSET $2::int) SELECT COALESCE(jsonb_agg(item), '[]'::jsonb)::text AS body FROM items", ["${limit}", "${offset}"])
+end
+
 pub fn fills(pool :: PoolHandle, limit :: Int, offset :: Int) -> String ! String do
   read_body(pool, "WITH items AS (SELECT jsonb_build_object('id', id, 'orderId', order_id, 'portfolioRunId', portfolio_run_id, 'executionMode', execution_mode::text, 'variant', variant::text, 'quantity', jsonb_build_object('atoms', quantity_atoms, 'scale', 9), 'priceUsd', jsonb_build_object('atoms', price_atoms, 'scale', 6), 'feeUsd', jsonb_build_object('atoms', fee_atoms, 'scale', 6), 'sourceSnapshotId', source_snapshot_id, 'explanation', explanation, 'createdAt', created_at) AS item FROM fills ORDER BY created_at DESC, id DESC LIMIT $1::int OFFSET $2::int) SELECT jsonb_build_object('items', COALESCE(jsonb_agg(item), '[]'::jsonb), 'limit', $1::int, 'offset', $2::int)::text AS body FROM items", ["${limit}", "${offset}"])
 end

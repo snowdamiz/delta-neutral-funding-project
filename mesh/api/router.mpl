@@ -1,4 +1,4 @@
-from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_risk_decisions, handle_risk_events, handle_status
+from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_risk_decisions, handle_risk_events, handle_shadow_result, handle_shadow_results, handle_status
 
 pub fn build_router() do
   HTTP.router()
@@ -12,6 +12,7 @@ pub fn build_router() do
     |> HTTP.on_get("/v1/portfolios/:portfolio", handle_portfolio)
     |> HTTP.on_get("/v1/positions", handle_positions)
     |> HTTP.on_get("/v1/orders", handle_orders)
+    |> HTTP.on_get("/v1/shadow-results", handle_shadow_results)
     |> HTTP.on_get("/v1/fills", handle_fills)
     |> HTTP.on_get("/v1/funding", handle_funding)
     |> HTTP.on_get("/v1/jitosol", handle_jitosol)
@@ -24,6 +25,7 @@ pub fn build_router() do
     |> HTTP.on_get("/v1/config", handle_config)
     |> HTTP.on_get("/metrics", handle_metrics)
     |> HTTP.on_post("/v1/events", handle_event)
+    |> HTTP.on_post("/v1/shadow-results", handle_shadow_result)
     |> HTTP.on_post("/v1/pause-entries", handle_pause_entries)
     |> HTTP.on_post("/v1/pause-all", handle_pause_all)
     |> HTTP.on_post("/v1/resume", handle_resume)

@@ -49,12 +49,16 @@ bin/collector replay \
 
 scripts/check-replay.sh
 scripts/check-toolchain.sh
+scripts/check-shadow-persistence.sh
 ```
 
 The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
 deterministic-failure bundles twice and checks their exact outcome hashes.
 The toolchain gate additionally verifies the exact clean Mesh checkout and runs
 the Mesh, TypeScript, and Rust conformance suites while building their images.
+The shadow persistence check builds Jupiter and perp actions without network
+access, dry-runs the independent Rust policy, and records paper/simulation
+deltas through the authenticated Mesh API.
 
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).

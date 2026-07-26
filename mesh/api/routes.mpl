@@ -5,10 +5,10 @@ from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
 from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, plan_controlled_entry, plan_controlled_position, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
-from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
-from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events
+from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot, parse_shadow_result
+from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events, shadow_results
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_synchronized_paper_entries, persist_synchronized_position_plans
+from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -772,12 +772,12 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 23
+    schemaVersion : 24
   })
 end
 
 pub fn handle_capabilities(_request :: Request) -> Response do
-  HTTP.response(200, "{\"schemaVersion\":1,\"implemented\":[\"MESH-FIN-001\",\"MESH-FIN-002\",\"MESH-TIME-001\",\"MESH-TEST-001\",\"MESH-TEST-002\",\"MESH-ACTOR-001-item-bound\",\"MESH-PROC-001\",\"MESH-OBS-001\",\"MESH-METRICS-001\",\"MESH-PROTO-001\"],\"bridged\":[\"MESH-BYTES-001\",\"MESH-CODEC-001\",\"MESH-NUM-001\",\"MESH-WS-001\",\"MESH-SOL-READ-001\"],\"deferred\":[\"MESH-SOL-TX-001\",\"MESH-SECRET-001\",\"MESH-CRYPTO-001\",\"MESH-SIGNER-001\"]}")
+  HTTP.response(200, "{\"schemaVersion\":1,\"implemented\":[\"MESH-FIN-001\",\"MESH-FIN-002\",\"MESH-TIME-001\",\"MESH-TEST-001\",\"MESH-TEST-002\",\"MESH-ACTOR-001-item-bound\",\"MESH-PROC-001\",\"MESH-OBS-001\",\"MESH-METRICS-001\",\"MESH-PROTO-001\"],\"bridged\":[\"MESH-BYTES-001\",\"MESH-CODEC-001\",\"MESH-NUM-001\",\"MESH-WS-001\",\"MESH-SOL-READ-001\",\"MESH-SOL-TX-001\"],\"deferred\":[\"MESH-SECRET-001\",\"MESH-CRYPTO-001\",\"MESH-SIGNER-001\"]}")
 end
 
 pub fn handle_status(_request :: Request) -> Response do
@@ -859,6 +859,45 @@ pub fn handle_orders(request :: Request) -> Response do
   end
 end
 
+pub fn handle_shadow_results(request :: Request) -> Response do
+  case page(request) do
+    Ok(value) -> read_response(shadow_results(
+      get_pool(),
+      value.limit,
+      value.offset
+    ))
+    Err(reason) -> error_response(400, "invalid_pagination", reason)
+  end
+end
+
+pub fn handle_shadow_result(request :: Request) -> Response do
+  let body = Request.body(request)
+  if authenticated(request, body) == false do
+    return error_response(401, "unauthorized", "invalid adapter signature")
+  end
+  case parse_shadow_result(body) do
+    Err(reason) -> error_response(400, "invalid_shadow_result", reason)
+    Ok(result) -> case persist_shadow_result(get_pool(), result) do
+      Ok(status) -> do
+        info("shadow_result_recorded", "{\"commandId\":\"${result.command_id}\",\"status\":\"${status}\",\"outcome\":\"${result.status}\"}")
+        HTTP.response(202, json {
+          status : status,
+          commandId : result.command_id,
+          outcome : result.status,
+          retryAllowed : result.status != "UNKNOWN"
+        })
+      end
+      Err(reason) -> do
+        if String.contains(reason, "shadow command binding changed") || String.contains(reason, "terminal shadow result changed") do
+          error_response(409, "shadow_command_conflict", reason)
+        else
+          error_response(500, "persistence_failed", reason)
+        end
+      end
+    end
+  end
+end
+
 pub fn handle_fills(request :: Request) -> Response do
   case page(request) do
     Ok(value) -> read_response(fills(get_pool(), value.limit, value.offset))
@@ -922,7 +961,7 @@ pub fn handle_config(_request :: Request) -> Response do
     directUnstakeCapitalDelayHaircutUsdMicros : Env.get_int("DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS", 1000000),
     directUnstakeFinalHedgeCloseCostUsdMicros : Env.get_int("DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS", 250000),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 23,
+    databaseSchemaVersion : 24,
     liveEnabled : false
   })
 end

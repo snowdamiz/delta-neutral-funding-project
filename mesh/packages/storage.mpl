@@ -4,7 +4,7 @@ from Packages.ExecutionIntents import ExecutionIntent, canonical_execution_inten
 from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, TokenAtoms, UsdMicros, lamports_to_usd
 from Packages.Opportunity import OpportunitySet
 from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, action_name, outcome_name, variant_from_name, variant_name
-from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, OracleStatus
+from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, OracleStatus, ShadowResult
 from Packages.RiskEngine import margin_ratio_ppm
 from Packages.StateMachine import PortfolioState, state_from_name, state_name
 
@@ -13,6 +13,22 @@ fn bool_string(value :: Bool) -> String do
     "true"
   else
     "false"
+  end
+end
+
+pub fn persist_shadow_result(
+  pool :: PoolHandle,
+  result :: ShadowResult
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT record_shadow_result($1, $2::jsonb) AS status",
+    [result.binding_hash, result.body]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid shadow result")
+  else
+    Ok(Map.get(List.head(rows), "status"))
   end
 end
 

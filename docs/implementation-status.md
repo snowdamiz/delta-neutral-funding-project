@@ -10,8 +10,8 @@
 | 5. State machines, opportunity, and risk | In progress | Fail-closed lifecycles, durable per-snapshot risk decisions, source-gap/staleness and authoritative margin/liquidation breakers, verified startup/operator reconciliation, authenticated controls, durable exits, emergency flattening, and a guarded CLI run; venue calibration remains |
 | 6. Replay and differential validation | In progress | The Docker adoption gate requires the exact clean Mesh pin, 13 Mesh suites, adapter tests, Rust tests/Clippy, shared fixed-point/NAV/funding/delta/intent-hash vectors, and five exact replay traces; parser fuzz/stress remains |
 | 7. 30-day paper soak | Blocked on elapsed observation time | Must not be simulated or backdated |
-| 8. Shadow | Pending | No signer reachability allowed |
-| 9. Locked executor | Pending | Local policy tests only |
+| 8. Shadow | In progress | Isolated adapter-built Jupiter/perp actions pass the Rust dry-run, account/fee/compute deltas are durably compared with paper estimates, and unknown results block retry until reconciliation; authoritative calibration remains |
+| 9. Locked executor | In progress | The independent Rust policy revalidates canonical intents, command identity, allowlists, notional/price/fee/compute caps, and simulation deltas with signer and submission disabled; live signer integration remains gated |
 | 10. Live canary | Not approved | Requires every go-live gate and explicit operator approval |
 
 Live execution is intentionally unavailable. Completing local code does not

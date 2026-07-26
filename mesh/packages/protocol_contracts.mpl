@@ -58,6 +58,13 @@ pub struct FundingSettlement do
   sol_price_usd_micros :: UsdMicros
 end deriving(Json)
 
+pub struct ShadowResult do
+  body :: String
+  binding_hash :: String
+  command_id :: String
+  status :: String
+end
+
 fn required_int(raw :: String, field :: String, allow_negative :: Bool) -> Int ! String do
   let canonical = if allow_negative do
     Regex.is_match(~r/^-?(0|[1-9][0-9]*)$/, raw)
@@ -91,13 +98,53 @@ fn required_int_field(body :: String, key :: String, field :: String, allow_nega
   value |> required_int(field, allow_negative)
 end
 
-fn required_hash(body :: String) -> String ! String do
-  let value = (body |> required_string("rawPayloadHash", "rawPayloadHash")) ?
+fn required_sha256(
+  body :: String,
+  key :: String,
+  field :: String
+) -> String ! String do
+  let value = (body |> required_string(key, field)) ?
   if Regex.is_match(~r/^[0-9a-f]{64}$/, value) do
     Ok(value)
   else
-    Err("rawPayloadHash must be lowercase SHA-256 hex")
+    Err("${field} must be lowercase SHA-256 hex")
   end
+end
+
+fn required_hash(body :: String) -> String ! String do
+  body |> required_sha256("rawPayloadHash", "rawPayloadHash")
+end
+
+fn matching_unsigned_fields(
+  fields :: List<String>,
+  left :: String,
+  right :: String,
+  index :: Int
+) -> Unit ! String do
+  if index >= List.length(fields) do
+    return Ok(())
+  end
+  let field = List.get(fields, index)
+  (left |> required_int_field(field, "action.${field}", false)) ?
+  (right |> required_int_field(field, "report.${field}", false)) ?
+  if Json.get(left, field) != Json.get(right, field) do
+    return Err("shadow simulation report mismatch")
+  end
+  fields |> matching_unsigned_fields(left, right, index + 1)
+end
+
+fn unsigned_fields(
+  fields :: List<String>,
+  body :: String,
+  prefix :: String,
+  index :: Int
+) -> Unit ! String do
+  if index >= List.length(fields) do
+    return Ok(())
+  end
+  let field = List.get(fields, index)
+  (body |> required_int_field(field, "${prefix}.${field}", false)) ?
+  fields |> unsigned_fields(body, prefix, index + 1)
 end
 
 fn required_rate_field(body :: String, key :: String, field :: String, allow_negative :: Bool) -> RatePpm ! String do
@@ -213,5 +260,69 @@ pub fn parse_funding_settlement(body :: String) -> FundingSettlement ! String do
     effective_at_ms : effective_at_ms,
     realized_short_rate_ppm : (payload |> required_rate_field("realizedShortRatePpm", "realizedShortRatePpm", true)) ?,
     sol_price_usd_micros : UsdMicros { atoms : sol_price }
+  })
+end
+
+pub fn parse_shadow_result(body :: String) -> ShadowResult ! String do
+  let _parsed = Json.parse(body) ?
+  if (Json.get(body, "schemaVersion")
+    |> required_int("schemaVersion", false)) ? != 1 do
+    return Err("unsupported schema version")
+  end
+  let intent = body |> Json.get("intent")
+  let action = body |> Json.get("action")
+  let report = body |> Json.get("report")
+  let paper = body |> Json.get("paperEstimate")
+  (intent |> Json.parse) ?
+  (action |> Json.parse) ?
+  (report |> Json.parse) ?
+  (paper |> Json.parse) ?
+
+  if Json.get(action, "schemaVersion") != "1" do
+    return Err("unsupported shadow schema version")
+  end
+  if Json.get(report, "schemaVersion") != "1" do
+    return Err("unsupported shadow schema version")
+  end
+  if Json.get(action, "simulateOnly") != "true" || Json.get(action, "submit") != "false" do
+    return Err("shadow action is not simulation-only")
+  end
+
+  let intent_id = (intent |> required_string("intentId", "intentId")) ?
+  let command_id = (action |> required_string("commandId", "commandId")) ?
+  let report_command = (report
+    |> required_string("commandId", "report.commandId")) ?
+  let message_hash = (action
+    |> required_sha256("messageHash", "messageHash")) ?
+  (action |> required_sha256("intentHash", "intentHash")) ?
+  let status = (report |> required_string("status", "report.status")) ?
+  if status != "PLANNED" && status != "UNKNOWN" && status != "REJECTED" do
+    return Err("invalid shadow report status")
+  end
+  if command_id != "${intent_id}:shadow:1" || report_command != command_id do
+    return Err("shadow result binding mismatch")
+  end
+  if Json.get(report, "intentId") != intent_id || Json.get(report, "mode") != "shadow" do
+    return Err("shadow result binding mismatch")
+  end
+  if Json.get(report, "authoritativeReference") != message_hash do
+    return Err("shadow result binding mismatch")
+  end
+
+  ([
+    "simulatedQuantityAtoms",
+    "simulatedAveragePriceAtoms",
+    "simulatedFeeAtoms",
+    "computeUnitsConsumed"
+  ] |> matching_unsigned_fields(action, report, 0)) ?
+  (["quantityAtoms", "averagePriceAtoms", "feeAtoms"]
+    |> unsigned_fields(paper, "paperEstimate", 0)) ?
+
+  Ok(ShadowResult {
+    body : body,
+    binding_hash : (intent <> "\n" <> action <> "\n" <> paper)
+      |> Crypto.sha256,
+    command_id : command_id,
+    status : status
   })
 end
