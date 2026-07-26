@@ -1,6 +1,6 @@
 fn emit(level :: String, event :: String, fields :: String) do
-  let now = DateTime.utc_now()
-  println("{\"timestampMs\":\"${DateTime.to_unix_ms(now)}\",\"level\":\"${level}\",\"event\":\"${event}\",\"fields\":${fields}}")
+  let timestamp_ms = DateTime.utc_now() |> DateTime.to_unix_ms
+  println("{\"timestampMs\":\"${timestamp_ms}\",\"level\":\"${level}\",\"event\":\"${event}\",\"fields\":${fields}}")
 end
 
 pub fn info(event :: String, fields :: String) do
@@ -14,4 +14,3 @@ end
 pub fn error(event :: String, fields :: String) do
   emit("error", event, fields)
 end
-

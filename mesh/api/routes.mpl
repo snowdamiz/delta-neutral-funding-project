@@ -21,7 +21,8 @@ fn authenticated(request :: Request, body :: String) -> Bool do
   if String.length(secret) == 0 do
     false
   else
-    Crypto.secure_compare(request_signature(request), Crypto.hmac_sha256(secret, body))
+    let expected_signature = body |2> Crypto.hmac_sha256(secret)
+    request_signature(request) |> Crypto.secure_compare(expected_signature)
   end
 end
 
@@ -41,8 +42,7 @@ fn accepted_response(snapshot :: MarketSnapshot, result :: OpportunitySet, dupli
 end
 
 fn persist_response(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) do
-  let config_hash = Env.get("CONFIG_HASH", "")
-  case persist_opportunities(get_pool(), body, snapshot, result, config_hash) do
+  case (Env.get("CONFIG_HASH", "") |5> persist_opportunities(get_pool(), body, snapshot, result)) do
     Ok(inserted) -> do
       record_accepted()
       info("protocol_event_accepted", "{\"eventId\":\"${snapshot.event_id}\",\"inserted\":\"${inserted}\"}")
@@ -83,7 +83,7 @@ pub fn handle_event(request :: Request) -> Response do
 end
 
 pub fn handle_health(_request :: Request) -> Response do
-  case Pool.query(get_pool(), "SELECT 1 AS ok", []) do
+  case ("SELECT 1 AS ok" |2> Pool.query(get_pool(), [])) do
     Ok(rows) -> HTTP.response(200, json { status : "ok", database : "ok", mode : "paper" })
     Err(reason) -> error_response(503, "database_unavailable", reason)
   end
@@ -114,7 +114,7 @@ pub fn handle_status(_request :: Request) -> Response do
 end
 
 pub fn handle_opportunities(_request :: Request) -> Response do
-  case list_opportunities(get_pool()) do
+  case (get_pool() |> list_opportunities) do
     Ok(body) -> HTTP.response(200, body)
     Err(reason) -> error_response(500, "query_failed", reason)
   end

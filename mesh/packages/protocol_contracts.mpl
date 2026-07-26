@@ -41,7 +41,7 @@ fn required_string(value :: String, field :: String) -> String ! String do
 end
 
 pub fn parse_market_snapshot(body :: String) -> MarketSnapshot ! String do
-  let parsed = Json.parse(body) ?
+  let _parsed = Json.parse(body) ?
   let schema_version = required_int(Json.get(body, "schemaVersion"), "schemaVersion", false) ?
   if schema_version != 1 do
     Err("unsupported schema version")
