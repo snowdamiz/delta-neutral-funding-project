@@ -58,6 +58,20 @@ BEGIN
   ) <> 1 THEN
     RAISE EXCEPTION 'lease loss risk event is missing or duplicated';
   END IF;
+
+  DELETE FROM leader_leases WHERE lease_name = 'collector';
+  v_generation := acquire_collector_lease('release-test-a', 10000);
+  IF release_collector_lease('release-test-a', v_generation + 1)
+     OR NOT collector_lease_held('release-test-a') THEN
+    RAISE EXCEPTION 'stale generation released the collector lease';
+  END IF;
+  IF NOT release_collector_lease('release-test-a', v_generation)
+     OR collector_lease_held('release-test-a') THEN
+    RAISE EXCEPTION 'current holder did not release the collector lease';
+  END IF;
+  IF acquire_collector_lease('release-test-b', 10000) <> v_generation + 1 THEN
+    RAISE EXCEPTION 'released lease did not preserve fencing generation';
+  END IF;
 END;
 $$;
 

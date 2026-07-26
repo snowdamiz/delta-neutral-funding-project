@@ -1,5 +1,5 @@
 from Api.Router import build_router
-from Packages.LeaderLease import acquire_startup, start_leader_lease_supervisor
+from Packages.LeaderLease import acquire_startup, release, start_leader_lease_supervisor
 from Packages.Log import error, info
 from Packages.ReplayCli import run_replay_command
 from Packages.Storage import bootstrap_paper_runs, reconcile_paper_state
@@ -8,6 +8,27 @@ from Runtime.Registry import start_registry
 fn fail_startup(event :: String, fields :: String) do
   error(event, fields)
   Process.exit(1)
+end
+
+fn finish_shutdown(pool :: PoolHandle, generation :: Int) do
+  case release(pool, generation) do
+    Ok(true) -> info(
+      "collector_stopped",
+      json { leaderGeneration : generation, leaseReleased : true }
+    )
+    Ok(false) -> do
+      Pool.close(pool)
+      fail_startup(
+        "collector_shutdown_failed",
+        json { reason : "writer_lease_not_held" }
+      )
+    end
+    Err(reason) -> do
+      Pool.close(pool)
+      fail_startup("collector_shutdown_failed", json { reason : reason })
+    end
+  end
+  Pool.close(pool)
 end
 
 fn valid_secret(name :: String, local_default :: String, local :: Bool) -> Bool do
@@ -29,7 +50,7 @@ fn serve(pool :: PoolHandle, port :: Int) do
         |4> bootstrap_paper_runs(
           pool,
           Env.get("CODE_COMMIT", "development"),
-          Env.get("MESH_COMMIT", "6fdb83afe68703f9459a4e7035b1b84d96316e6b")
+          Env.get("MESH_COMMIT", "ed8dc2b8254ab51d4ebefed43fe4f4d44a128d2a")
         )
       ) do
         Ok(rows) -> do
@@ -41,14 +62,28 @@ fn serve(pool :: PoolHandle, port :: Int) do
             Ok("matched") -> do
               start_registry(pool)
               start_leader_lease_supervisor()
-              info("collector_started", "{\"mode\":\"paper\",\"port\":\"${port}\",\"bootstrapRows\":\"${rows}\",\"leaderGeneration\":\"${generation}\",\"reconciliation\":\"matched\"}")
+              info("collector_started", json {
+                mode : "paper",
+                port : port,
+                bootstrapRows : rows,
+                leaderGeneration : generation,
+                reconciliation : "matched"
+              })
               build_router() |> HTTP.serve(port)
+              finish_shutdown(pool, generation)
             end
             Ok("recovery_required") -> do
               start_registry(pool)
               start_leader_lease_supervisor()
-              info("collector_started", "{\"mode\":\"paper\",\"port\":\"${port}\",\"bootstrapRows\":\"${rows}\",\"leaderGeneration\":\"${generation}\",\"reconciliation\":\"recovery_required\"}")
+              info("collector_started", json {
+                mode : "paper",
+                port : port,
+                bootstrapRows : rows,
+                leaderGeneration : generation,
+                reconciliation : "recovery_required"
+              })
               build_router() |> HTTP.serve(port)
+              finish_shutdown(pool, generation)
             end
             Ok(result) -> do
               fail_startup(
@@ -121,7 +156,7 @@ end
 fn replay(args :: List<String>) do
   case run_replay_command(
     args,
-    Env.get("MESH_COMMIT", "6fdb83afe68703f9459a4e7035b1b84d96316e6b")
+    Env.get("MESH_COMMIT", "ed8dc2b8254ab51d4ebefed43fe4f4d44a128d2a")
   ) do
     Ok(output) -> println(output)
     Err(reason) -> do

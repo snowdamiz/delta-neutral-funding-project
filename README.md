@@ -48,7 +48,9 @@ bin/collector replay \
   --config replay/configs/baseline-v1.json
 
 scripts/check-replay.sh
+scripts/check-database.sh
 scripts/check-toolchain.sh
+scripts/check-shutdown.sh
 scripts/check-shadow-persistence.sh
 scripts/check-recovery.sh
 scripts/check-security.sh
@@ -56,6 +58,8 @@ scripts/check-security.sh
 
 The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
 deterministic-failure bundles twice and checks their exact outcome hashes.
+The database gate applies every migration and contract test to fresh temporary
+PostgreSQL storage.
 The toolchain gate additionally verifies the exact clean Mesh checkout and runs
 the Mesh, TypeScript, and Rust conformance suites while building their images.
 It requires a clean project checkout, embeds the Git revision in every image,
@@ -63,8 +67,10 @@ and creates commit-qualified local image tags for rollback.
 The shadow persistence check builds Jupiter and perp actions without network
 access, dry-runs the independent Rust policy, and records paper/simulation
 deltas through the authenticated Mesh API.
-The recovery check restarts the collector and proves a PostgreSQL backup can be
-restored and reconciled in isolated temporary Docker storage.
+The shutdown check proves SIGTERM drains accepted requests, releases the fenced
+writer lease, and exits cleanly. The recovery check includes that drill and
+proves a PostgreSQL backup can be restored and reconciled in isolated temporary
+Docker storage.
 The security check verifies the paper-only network topology and non-root users,
 extracts each image's attested CycloneDX SBOM, scans fixed high/critical
 vulnerabilities with digest-pinned Trivy, and proves startup fails closed.

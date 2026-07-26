@@ -4,7 +4,7 @@ BEGIN;
 INSERT INTO build_manifests (
   id, code_commit, mesh_commit, schema_version, config_hash
 ) VALUES (
-  'restart-build', 'test', 'test', 24, repeat('0', 64)
+  'restart-build', 'test', 'test', 25, repeat('0', 64)
 );
 INSERT INTO strategy_runs (
   id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version

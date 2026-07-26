@@ -770,9 +770,9 @@ end
 pub fn handle_build(_request :: Request) -> Response do
   HTTP.response(200, json {
     codeCommit : Env.get("CODE_COMMIT", "development"),
-    meshCommit : Env.get("MESH_COMMIT", "6fdb83afe68703f9459a4e7035b1b84d96316e6b"),
+    meshCommit : Env.get("MESH_COMMIT", "ed8dc2b8254ab51d4ebefed43fe4f4d44a128d2a"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 24
+    schemaVersion : 25
   })
 end
 
@@ -797,7 +797,7 @@ pub fn handle_status(_request :: Request) -> Response do
         activePortfolios : Map.get(row, "active_portfolios"),
         liveNotional : json { atoms : "0", scale : 6 },
         codeCommit : Env.get("CODE_COMMIT", "development"),
-        meshCommit : Env.get("MESH_COMMIT", "6fdb83afe68703f9459a4e7035b1b84d96316e6b"),
+        meshCommit : Env.get("MESH_COMMIT", "ed8dc2b8254ab51d4ebefed43fe4f4d44a128d2a"),
         signerReachable : false,
         shutdownRequested : Process.shutdown_requested()
       })
@@ -961,7 +961,7 @@ pub fn handle_config(_request :: Request) -> Response do
     directUnstakeCapitalDelayHaircutUsdMicros : Env.get_int("DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS", 1000000),
     directUnstakeFinalHedgeCloseCostUsdMicros : Env.get_int("DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS", 250000),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 24,
+    databaseSchemaVersion : 25,
     liveEnabled : false
   })
 end

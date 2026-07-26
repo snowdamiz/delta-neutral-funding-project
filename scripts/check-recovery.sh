@@ -14,19 +14,13 @@ trap cleanup EXIT HUP INT TERM
 test -z "$(docker ps -aq --filter "name=^/$restore_container$")"
 cd "$project_dir"
 
-docker compose restart collector >/dev/null
-attempt=0
-until curl -fsS http://127.0.0.1:8080/v1/health >/dev/null 2>&1; do
-  attempt=$((attempt + 1))
-  [ "$attempt" -lt 30 ] || exit 1
-  sleep 1
-done
+"$project_dir/scripts/check-shutdown.sh"
 
 test "$(
   docker compose exec -T postgres \
     psql -U funding -d funding -Atc \
     "SELECT schema_version FROM build_manifests WHERE id = 'local-paper-build'"
-)" = 24
+)" = 25
 curl -fsS http://127.0.0.1:8080/v1/status |
   jq -e '.executionMode == "paper" and .signerReachable == false' >/dev/null
 
@@ -70,9 +64,9 @@ docker run --rm \
 docker exec "$restore_container" \
   psql -U funding -d funding -Atc "
     SELECT (
-      (SELECT max(version) FROM schema_meta) = 24
+      (SELECT max(version) FROM schema_meta) = 25
       AND (SELECT schema_version FROM build_manifests
-           WHERE id = 'local-paper-build') = 24
+           WHERE id = 'local-paper-build') = 25
       AND (SELECT count(*) FROM portfolio_runs
            WHERE strategy_run_id = 'local-paper-run') = 4
       AND (SELECT count(*) FROM ledger_batches) >= 4

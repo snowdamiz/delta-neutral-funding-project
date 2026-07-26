@@ -57,11 +57,13 @@ Run from the repository:
 
 ```sh
 scripts/check-recovery.sh
+scripts/check-shutdown.sh
 scripts/check-shadow-persistence.sh
 scripts/check-operator-api.sh
 ```
 
-The first restarts the collector, verifies startup reconciliation and the
-persisted schema manifest, restores a Docker PostgreSQL backup into isolated
-temporary storage, and reconciles the restored copy. External-source, venue,
-signer, and live-response drills remain release gates.
+The recovery check first proves SIGTERM drains accepted requests, releases the
+fenced writer lease, and exits cleanly. It then verifies startup reconciliation
+and the persisted schema manifest, restores a Docker PostgreSQL backup into
+isolated temporary storage, and reconciles the restored copy. External-source,
+venue, signer, and live-response drills remain release gates.

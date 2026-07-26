@@ -52,13 +52,26 @@ pub fn lease_held(pool :: PoolHandle) -> Bool ! String do
   end
 end
 
+pub fn release(pool :: PoolHandle, generation :: Int) -> Bool ! String do
+  let rows = ("SELECT release_collector_lease($1, $2::bigint)::text AS released"
+    |2> Pool.query(pool, [holder_id(), "${generation}"])) ?
+  if List.length(rows) != 1 do
+    Err("database returned an invalid leader lease release result")
+  else
+    Ok(Map.get(List.head(rows), "released") == "true")
+  end
+end
+
 fn fail_closed(pool :: PoolHandle, generation :: Int, reason :: String) do
   case Pool.query(pool, "SELECT fail_closed_for_lease_loss($1, $2::bigint)::text AS version", [
     holder_id(),
     "${generation}"
   ]) do
-    Ok(_rows) -> error("leader_lease_lost", "{\"reason\":\"${reason}\"}")
-    Err(database_error) -> error("leader_lease_fail_close_failed", "{\"reason\":\"${database_error}\"}")
+    Ok(_rows) -> error("leader_lease_lost", json { reason : reason })
+    Err(database_error) -> error(
+      "leader_lease_fail_close_failed",
+      json { reason : database_error }
+    )
   end
 end
 
@@ -75,7 +88,10 @@ fn renewal_loop(previous_generation :: Int) -> Int do
       end
       Ok(generation) -> do
         if generation != previous_generation do
-          info("leader_lease_acquired", "{\"generation\":\"${generation}\"}")
+          info(
+            "leader_lease_acquired",
+            json { generation : generation }
+          )
         end
         renewal_loop(generation)
       end
@@ -109,7 +125,7 @@ supervisor LeaderLeaseSupervisor do
 
   child renewal do
     start: fn -> spawn(leader_lease_worker) end
-    restart: permanent
+    restart: transient
     shutdown: 5000
   end
 end

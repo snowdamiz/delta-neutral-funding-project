@@ -28,8 +28,10 @@ COPY tests/vectors /workspace/project/tests/vectors
 RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/root/.cargo/git,sharing=locked \
     --mount=type=cache,target=/workspace/target,sharing=locked \
-    cargo build --locked -q -p mesh-rt -p meshc \
+    cargo fmt --all -- --check \
+    && cargo build --locked -q -p mesh-rt -p meshc \
     && cargo test --locked -q -p meshc --test e2e_stdlib e2e_list_contains \
+    && cargo test --locked -q -p meshc --test e2e_stdlib e2e_http_server_drains_accepted_requests_before_returning \
     && cargo test --locked -q -p mesh-rt http::server::tests::request_parser_rejects_unbounded_or_ambiguous_input \
     && cargo test --locked -q -p mesh-rt actor::mailbox::tests::test_mailbox_concurrent_push \
     && cargo test --locked -q -p meshc --test e2e e2e_bounded_channel \
@@ -43,7 +45,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
 
 FROM ubuntu:24.04 AS runtime
 ARG CODE_COMMIT=development
-ARG MESH_COMMIT=6fdb83afe68703f9459a4e7035b1b84d96316e6b
+ARG MESH_COMMIT=ed8dc2b8254ab51d4ebefed43fe4f4d44a128d2a
 ENV CODE_COMMIT=$CODE_COMMIT
 ENV MESH_COMMIT=$MESH_COMMIT
 LABEL org.opencontainers.image.revision=$CODE_COMMIT
