@@ -1,4 +1,4 @@
-from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros, apply_rate, lamports_ratio, lamports_to_usd, token_value_lamports, usd_add, usd_sub
+from Packages.Finance import Lamports, PriceMicros, RatePpm, TokenAtoms, UsdMicros, apply_rate, lamports_ratio, lamports_to_usd, token_value_lamports, usd_add, usd_sub
 
 pub fn jitosol_nav_lamports(total_pool_lamports :: Lamports, supply_atoms :: TokenAtoms) -> Lamports ! String do
   total_pool_lamports |> lamports_ratio(supply_atoms, :floor)
@@ -6,6 +6,13 @@ end
 
 pub fn hedge_lamports(jitosol_atoms :: TokenAtoms, nav_lamports_per_token :: Lamports) -> Lamports ! String do
   jitosol_atoms |> token_value_lamports(nav_lamports_per_token, :half_even)
+end
+
+pub fn executable_hedge_lamports(jitosol_atoms :: TokenAtoms, jitosol_sell_price :: PriceMicros, sol_price :: UsdMicros) -> Lamports ! String do
+  let market_rate = (jitosol_sell_price.atoms
+    |> Checked.mul_div(1000000000, sol_price.atoms, :floor)) ?
+  jitosol_atoms
+    |> token_value_lamports(Lamports { atoms : market_rate }, :floor)
 end
 
 pub fn expected_funding_usd_micros(notional_usd_micros :: UsdMicros, short_receipt_ppm :: RatePpm) -> UsdMicros ! String do

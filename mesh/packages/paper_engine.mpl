@@ -69,6 +69,58 @@ pub struct PaperRuntime do
   random_state :: Int
 end
 
+pub type PaperAction do
+  HoldPosition
+
+  RebalancePerp
+
+  ExitPosition
+
+  EmergencyPosition
+end deriving(Eq, Display, Json)
+
+pub fn action_name(action :: PaperAction) -> String do
+  case action do
+    HoldPosition -> "hold"
+    RebalancePerp -> "rebalance_perp"
+    ExitPosition -> "exit"
+    EmergencyPosition -> "emergency"
+  end
+end
+
+pub struct PaperPosition do
+  variant :: PaperVariant
+  spot_quantity :: TokenAtoms
+  perp_short_quantity :: Lamports
+  prior_nav_lamports :: Lamports
+  prior_market_rate_lamports :: Lamports
+  state_version :: Int
+  random_state :: Int
+end
+
+pub struct PaperValuation do
+  protocol_nav_lamports :: Lamports
+  market_rate_lamports :: Lamports
+  spot_equivalent_lamports :: Lamports
+  delta_lamports :: Lamports
+  delta_bps :: Int
+  reward_sol_lamports :: Lamports
+  basis_sol_lamports :: Lamports
+end deriving(Json)
+
+pub struct PositionPlan do
+  action :: PaperAction
+  reason :: String
+  spot_asset :: String
+  perp_side :: String
+  next_state :: PortfolioState
+  next_random_state :: Int
+  next_perp_short_quantity :: Lamports
+  valuation :: PaperValuation
+  spot_fill :: LegFill
+  perp_fill :: LegFill
+end
+
 struct SpotLeg do
   asset :: String
   quantity :: QuantityAtoms
@@ -364,4 +416,257 @@ runtime :: PaperRuntime) -> PaperPlan ! String do
   let candidate = transition(Idle, OpportunityFound) ?
   let opening_spot = transition(candidate, OpenApproved) ?
   plan_spot(snapshot, opportunity, variant, leg, opening_spot, runtime.random_state)
+end
+
+fn position_market_rate(snapshot :: MarketSnapshot, variant :: PaperVariant) -> Lamports ! String do
+  case variant do
+    SolControl -> Ok(Lamports { atoms : 1000000000 })
+    JitoSolCarry -> do
+      let atoms = (snapshot.jitosol_spot_bid_price_usd_micros.atoms
+        |> Checked.mul_div(1000000000, snapshot.sol_price_usd_micros.atoms, :floor)) ?
+      Ok(Lamports { atoms : atoms })
+    end
+  end
+end
+
+fn position_nav(snapshot :: MarketSnapshot, opportunity :: OpportunitySet, variant :: PaperVariant) -> Lamports do
+  case variant do
+    SolControl -> Lamports { atoms : 1000000000 }
+    JitoSolCarry -> opportunity.nav_lamports
+  end
+end
+
+fn position_valuation(snapshot :: MarketSnapshot,
+opportunity :: OpportunitySet,
+position :: PaperPosition) -> PaperValuation ! String do
+  let nav = position_nav(snapshot, opportunity, position.variant)
+  let market_rate = position_market_rate(snapshot, position.variant) ?
+  let spot_equivalent_atoms = (position.spot_quantity.atoms
+    |> Checked.mul_div(market_rate.atoms, 1000000000, :floor)) ?
+  let delta_atoms = (spot_equivalent_atoms
+    |> Checked.sub(position.perp_short_quantity.atoms)) ?
+  let absolute_delta = Checked.abs(delta_atoms) ?
+  let delta_bps = if spot_equivalent_atoms == 0 do
+    0
+  else
+    (absolute_delta
+      |> Checked.mul_div(10000, spot_equivalent_atoms, :ceil)) ?
+  end
+  let nav_change = (nav.atoms
+    |> Checked.sub(position.prior_nav_lamports.atoms)) ?
+  let reward_atoms = (position.spot_quantity.atoms
+    |> Checked.mul_div(nav_change, 1000000000, :half_even)) ?
+  let prior_basis = (position.prior_market_rate_lamports.atoms
+    |> Checked.sub(position.prior_nav_lamports.atoms)) ?
+  let current_basis = (market_rate.atoms
+    |> Checked.sub(nav.atoms)) ?
+  let basis_change = (current_basis
+    |> Checked.sub(prior_basis)) ?
+  let basis_atoms = (position.spot_quantity.atoms
+    |> Checked.mul_div(basis_change, 1000000000, :half_even)) ?
+  Ok(PaperValuation {
+    protocol_nav_lamports : nav,
+    market_rate_lamports : market_rate,
+    spot_equivalent_lamports : Lamports { atoms : spot_equivalent_atoms },
+    delta_lamports : Lamports { atoms : delta_atoms },
+    delta_bps : delta_bps,
+    reward_sol_lamports : Lamports { atoms : reward_atoms },
+    basis_sol_lamports : Lamports { atoms : basis_atoms }
+  })
+end
+
+fn position_plan(action :: PaperAction,
+reason :: String,
+spot_asset :: String,
+perp_side :: String,
+next_state :: PortfolioState,
+next_random_state :: Int,
+next_perp_short_quantity :: Lamports,
+valuation :: PaperValuation,
+spot_fill :: LegFill,
+perp_fill :: LegFill) -> PositionPlan do
+  PositionPlan {
+    action : action,
+    reason : reason,
+    spot_asset : spot_asset,
+    perp_side : perp_side,
+    next_state : next_state,
+    next_random_state : next_random_state,
+    next_perp_short_quantity : next_perp_short_quantity,
+    valuation : valuation,
+    spot_fill : spot_fill,
+    perp_fill : perp_fill
+  }
+end
+
+fn emergency_position(reason :: String,
+position :: PaperPosition,
+valuation :: PaperValuation,
+next_random_state :: Int,
+spot_fill :: LegFill,
+perp_fill :: LegFill) -> PositionPlan ! String do
+  let emergency = transition(Hedged, Fault) ?
+  Ok(position_plan(EmergencyPosition,
+  reason,
+  if position.variant == SolControl do "SOL" else "JitoSOL" end,
+  "",
+  emergency,
+  next_random_state,
+  position.perp_short_quantity,
+  valuation,
+  spot_fill,
+  perp_fill))
+end
+
+fn hold_position(position :: PaperPosition, valuation :: PaperValuation) -> PositionPlan do
+  position_plan(HoldPosition,
+  "within_delta_band",
+  if position.variant == SolControl do "SOL" else "JitoSOL" end,
+  "",
+  Hedged,
+  position.random_state,
+  position.perp_short_quantity,
+  valuation,
+  no_fill(),
+  no_fill())
+end
+
+fn plan_rebalance(snapshot :: MarketSnapshot,
+position :: PaperPosition,
+valuation :: PaperValuation) -> PositionPlan ! String do
+  let quantity_atoms = Checked.abs(valuation.delta_lamports.atoms) ?
+  let side = if valuation.delta_lamports.atoms > 0 do Sell else Buy end
+  let price = if side == Sell do
+    snapshot.perp_bid_price_usd_micros
+  else
+    snapshot.perp_ask_price_usd_micros
+  end
+  let sampled = sample_failure(position.random_state, snapshot.reject_rate_ppm, snapshot.unknown_rate_ppm) ?
+  if sampled.outcome != Continue do
+    return emergency_position("paper_rebalance_unresolved",
+    position,
+    valuation,
+    sampled.random_state,
+    no_fill(),
+    no_fill())
+  end
+  let fill = simulate_fill(paper_order(side,
+  QuantityAtoms { atoms : quantity_atoms },
+  price,
+  snapshot,
+  snapshot.perp_fee_ppm)) ?
+  if fill.status != Filled do
+    return emergency_position("paper_rebalance_partial",
+    position,
+    valuation,
+    sampled.random_state,
+    no_fill(),
+    placed_fill(fill))
+  end
+  let rebalancing = transition(Hedged, DeltaBreached) ?
+  let hedged = transition(rebalancing, Rebalanced) ?
+  Ok(position_plan(RebalancePerp,
+  "paper_delta_rebalanced",
+  if position.variant == SolControl do "SOL" else "JitoSOL" end,
+  if side == Sell do "SELL" else "BUY" end,
+  hedged,
+  sampled.random_state,
+  valuation.spot_equivalent_lamports,
+  valuation,
+  no_fill(),
+  placed_fill(fill)))
+end
+
+fn plan_exit(snapshot :: MarketSnapshot,
+position :: PaperPosition,
+valuation :: PaperValuation,
+reason :: String) -> PositionPlan ! String do
+  let perp_sample = sample_failure(position.random_state, snapshot.reject_rate_ppm, snapshot.unknown_rate_ppm) ?
+  if perp_sample.outcome != Continue do
+    return emergency_position("paper_perp_close_unresolved",
+    position,
+    valuation,
+    perp_sample.random_state,
+    no_fill(),
+    no_fill())
+  end
+  let perp_fill = simulate_fill(paper_order(Buy,
+  QuantityAtoms { atoms : position.perp_short_quantity.atoms },
+  snapshot.perp_ask_price_usd_micros,
+  snapshot,
+  snapshot.perp_fee_ppm)) ?
+  if perp_fill.status != Filled do
+    return emergency_position("paper_perp_close_partial",
+    position,
+    valuation,
+    perp_sample.random_state,
+    no_fill(),
+    placed_fill(perp_fill))
+  end
+  let spot_sample = sample_failure(perp_sample.random_state, snapshot.reject_rate_ppm, snapshot.unknown_rate_ppm) ?
+  if spot_sample.outcome != Continue do
+    return emergency_position("paper_spot_close_unresolved",
+    position,
+    valuation,
+    spot_sample.random_state,
+    no_fill(),
+    placed_fill(perp_fill))
+  end
+  let spot_price = if position.variant == SolControl do
+    snapshot.sol_spot_bid_price_usd_micros
+  else
+    snapshot.jitosol_spot_bid_price_usd_micros
+  end
+  let spot_fill = simulate_fill(paper_order(Sell,
+  QuantityAtoms { atoms : position.spot_quantity.atoms },
+  spot_price,
+  snapshot,
+  snapshot.spot_fee_ppm)) ?
+  if spot_fill.status != Filled do
+    return emergency_position("paper_spot_close_partial",
+    position,
+    valuation,
+    spot_sample.random_state,
+    placed_fill(spot_fill),
+    placed_fill(perp_fill))
+  end
+  let exiting_perp = transition(Hedged, ExitRequired) ?
+  let exiting_spot = transition(exiting_perp, PerpClosed) ?
+  let idle = transition(exiting_spot, SpotClosed) ?
+  Ok(position_plan(ExitPosition,
+  reason,
+  if position.variant == SolControl do "SOL" else "JitoSOL" end,
+  "BUY",
+  idle,
+  spot_sample.random_state,
+  Lamports { atoms : 0 },
+  valuation,
+  placed_fill(spot_fill),
+  placed_fill(perp_fill)))
+end
+
+pub fn plan_position(snapshot :: MarketSnapshot,
+opportunity :: OpportunitySet,
+position :: PaperPosition,
+rebalance_delta_bps :: Int) -> PositionPlan ! String do
+  if rebalance_delta_bps < 0 do
+    return Err("rebalance delta threshold must be non-negative")
+  end
+  let valuation = position_valuation(snapshot, opportunity, position) ?
+  let net_carry = if position.variant == SolControl do
+    opportunity.sol_net_carry_usd_micros
+  else
+    opportunity.jitosol_net_carry_usd_micros
+  end
+  if oracle_valid(snapshot.oracle_status) == false do
+    return plan_exit(snapshot, position, valuation, "oracle_invalid")
+  end
+  if net_carry.atoms <= 0 do
+    return plan_exit(snapshot, position, valuation, "carry_non_positive")
+  end
+  if valuation.delta_bps >= rebalance_delta_bps && valuation.delta_lamports.atoms != 0 do
+    plan_rebalance(snapshot, position, valuation)
+  else
+    Ok(hold_position(position, valuation))
+  end
 end

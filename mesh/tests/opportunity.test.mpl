@@ -13,7 +13,7 @@ describe("dual opportunity evaluation") do
         case evaluate_snapshot(snapshot) do
           Ok(result) -> do
             assert(result.nav_lamports.atoms == 1234567890)
-            assert(result.hedge_lamports.atoms == 2469135780)
+            assert(result.hedge_lamports.atoms == 2467333332)
             assert(result.expected_funding_usd_micros.atoms == 125000)
             assert(result.nav_reward_usd_micros.atoms == 170367)
             assert(result.sol_net_carry_usd_micros.atoms == -125000)

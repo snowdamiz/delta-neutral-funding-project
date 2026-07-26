@@ -1,6 +1,6 @@
 from Packages.Finance import Lamports, UsdMicros
 from Packages.ProtocolContracts import MarketSnapshot
-from Packages.StrategyCore import expected_funding_usd_micros, hedge_lamports, is_entry_eligible, jitosol_nav_lamports, nav_reward_lamports, net_carry_usd_micros, reward_usd_micros
+from Packages.StrategyCore import executable_hedge_lamports, expected_funding_usd_micros, is_entry_eligible, jitosol_nav_lamports, nav_reward_lamports, net_carry_usd_micros, reward_usd_micros
 
 pub struct OpportunitySet do
   nav_lamports :: Lamports
@@ -16,7 +16,7 @@ end deriving(Json)
 
 pub fn evaluate_snapshot(snapshot :: MarketSnapshot) -> OpportunitySet ! String do
   let nav = jitosol_nav_lamports(snapshot.total_pool_lamports, snapshot.supply_atoms) ?
-  let hedge = hedge_lamports(snapshot.jitosol_atoms, nav) ?
+  let hedge = executable_hedge_lamports(snapshot.jitosol_atoms, snapshot.jitosol_spot_bid_price_usd_micros, snapshot.sol_price_usd_micros) ?
   let funding = expected_funding_usd_micros(snapshot.notional_usd_micros, snapshot.short_receipt_ppm) ?
   let reward_lamports = nav_reward_lamports(snapshot.jitosol_atoms, nav, snapshot.prior_nav_lamports) ?
   let reward_usd = reward_usd_micros(reward_lamports, snapshot.sol_price_usd_micros) ?

@@ -1,6 +1,6 @@
 from Packages.Finance import Lamports, PriceMicros, RatePpm, TokenAtoms, UsdMicros
 from Packages.Opportunity import evaluate_snapshot
-from Packages.PaperEngine import EntryOutcome, LegFill, PaperPlan, PaperRuntime, PaperVariant, plan_entry
+from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_entry, plan_position
 from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
 from Packages.StateMachine import PortfolioState
 
@@ -158,6 +158,58 @@ describe("paper entry planner") do
           assert(plan.reason == "portfolio_not_idle")
         end
         Err(error) -> assert(false)
+      end
+      Err(error) -> assert(false)
+    end
+  end
+
+  test("attributes JitoSOL value, rehedges drift, and exits perp first") do
+    let current = snapshot(OracleValid, 1000000, 0)
+    case evaluate_snapshot(current) do
+      Ok(opportunity) -> do
+        case plan_position(current,
+        opportunity,
+        PaperPosition {
+          variant : JitoSolCarry,
+          spot_quantity : TokenAtoms { atoms : 2000000000 },
+          perp_short_quantity : Lamports { atoms : 2400000000 },
+          prior_nav_lamports : Lamports { atoms : 1234000000 },
+          prior_market_rate_lamports : Lamports { atoms : 1233000000 },
+          state_version : 4,
+          random_state : Random.seed(42)
+        },
+        50) do
+          Ok(plan) -> do
+            assert(plan.action == RebalancePerp)
+            assert(plan.next_state == Hedged)
+            assert(plan.perp_fill.placed)
+            assert(plan.valuation.reward_sol_lamports.atoms == 1135780)
+            assert(plan.valuation.reward_sol_lamports.atoms + plan.valuation.basis_sol_lamports.atoms == 1333332)
+          end
+          Err(error) -> assert(false)
+        end
+
+        let unsafe = snapshot(OracleInvalid, 1000000, 0)
+        case plan_position(unsafe,
+        opportunity,
+        PaperPosition {
+          variant : SolControl,
+          spot_quantity : TokenAtoms { atoms : 1000000000 },
+          perp_short_quantity : Lamports { atoms : 1000000000 },
+          prior_nav_lamports : Lamports { atoms : 1000000000 },
+          prior_market_rate_lamports : Lamports { atoms : 1000000000 },
+          state_version : 4,
+          random_state : Random.seed(42)
+        },
+        50) do
+          Ok(plan) -> do
+            assert(plan.action == ExitPosition)
+            assert(plan.next_state == Idle)
+            assert(plan.perp_fill.placed)
+            assert(plan.spot_fill.placed)
+          end
+          Err(error) -> assert(false)
+        end
       end
       Err(error) -> assert(false)
     end

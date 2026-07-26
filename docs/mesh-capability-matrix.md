@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Pinned runtime commit: `6958d33854642c5e9ab81880b93277a0f5d2e7df`
+Pinned runtime commit: `dc36f28c549bc628b9106a6b90ce6a5b3c293a89`
 
 The pin is a source commit, not an untracked application patch.
 
@@ -33,6 +33,7 @@ cargo test -p meshc --test e2e e2e_monotonic_duration
 cargo test -p meshc --test e2e e2e_bounded_channel
 cargo test -p meshc --test e2e e2e_deterministic_random
 cargo test -p meshc --test e2e e2e_process_shutdown_signal
+cargo test -p meshc --test e2e e2e_nested_and
 ```
 
 Collector capability probes cover HTTP, JSON, PostgreSQL, actors, supervisors,

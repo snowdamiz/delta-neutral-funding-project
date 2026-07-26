@@ -108,7 +108,7 @@ end
 pub fn handle_build(_request :: Request) -> Response do
   HTTP.response(200, json {
     codeCommit : Env.get("CODE_COMMIT", "development"),
-    meshCommit : Env.get("MESH_COMMIT", "6958d33854642c5e9ab81880b93277a0f5d2e7df"),
+    meshCommit : Env.get("MESH_COMMIT", "dc36f28c549bc628b9106a6b90ce6a5b3c293a89"),
     configHash : Env.get("CONFIG_HASH", ""),
     schemaVersion : 4
   })
