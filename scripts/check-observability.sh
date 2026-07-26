@@ -83,8 +83,8 @@ curl -fsS http://127.0.0.1:9090/api/v1/rules |
   ' >/dev/null
 curl -fsS http://127.0.0.1:9090/api/v1/status/flags |
   jq -e '
-    .data["storage.tsdb.retention.time"] == "35d" and
-    .data["storage.tsdb.retention.size"] == "2GB"
+    .data["storage.tsdb.retention.time"] == "5w" and
+    .data["storage.tsdb.retention.size"] == "2GiB"
   ' >/dev/null
 
 printf 'observability checks passed\n'
