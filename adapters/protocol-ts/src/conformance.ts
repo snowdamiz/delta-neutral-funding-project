@@ -80,7 +80,7 @@ export function evaluateFixedVector(input: ObjectValue) {
   };
 }
 
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJson).join(",")}]`;
   }
@@ -96,6 +96,18 @@ function canonicalJson(value: unknown): string {
 }
 
 export function canonicalExecutionIntent(input: ObjectValue): string {
+  const snapshots = input.snapshotIds;
+  const snapshotIds = Array.isArray(snapshots)
+    ? snapshots.map((value) => {
+        if (typeof value !== "string" || value.length === 0) {
+          throw new Error("snapshotIds must contain non-empty strings");
+        }
+        return value;
+      })
+    : [text(input, "snapshotId")];
+  if (snapshotIds.length === 0) {
+    throw new Error("snapshotIds must not be empty");
+  }
   return canonicalJson({
     configHash: text(input, "configHash"),
     expiresAtMs: text(input, "expiresAtMs"),
@@ -110,7 +122,7 @@ export function canonicalExecutionIntent(input: ObjectValue): string {
     reduceOnly: input.reduceOnly,
     schemaVersion: 1,
     side: text(input, "side"),
-    snapshotIds: [text(input, "snapshotId")],
+    snapshotIds,
     stateVersion: text(input, "stateVersion"),
     strategyRunId: text(input, "strategyRunId"),
     variant: text(input, "variant"),

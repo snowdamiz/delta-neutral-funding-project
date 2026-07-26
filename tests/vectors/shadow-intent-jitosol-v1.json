@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "intentId": "intent-jitosol-shadow-1",
+  "strategyRunId": "run-conformance-1",
+  "stateVersion": "8",
+  "variant": "jitosol_carry",
+  "operation": "OPEN",
+  "leg": "SPOT",
+  "instrument": "JUPITER:JITOSOL-USDC",
+  "side": "BUY",
+  "maxQuantityAtoms": "2000000000",
+  "limitPriceAtoms": "185250000",
+  "maxSlippageBps": "50",
+  "reduceOnly": false,
+  "expiresAtMs": "1785024005000",
+  "policyProfile": "shadow-v1",
+  "snapshotIds": ["snapshot-1"],
+  "configHash": "0000000000000000000000000000000000000000000000000000000000000000"
+}
