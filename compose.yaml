@@ -28,17 +28,14 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      PGHOST: postgres
+      PGUSER: funding
+      PGDATABASE: funding
       PGPASSWORD: ${POSTGRES_PASSWORD:-paper}
-    command:
-      - sh
-      - -ec
-      - |
-        test "$$(psql --host=postgres --username=funding --dbname=funding --tuples-only --no-align \
-          --command="SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename = 'schema_meta'")" = "1" \
-          || psql --host=postgres --username=funding --dbname=funding \
-            --set=ON_ERROR_STOP=1 --file=/migrations/001_initial.sql
+    entrypoint: ["/bin/sh", "/migrate.sh"]
     restart: "no"
     volumes:
+      - ./db/migrate.sh:/migrate.sh:ro
       - ./db/migrations:/migrations:ro
 
   collector:
