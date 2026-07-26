@@ -1,0 +1,113 @@
+name: delta-neutral-funding
+
+x-paper-environment: &paper-environment
+  EXECUTION_MODE: paper
+  ADAPTER_HMAC_SECRET: ${ADAPTER_HMAC_SECRET:-local-paper-only-change-me}
+  CONFIG_HASH: ${CONFIG_HASH:-0000000000000000000000000000000000000000000000000000000000000000}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: funding
+      POSTGRES_USER: funding
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paper}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U funding -d funding"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-paper}
+    command:
+      - sh
+      - -ec
+      - |
+        test "$$(psql --host=postgres --username=funding --dbname=funding --tuples-only --no-align \
+          --command="SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename = 'schema_meta'")" = "1" \
+          || psql --host=postgres --username=funding --dbname=funding \
+            --set=ON_ERROR_STOP=1 --file=/migrations/001_initial.sql
+    restart: "no"
+    volumes:
+      - ./db/migrations:/migrations:ro
+
+  collector:
+    build:
+      context: .
+      dockerfile: infra/docker/collector.Dockerfile
+      additional_contexts:
+        mesh_lang: ../mesh-lang
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *paper-environment
+      DATABASE_URL: postgresql://funding:${POSTGRES_PASSWORD:-paper}@postgres:5432/funding
+      PORT: 8080
+      CODE_COMMIT: ${CODE_COMMIT:-development}
+      MESH_COMMIT: 2bcf36699508bd3b35eb9c1cfb83b785b1e88a72
+    init: true
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+  adapter:
+    build:
+      context: .
+      dockerfile: infra/docker/adapter.Dockerfile
+    depends_on:
+      collector:
+        condition: service_healthy
+    environment:
+      <<: *paper-environment
+      COLLECTOR_URL: http://collector:8080/v1/events
+      EMIT_INTERVAL_MS: ${EMIT_INTERVAL_MS:-5000}
+      REQUEST_TIMEOUT_MS: 3000
+      HEALTH_PORT: 8090
+    ports:
+      - "127.0.0.1:8090:8090"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    depends_on:
+      collector:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    depends_on:
+      - prometheus
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-paper}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:

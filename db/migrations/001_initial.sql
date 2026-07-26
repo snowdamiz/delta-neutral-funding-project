@@ -1,3 +1,5 @@
+BEGIN;
+
 CREATE TABLE schema_meta (
   version integer PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now()
@@ -250,3 +252,5 @@ CREATE TABLE control_state (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 INSERT INTO control_state(singleton) VALUES (true);
+
+COMMIT;

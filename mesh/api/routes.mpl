@@ -93,7 +93,7 @@ end
 pub fn handle_build(_request :: Request) -> Response do
   HTTP.response(200, json {
     codeCommit : Env.get("CODE_COMMIT", "development"),
-    meshCommit : Env.get("MESH_COMMIT", "aeddc93c493475be0ee843e93c67612dd12346b6"),
+    meshCommit : Env.get("MESH_COMMIT", "2bcf36699508bd3b35eb9c1cfb83b785b1e88a72"),
     configHash : Env.get("CONFIG_HASH", ""),
     schemaVersion : 1
   })
@@ -122,5 +122,7 @@ pub fn handle_opportunities(_request :: Request) -> Response do
 end
 
 pub fn handle_metrics(_request :: Request) -> Response do
-  HTTP.response(200, render())
+  let headers = Map.new()
+    |> Map.put("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+  render() |2> HTTP.response_with_headers(200, headers)
 end

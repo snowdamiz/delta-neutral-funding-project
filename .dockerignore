@@ -1,0 +1,7 @@
+.git
+.env
+**/.DS_Store
+**/dist
+**/node_modules
+mesh/mesh
+tmp
