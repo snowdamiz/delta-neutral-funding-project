@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:funding-collector:protocol-events:v1",
-  "title": "Protocol event envelope v1",
+  "title": "Market snapshot event v1",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -9,6 +9,7 @@
     "eventType",
     "source",
     "observedAtMs",
+    "sourceSlot",
     "sourceSequence",
     "idempotencyKey",
     "rawPayloadHash",
@@ -17,25 +18,85 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "eventId": { "type": "string", "minLength": 1 },
-    "eventType": {
-      "enum": [
-        "MarketSnapshot",
-        "FundingSettlement",
-        "JitoSolPoolState",
-        "AdapterStatus"
-      ]
-    },
+    "eventType": { "const": "MarketSnapshot" },
     "source": { "type": "string", "minLength": 1 },
     "observedAtMs": { "$ref": "#/$defs/unsignedInteger" },
+    "sourceSlot": { "$ref": "#/$defs/unsignedInteger" },
     "sourceSequence": { "type": "string", "minLength": 1 },
     "idempotencyKey": { "type": "string", "minLength": 1 },
     "rawPayloadHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "payload": { "type": "object" }
+    "payload": {
+      "type": "object",
+      "required": [
+        "oracleStatus",
+        "totalPoolLamports",
+        "supplyAtoms",
+        "jitosolAtoms",
+        "notionalUsdMicros",
+        "shortReceiptPpm",
+        "solPriceUsdMicros",
+        "priorNavLamports",
+        "costsUsdMicros",
+        "riskHaircutUsdMicros",
+        "solSpotBidPriceUsdMicros",
+        "solSpotAskPriceUsdMicros",
+        "jitosolSpotBidPriceUsdMicros",
+        "jitosolSpotAskPriceUsdMicros",
+        "perpBidPriceUsdMicros",
+        "perpAskPriceUsdMicros",
+        "solExitDepthLamports",
+        "jitosolExitDepthLamports",
+        "perpExitDepthLamports",
+        "fillRatePpm",
+        "slippagePpm",
+        "spotFeePpm",
+        "perpFeePpm",
+        "rejectRatePpm",
+        "unknownRatePpm"
+      ],
+      "properties": {
+        "oracleStatus": { "enum": ["valid", "invalid"] },
+        "totalPoolLamports": { "$ref": "#/$defs/unsignedInteger" },
+        "supplyAtoms": { "$ref": "#/$defs/unsignedInteger" },
+        "jitosolAtoms": { "$ref": "#/$defs/unsignedInteger" },
+        "notionalUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "shortReceiptPpm": { "$ref": "#/$defs/signedRatePpm" },
+        "solPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "priorNavLamports": { "$ref": "#/$defs/unsignedInteger" },
+        "costsUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "riskHaircutUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "solSpotBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "solSpotAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "jitosolSpotBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "jitosolSpotAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "perpBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "perpAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "solExitDepthLamports": { "$ref": "#/$defs/unsignedInteger" },
+        "jitosolExitDepthLamports": { "$ref": "#/$defs/unsignedInteger" },
+        "perpExitDepthLamports": { "$ref": "#/$defs/unsignedInteger" },
+        "fillRatePpm": { "$ref": "#/$defs/ratePpm" },
+        "slippagePpm": { "$ref": "#/$defs/ratePpm" },
+        "spotFeePpm": { "$ref": "#/$defs/ratePpm" },
+        "perpFeePpm": { "$ref": "#/$defs/ratePpm" },
+        "rejectRatePpm": { "$ref": "#/$defs/ratePpm" },
+        "unknownRatePpm": { "$ref": "#/$defs/ratePpm" }
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": true,
   "$defs": {
-    "signedInteger": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)$" },
-    "unsignedInteger": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" }
+    "unsignedInteger": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "ratePpm": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,5}|1000000)$"
+    },
+    "signedRatePpm": {
+      "type": "string",
+      "pattern": "^(0|-?([1-9][0-9]{0,5}|1000000))$"
+    }
   }
 }
-
