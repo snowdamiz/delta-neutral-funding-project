@@ -20,8 +20,9 @@ docker compose \
   build collector adapter
 docker build \
   --file "$project_dir/infra/docker/executor.Dockerfile" \
-  --tag delta-neutral-funding-executor-checks:latest \
+  --tag delta-neutral-funding-executor:latest \
   "$project_dir"
+"$project_dir/scripts/check-shadow.sh"
 "$project_dir/scripts/check-replay.sh"
 
 printf 'toolchain adoption checks passed\n'

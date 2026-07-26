@@ -13,3 +13,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fmt --check \
     && cargo test --locked \
     && cargo clippy --all-targets --all-features --locked -- -D warnings
+
+FROM checks AS builder
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo build --release --locked
+
+FROM debian:bookworm-slim
+COPY --from=builder \
+    /workspace/executor/signer-service/target/release/funding-collector-signer \
+    /usr/local/bin/funding-executor
+USER 65532:65532
+ENTRYPOINT ["funding-executor"]
