@@ -28,6 +28,7 @@ type PhoenixCapture = {
   maintenanceBps: bigint;
   fundingPpm: bigint;
   fundingTimestampSeconds: bigint;
+  fundingPriceUsdMicros: bigint;
   slots: bigint[];
   raw: string;
   endpoint: string;
@@ -294,6 +295,27 @@ async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
           ? left
           : right,
       );
+    const fundingTimestamp = timestampSeconds(
+      latest.timestamp,
+      "funding timestamp",
+    );
+    if (fundingTimestamp < 3600n) {
+      throw new Error("funding timestamp has no preceding hourly candle");
+    }
+    const fundingAtMs = fundingTimestamp * 1000n;
+    const candleAtMs = fundingAtMs - 3_600_000n;
+    const candleResponse = await fetchJson(
+      join(
+        endpoint,
+        `candles?symbol=SOL&timeframe=1h&startTime=${candleAtMs}&endTime=${fundingAtMs}`,
+      ),
+      config.requestTimeoutMs,
+      { headers },
+    );
+    const candle = array(candleResponse.value, "Phoenix candles")
+      .map((item) => object(item, "Phoenix candle"))
+      .find((item) => integer(item.time, "candle time") === candleAtMs);
+    if (!candle) throw new Error("Phoenix funding candle is missing");
     const stats = object(market.statsSnapshot, "market stats");
     return {
       bidPrice: parsedBook.bid,
@@ -307,9 +329,10 @@ async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
         "floor",
         "fundingRatePercentage",
       ),
-      fundingTimestampSeconds: timestampSeconds(
-        latest.timestamp,
-        "funding timestamp",
+      fundingTimestampSeconds: fundingTimestamp,
+      fundingPriceUsdMicros: positive(
+        decimal(candle.markClose, 6, "floor", "funding mark close"),
+        "funding mark close",
       ),
       slots: [parsedBook.slot, integer(stats.slot, "market stats slot")],
       raw: [marketResponse.raw, bookResponse.raw, fundingResponse.raw].join("\n"),
@@ -611,21 +634,26 @@ export async function buildAuthoritativeEvents(
     payload,
   }) as MarketSnapshotEvent;
   const fundingIdentity = `phoenix:SOL:${perp.fundingTimestampSeconds}`;
+  const fundingHash = hash([
+    fundingIdentity,
+    perp.fundingPpm,
+    perp.fundingPriceUsdMicros,
+  ].join(":"));
   const funding = validateEvent({
     schemaVersion: 1,
     eventId: `phoenix-SOL-funding-${perp.fundingTimestampSeconds}`,
     eventType: "FundingSettlement",
     source: "phoenix-funding:SOL",
-    observedAtMs: observedAtMs.toString(),
-    sourceSlot: sourceSlot.toString(),
+    observedAtMs: fundingAtMs.toString(),
+    sourceSlot: perp.fundingTimestampSeconds.toString(),
     sourceSequence: `funding-${perp.fundingTimestampSeconds}`,
     idempotencyKey: fundingIdentity,
-    rawPayloadHash: hash(`phoenix-funding:${perp.raw}`),
+    rawPayloadHash: fundingHash,
     payload: {
       venuePaymentId: fundingIdentity,
       effectiveAtMs: fundingAtMs.toString(),
       realizedShortRatePpm: perp.fundingPpm.toString(),
-      solPriceUsdMicros: spot.solBidPrice.toString(),
+      solPriceUsdMicros: perp.fundingPriceUsdMicros.toString(),
     },
   }) as FundingSettlementEvent;
   return {

@@ -70,6 +70,18 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         });
         return;
       }
+      if (url.pathname === "/phoenix/candles") {
+        assert.equal(url.searchParams.get("symbol"), "SOL");
+        assert.equal(url.searchParams.get("timeframe"), "1h");
+        assert.equal(url.searchParams.get("startTime"), "1785016800000");
+        assert.equal(url.searchParams.get("endTime"), "1785020400000");
+        json(response, [{
+          time: 1785016800000,
+          close: 149.93,
+          markClose: 149.94,
+        }]);
+        return;
+      }
       if (url.pathname === "/rpc") {
         const pool = Buffer.alloc(611);
         pool[0] = 1;
@@ -207,6 +219,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert.equal(captured.navLamports, 1_234_567_890n);
     assert.equal(captured.funding.payload.venuePaymentId, "phoenix:SOL:1785020400");
     assert.equal(captured.funding.payload.realizedShortRatePpm, "250");
+    assert.equal(captured.funding.payload.solPriceUsdMicros, "149940000");
     assert.match(captured.snapshot.rawPayloadHash, /^[0-9a-f]{64}$/);
     assert(primaryRequests >= 3);
 
@@ -231,9 +244,10 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     const keyless = await buildAuthoritativeEvents(
       keylessConfig,
       8n,
-      1_785_024_000_000n,
+      1_785_024_001_000n,
     );
     assert.equal(keyless.snapshot.source, "authoritative:source-test-keyless");
+    assert.deepEqual(keyless.funding, captured.funding);
 
     expectedJupiterKey = "test-jupiter-key";
     mismatchMintSupply = true;
