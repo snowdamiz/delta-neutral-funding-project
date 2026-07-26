@@ -25,6 +25,9 @@ would therefore be unsafe.
 - Qualification probes found the documented read endpoints readable without a
   token. The adapter still supports an optional bearer token because the
   OpenAPI contract marks it required.
+- Phoenix is in private beta and requires an access code for account use.
+  Public read access is not evidence that an operator can obtain or lawfully
+  use a trading account.
 
 Official sources:
 
@@ -35,6 +38,8 @@ Official sources:
 - https://docs.phoenix.trade/api/exchange/get-orderbook
 - https://docs.phoenix.trade/api/exchange/get-funding-rate-history
 - https://docs.phoenix.trade/openapi/phoenix-public-api.json
+- https://docs.phoenix.trade/
+- https://www.phoenix.trade/terms-of-service
 - https://www.drift.trade/updates/drift-recovery-update-june-3-2026
 - https://docs.velocity.exchange/developers/concepts/program-vault-addresses
 
@@ -58,6 +63,21 @@ missing exact quotes, and invalid decimal fields all fail closed. Paper prices
 use exact-size spot quotes and executable L2 with an adverse haircut; they never
 use oracle, mark, or midpoint fills.
 
+## Eligibility and operational risk
+
+Phoenix's May 2026 terms prohibit use of its services by U.S. persons and
+people located in the United States, prohibit location/identity circumvention,
+describe the app as beta without a stability guarantee, reserve administrative
+upgrade/pause/parameter powers, and do not guarantee API availability. The
+machine timezone or an IP observation is not proof of operator residence,
+citizenship, or legal eligibility. Live qualification therefore requires the
+operator to confirm eligibility and obtain appropriate advice; the project
+must never bypass access controls.
+
+The official documentation links Phoenix's Discord for support/status
+escalation. That identifies a channel but does not satisfy the credentialed
+account/support drill required before live use.
+
 ## Qualification still required for live
 
 - Pin and independently verify the Phoenix program, market, oracle, and account
@@ -67,4 +87,6 @@ use oracle, mark, or midpoint fills.
 - Measure fill depth, partial fills, confirmation latency, and provider
   failover over the required soak.
 - Confirm legal, jurisdictional, API, and account eligibility.
+- Obtain private-beta/account access through an authorized path and test the
+  credentialed support escalation.
 - Complete shadow comparison and independent security review.

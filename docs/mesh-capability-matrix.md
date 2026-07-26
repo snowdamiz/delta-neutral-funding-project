@@ -45,3 +45,5 @@ cargo test -p meshc --test e2e e2e_nested_and
 
 Collector capability probes cover HTTP, JSON, PostgreSQL, actors, supervisors,
 timers, shutdown, and the project-local packages before milestone zero closes.
+Each exact build persists all 23 results in schema 27 and exposes them at
+`/v1/capabilities`; a missing, duplicate, or failed result rejects startup.

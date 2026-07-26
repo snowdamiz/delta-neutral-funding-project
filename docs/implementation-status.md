@@ -2,16 +2,16 @@
 
 | Milestone | State | Evidence |
 |---|---|---|
-| 0. Contracts and qualification | In progress | Strategy contracts and schema v1 are frozen; authoritative venue probes remain |
+| 0. Contracts and qualification | Complete for paper scope | Phoenix is selected for read-only paper data, JitoSOL identities and mechanics are documented, schema v1 and strategy contracts are frozen, and every required Mesh capability has a probe or explicit bridge/defer decision |
 | 1. Financial correctness and Mesh slice | Complete | Checked fixed-point math, cross-boundary parsers, runtime telemetry, tests, and a compiled collector are pinned to Mesh `b07d37d` |
-| 2. Production-like Mesh foundation | In progress | Local Docker services, fenced renewable writer lease with graceful release, accepted-request drain, database-authoritative startup reconciliation, pre-allocation HTTP request limits, bounded-delivery overload/concurrency and GC probes, runtime-native and DB-backed bounded-cardinality metrics, Prometheus-tested safety alerts, twelve Grafana panels, health, structured logs, database pooling, memory/PID caps, restart policies, and bounded local logs are present; operator alert delivery and long elapsed soak remain |
-| 3. Read-only adapter and recorder | In progress | HMAC-authenticated synthetic and opt-in Phoenix/Solana/Jupiter paper captures are normalized to integer atoms with TLS-only remote endpoints, ordered provider failover, coherent-slot checks, idempotent funding records, and gap resnapshot; credentialed soak capture remains |
-| 4. Paper broker and accounting | In progress | Independent and synchronized entries, fills, rehedging, exits, realized multi-book funding, ledger-backed JitoSOL valuation, and a separate epoch-aware direct-unstake counterfactual with actual cooldown funding are implemented; venue calibration remains |
-| 5. State machines, opportunity, and risk | In progress | Fail-closed lifecycles, durable per-snapshot risk decisions, source-gap/staleness and authoritative margin/liquidation breakers, verified startup/operator reconciliation, authenticated controls, durable exits, emergency flattening, and a guarded CLI run; venue calibration remains |
+| 2. Production-like Mesh foundation | Complete | Local Docker services, fenced renewable writer lease with graceful release, accepted-request drain, database-authoritative startup reconciliation, pre-allocation HTTP request limits, bounded-delivery overload/concurrency and GC probes, runtime-native and DB-backed bounded-cardinality metrics, Prometheus-tested safety alerts, twelve Grafana panels, health, structured logs, database pooling, memory/PID caps, restart policies, and bounded local logs are present |
+| 3. Read-only adapter and recorder | Complete for paper scope | HMAC-authenticated synthetic and keyless Phoenix/Solana/Jupiter paper captures are normalized to integer atoms with TLS-only remote endpoints, ordered provider failover, coherent-slot checks, idempotent funding records, gap resnapshot, and exact-size quotes; credentialed access remains a live gate |
+| 4. Paper broker and accounting | Complete | Independent and synchronized entries, fills, rehedging, exits, realized multi-book funding, ledger-backed JitoSOL valuation, and a separate epoch-aware direct-unstake counterfactual with actual cooldown funding are implemented |
+| 5. State machines, opportunity, and risk | Complete for paper scope | Fail-closed lifecycles, durable per-snapshot risk decisions, source-gap/staleness and authoritative margin/liquidation breakers, verified startup/operator reconciliation, authenticated controls, durable exits, emergency flattening, and a guarded CLI are implemented |
 | 6. Replay and differential validation | In progress | The Docker adoption gate requires clean exact Git/Mesh pins, commit-qualified rollback tags, generated parser mutations, bounded-delivery/concurrency/GC/supervisor probes, adapter tests, Rust tests/Clippy, shared vectors, five exact replay traces, attested SBOMs, and clean fixed high/critical image scans; authoritative fixtures and elapsed memory soak remain |
-| 7. 30-day paper soak | Blocked on elapsed observation time | Must not be simulated or backdated |
+| 7. 30-day paper soak | Collecting | The authoritative PostgreSQL report owns duration, continuity, funding-interval, epoch-transition, comparison, and unresolved-safety evidence; the final exact-commit baseline starts from zero and must not be simulated or backdated |
 | 8. Shadow | In progress | Isolated adapter-built Jupiter/perp actions pass the Rust dry-run, account/fee/compute deltas are durably compared with paper estimates, and unknown results block retry until reconciliation; authoritative calibration remains |
-| 9. Locked executor | In progress | The independent Rust policy revalidates canonical intents, command identity, allowlists, notional/price/fee/compute caps, simulation deltas, its kill switch, and signer isolation; live signer integration remains gated |
+| 9. Locked executor | Gated before live integration | The independent Rust shadow policy revalidates canonical intents, command identity, allowlists, notional/price/fee/compute caps, simulation deltas, its kill switch, and signer isolation; remote signer and submission paths are deliberately absent pending soak, operator, and security gates |
 | 10. Live canary | Not approved | Requires every go-live gate and explicit operator approval |
 
 Live execution is intentionally unavailable. The local deployment has no
@@ -19,3 +19,7 @@ executor service or host-published database, uses segmented networks and
 non-root read-only application containers, and rejects non-paper startup.
 Completing local code does not complete the 30-day soak or authorize a
 transaction.
+
+The effective paper policy is parsed once through a shared strict Mesh contract
+and deterministically fingerprinted. A changed policy cannot attach to an
+existing strategy run or mutate its build/comparison metadata.

@@ -14,6 +14,14 @@ Status: qualified for read-only paper modeling; not approved for live execution.
 JitoSOL has nine decimals. These values must be reverified from on-chain owners
 and the official deployment page at shadow and live startup.
 
+## Program security
+
+Jito uses the SPL Stake Pool program. The official deployment page links
+Quantstamp, Neodyme, and Kudelski reviews and states that upgrade keys are held
+by a committee of Solana Staking Ecosystem participants. Those reviews and the
+committee reduce neither upgrade risk nor the need to reverify deployed
+program ownership before shadow/live operation.
+
 ## Independent NAV
 
 For `supply_atoms > 0`:
@@ -35,7 +43,10 @@ clamped away.
 ## Exit behavior
 
 - An executable Jupiter sell quote is the immediate-exit reference.
-- Direct withdrawal currently has a 10 bps fee and can take up to one epoch.
+- Direct withdrawal currently has a fixed 10 bps fee and requires a one-epoch
+  cooldown, documented as up to two days.
+- Direct unstaking transfers stake out of the pool, then requires deactivation
+  and withdrawal; initiation is irreversible.
 - The delayed path remains unavailable for immediate perp margin protection.
 - Paper persists the delayed path separately through requested, deactivating,
   epoch-wait, withdrawable, withdrawn, missed, and failed outcomes.
@@ -44,6 +55,8 @@ clamped away.
   cost. These are calibration inputs, not verified live constants.
 - Actual signed funding records accrue against the retained counterfactual
   hedge during cooldown; none of these entries alter the instant-exit ledger.
+- These statements cover ordinary JitoSOL liquid staking, not Jito restaking,
+  which has separate programs and terms.
 
 Official sources:
 

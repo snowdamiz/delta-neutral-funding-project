@@ -87,4 +87,6 @@ PostgreSQL. Prometheus retains 35 days within a 2 GB cap for the matching
 runtime-stability review.
 
 Milestone status and open gates are tracked in
-[`docs/implementation-status.md`](docs/implementation-status.md).
+[`docs/implementation-status.md`](docs/implementation-status.md). Every
+Section 27 requirement and its evidence owner is tracked in
+[`docs/go-live-gates.md`](docs/go-live-gates.md).

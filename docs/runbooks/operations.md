@@ -48,8 +48,9 @@ Use the venue’s qualified private operator interface, never a new Mesh endpoin
 pause automation, capture position/open orders, cancel entry orders, close the
 perp reduce-only, confirm zero short, then sell only the matching spot amount.
 Persist command IDs and evidence and reconcile before resuming. Exact buttons,
-hosts, account IDs, and support escalation remain blocked on venue selection
-and credentialed qualification.
+hosts, account IDs, and support escalation remain blocked on Phoenix
+private-beta access, operator eligibility, account qualification, and a
+credentialed drill.
 
 ## Local drills
 
