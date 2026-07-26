@@ -490,6 +490,7 @@ function quote(
 async function jupiter(
   config: AdapterConfig,
   solQuantityAtoms: bigint,
+  jitoQuantityAtoms: bigint,
 ): Promise<JupiterCapture> {
   return firstProvider("Jupiter", config.jupiterUrls, async (endpoint) => {
     const request =
@@ -499,8 +500,8 @@ async function jupiter(
     const specs = [
       [solMint, usdcMint, solQuantityAtoms, "ExactIn"],
       [usdcMint, solMint, solQuantityAtoms, "ExactOut"],
-      [jitoMint, usdcMint, config.paperQuantityAtoms, "ExactIn"],
-      [usdcMint, jitoMint, config.paperQuantityAtoms, "ExactOut"],
+      [jitoMint, usdcMint, jitoQuantityAtoms, "ExactIn"],
+      [usdcMint, jitoMint, jitoQuantityAtoms, "ExactOut"],
     ] as const;
     const responses = await Promise.all(specs.map(([input, output, amount, mode]) =>
       fetchJson(
@@ -561,11 +562,19 @@ export async function buildAuthoritativeEvents(
     solana(config),
   ]);
   const navLamports = pool.totalPoolLamports * billion / pool.supplyAtoms;
+  const targetJitoSolAtoms =
+    config.paperNotionalUsdMicros * billion * billion /
+    (navLamports * perp.askPrice);
+  const jitoSolAtoms =
+    targetJitoSolAtoms < config.paperMaximumJitoSolAtoms
+      ? targetJitoSolAtoms
+      : config.paperMaximumJitoSolAtoms;
+  positive(jitoSolAtoms, "paper JitoSOL quantity");
   const solQuoteAtoms = ceilDiv(
-    config.paperQuantityAtoms * navLamports,
+    jitoSolAtoms * navLamports,
     billion,
   );
-  const spot = await jupiter(config, solQuoteAtoms);
+  const spot = await jupiter(config, solQuoteAtoms, jitoSolAtoms);
   const sourceSlot = coherentSlots(
     [...perp.slots, ...pool.slots, ...spot.slots],
     config.sourceMaxSlotDrift,
@@ -581,7 +590,7 @@ export async function buildAuthoritativeEvents(
     throw new Error("Phoenix funding rate is outside the supported range");
   }
   const hedgeLamports =
-    config.paperQuantityAtoms * spot.jitoBidPrice / spot.solBidPrice;
+    jitoSolAtoms * spot.jitoBidPrice / spot.solBidPrice;
   const notionalUsdMicros = hedgeLamports * spot.solBidPrice / billion;
   if (notionalUsdMicros > config.paperNotionalUsdMicros) {
     throw new Error("paper notional exceeds its configured cap");
@@ -600,7 +609,7 @@ export async function buildAuthoritativeEvents(
     oracleStatus: "valid",
     totalPoolLamports: pool.totalPoolLamports.toString(),
     supplyAtoms: pool.supplyAtoms.toString(),
-    jitosolAtoms: config.paperQuantityAtoms.toString(),
+    jitosolAtoms: jitoSolAtoms.toString(),
     notionalUsdMicros: notionalUsdMicros.toString(),
     shortReceiptPpm: perp.fundingPpm.toString(),
     solPriceUsdMicros: spot.solBidPrice.toString(),

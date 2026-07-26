@@ -8,7 +8,10 @@ const solMint = "So11111111111111111111111111111111111111112";
 const jitoMint = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
 const usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const billion = 1_000_000_000n;
-const expectedSolQuoteAtoms = 2_469_135_780n;
+let expectedJitoQuoteAtoms =
+  500_000_000n * billion * billion / (1_234_567_890n * 150_020_000n);
+let expectedSolQuoteAtoms =
+  (expectedJitoQuoteAtoms * 1_234_567_890n + billion - 1n) / billion;
 
 function json(response: ServerResponse, value: unknown, status = 200): void {
   response.writeHead(status, { "content-type": "application/json" });
@@ -158,9 +161,18 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
                   "ExactOut",
                 ]
               : input === jitoMint && output === usdcMint
-                ? ["2000000000", "370100000", "ExactIn"]
+                ? [
+                    amount.toString(),
+                    (amount * 185_050_000n / billion).toString(),
+                    "ExactIn",
+                  ]
                 : input === usdcMint && output === jitoMint
-                  ? ["370500000", "2000000000", "ExactOut"]
+                  ? [
+                      ((amount * 185_250_000n + billion - 1n) / billion)
+                        .toString(),
+                      amount.toString(),
+                      "ExactOut",
+                    ]
                   : null;
         assert(quote);
         assert.equal(swapMode, quote[2]);
@@ -168,7 +180,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
           amount,
           input === solMint || output === solMint
             ? expectedSolQuoteAtoms
-            : 2_000_000_000n,
+            : expectedJitoQuoteAtoms,
         );
         json(response, {
           inputMint: input,
@@ -201,7 +213,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
       JUPITER_API_KEY: "test-jupiter-key",
       SOURCE_MAX_SLOT_DRIFT: "10",
       SOURCE_MAX_FUNDING_AGE_MS: "7200000",
-      PAPER_QUANTITY_ATOMS: "2000000000",
+      PAPER_MAX_JITOSOL_ATOMS: "10000000000",
       PAPER_NOTIONAL_USD_MICROS: "500000000",
       PAPER_COLLATERAL_USD_MICROS: "500000000",
       PAPER_COSTS_USD_MICROS: "200000",
@@ -229,7 +241,17 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     const expectedSolAsk =
       (solAskInput * billion + expectedSolQuoteAtoms - 1n) /
       expectedSolQuoteAtoms;
-    const expectedHedge = 2_000_000_000n * 185_050_000n / expectedSolBid;
+    const jitoBidOutput =
+      expectedJitoQuoteAtoms * 185_050_000n / billion;
+    const jitoAskInput =
+      (expectedJitoQuoteAtoms * 185_250_000n + billion - 1n) / billion;
+    const expectedJitoBid =
+      jitoBidOutput * billion / expectedJitoQuoteAtoms;
+    const expectedJitoAsk =
+      (jitoAskInput * billion + expectedJitoQuoteAtoms - 1n) /
+      expectedJitoQuoteAtoms;
+    const expectedHedge =
+      expectedJitoQuoteAtoms * expectedJitoBid / expectedSolBid;
     const expectedNotional = expectedHedge * expectedSolBid / billion;
     const expectedMaintenance = (expectedNotional * 5_000n + 9_999n) / 10_000n;
     assert.equal(
@@ -240,8 +262,18 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
       captured.snapshot.payload.solSpotAskPriceUsdMicros,
       expectedSolAsk.toString(),
     );
-    assert.equal(captured.snapshot.payload.jitosolSpotBidPriceUsdMicros, "185050000");
-    assert.equal(captured.snapshot.payload.jitosolSpotAskPriceUsdMicros, "185250000");
+    assert.equal(
+      captured.snapshot.payload.jitosolSpotBidPriceUsdMicros,
+      expectedJitoBid.toString(),
+    );
+    assert.equal(
+      captured.snapshot.payload.jitosolSpotAskPriceUsdMicros,
+      expectedJitoAsk.toString(),
+    );
+    assert.equal(
+      captured.snapshot.payload.jitosolAtoms,
+      expectedJitoQuoteAtoms.toString(),
+    );
     assert.equal(captured.snapshot.payload.perpBidPriceUsdMicros, "149980000");
     assert.equal(captured.snapshot.payload.perpAskPriceUsdMicros, "150020000");
     assert.equal(captured.snapshot.payload.perpExitDepthLamports, "80000000000");
@@ -275,6 +307,9 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert(primaryRequests >= 3);
 
     expectedJupiterKey = undefined;
+    expectedJitoQuoteAtoms = 2_000_000_000n;
+    expectedSolQuoteAtoms =
+      (expectedJitoQuoteAtoms * 1_234_567_890n + billion - 1n) / billion;
     const keylessConfig = loadConfig({
       ADAPTER_HMAC_SECRET: "secret",
       ADAPTER_MODE: "authoritative",
@@ -285,7 +320,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
       JUPITER_URLS: `${backup.url}/jupiter`,
       SOURCE_MAX_SLOT_DRIFT: "10",
       SOURCE_MAX_FUNDING_AGE_MS: "7200000",
-      PAPER_QUANTITY_ATOMS: "2000000000",
+      PAPER_MAX_JITOSOL_ATOMS: "2000000000",
       PAPER_NOTIONAL_USD_MICROS: "500000000",
       PAPER_COLLATERAL_USD_MICROS: "500000000",
       PAPER_COSTS_USD_MICROS: "200000",
@@ -298,6 +333,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
       1_785_024_001_000n,
     );
     assert.equal(keyless.snapshot.source, "authoritative:source-test-keyless");
+    assert.equal(keyless.snapshot.payload.jitosolAtoms, "2000000000");
     assert.deepEqual(keyless.funding, captured.funding);
 
     expectedJupiterKey = "test-jupiter-key";

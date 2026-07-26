@@ -14,7 +14,7 @@ export type AdapterConfig = {
   jupiterApiKey: string;
   sourceMaxSlotDrift: bigint;
   sourceMaxFundingAgeMs: bigint;
-  paperQuantityAtoms: bigint;
+  paperMaximumJitoSolAtoms: bigint;
   paperNotionalUsdMicros: bigint;
   paperCollateralUsdMicros: bigint;
   paperCostsUsdMicros: bigint;
@@ -138,7 +138,11 @@ export function loadConfig(
       "SOURCE_MAX_FUNDING_AGE_MS",
       "7200000",
     ),
-    paperQuantityAtoms: unsignedInteger(env, "PAPER_QUANTITY_ATOMS", "2000000000"),
+    paperMaximumJitoSolAtoms: unsignedInteger(
+      env,
+      "PAPER_MAX_JITOSOL_ATOMS",
+      "10000000000",
+    ),
     paperNotionalUsdMicros: unsignedInteger(
       env,
       "PAPER_NOTIONAL_USD_MICROS",
