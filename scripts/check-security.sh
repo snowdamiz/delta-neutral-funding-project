@@ -21,6 +21,7 @@ test -z "$(git -C "$mesh_dir" status --porcelain)"
 docker compose --project-directory "$project_dir" --file "$project_dir/compose.yaml" \
   config --format json >"$work_dir/compose.json"
 jq -e '
+  . as $config |
   (.services.postgres.ports == null) and
   (.services.postgres.networks | keys == ["database"]) and
   (.services.adapter.networks | keys == ["ingest"]) and
@@ -31,6 +32,13 @@ jq -e '
     .read_only and
     (.cap_drop | index("ALL") != null) and
     (.security_opt | index("no-new-privileges:true") != null)
+  ) and
+  all(["postgres", "migrate", "collector", "adapter", "prometheus", "grafana"][];
+    ($config.services[.].logging.driver == "local") and
+    ($config.services[.].logging.options."max-size" == "10m") and
+    ($config.services[.].logging.options."max-file" == "3") and
+    ($config.services[.].mem_limit > 0) and
+    ($config.services[.].pids_limit > 0)
   )
 ' "$work_dir/compose.json" >/dev/null
 

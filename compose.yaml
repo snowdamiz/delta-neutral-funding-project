@@ -16,6 +16,12 @@ x-paper-environment: &paper-environment
   DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS: ${DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS:-1000000}
   DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS: ${DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS:-250000}
 
+x-local-logging: &local-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -32,6 +38,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - database
+    mem_limit: 1g
+    pids_limit: 256
+    logging: *local-logging
+    restart: unless-stopped
 
   migrate:
     image: postgres:17-alpine
@@ -55,6 +65,9 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 128
+    logging: *local-logging
 
   collector:
     image: delta-neutral-funding-collector:latest
@@ -94,6 +107,9 @@ services:
       - observability
     ports:
       - "127.0.0.1:8080:8080"
+    mem_limit: 512m
+    pids_limit: 128
+    logging: *local-logging
     restart: unless-stopped
 
   adapter:
@@ -140,6 +156,9 @@ services:
       - /tmp:size=16m,mode=1777
     networks:
       - ingest
+    mem_limit: 256m
+    pids_limit: 128
+    logging: *local-logging
     restart: unless-stopped
 
   prometheus:
@@ -158,6 +177,10 @@ services:
     networks:
       - observability
       - monitoring_ui
+    mem_limit: 512m
+    pids_limit: 128
+    logging: *local-logging
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:12.1.0
@@ -175,6 +198,10 @@ services:
       - grafana_data:/var/lib/grafana
     networks:
       - monitoring_ui
+    mem_limit: 512m
+    pids_limit: 256
+    logging: *local-logging
+    restart: unless-stopped
 
 volumes:
   postgres_data:
