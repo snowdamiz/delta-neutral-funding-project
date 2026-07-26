@@ -15,7 +15,6 @@ build_action() {
     --read-only \
     --cap-drop ALL \
     --security-opt no-new-privileges:true \
-    --entrypoint node \
     --volume "$project_dir/tests/vectors:/vectors:ro" \
     delta-neutral-funding-adapter:latest \
     dist/shadow-cli.js \
