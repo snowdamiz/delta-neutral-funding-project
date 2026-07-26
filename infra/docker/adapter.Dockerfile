@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1.7
-ARG CODE_COMMIT=development
 FROM node:24-alpine AS builder
 WORKDIR /app
 COPY adapters/protocol-ts/package.json adapters/protocol-ts/package-lock.json ./
@@ -10,7 +9,7 @@ COPY tests/vectors /tests/vectors
 RUN CONFORMANCE_VECTOR_DIR=/tests/vectors npm test
 
 FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:af85d11ce7ef10172855a6e3649e3e8125b1b9e3ca41849ec2918036f05cb212 AS runtime
-ARG CODE_COMMIT
+ARG CODE_COMMIT=development
 ENV NODE_ENV=production
 LABEL org.opencontainers.image.revision=$CODE_COMMIT
 WORKDIR /app

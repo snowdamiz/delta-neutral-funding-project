@@ -1,6 +1,4 @@
 # syntax=docker/dockerfile:1.7
-ARG CODE_COMMIT=development
-ARG MESH_COMMIT=6fdb83afe68703f9459a4e7035b1b84d96316e6b
 FROM ubuntu:22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -44,8 +42,8 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     && test -x /tmp/funding-collector
 
 FROM ubuntu:24.04 AS runtime
-ARG CODE_COMMIT
-ARG MESH_COMMIT
+ARG CODE_COMMIT=development
+ARG MESH_COMMIT=6fdb83afe68703f9459a4e7035b1b84d96316e6b
 ENV CODE_COMMIT=$CODE_COMMIT
 ENV MESH_COMMIT=$MESH_COMMIT
 LABEL org.opencontainers.image.revision=$CODE_COMMIT
