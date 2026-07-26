@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+base_url=${COLLECTOR_URL:-http://127.0.0.1:8080}
+
+usage() {
+  printf '%s\n' \
+    'usage: collector <command> [arguments]' \
+    'read: status | capabilities | adapter-status | portfolios | opportunities | pnl | compare' \
+    'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
+    'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper' \
+    'test: alerts-test <reason>'
+}
+
+read_endpoint() {
+  curl -fsS "$base_url$1" | jq .
+}
+
+mutate() {
+  local action=$1
+  local path=$2
+  local reason=$3
+  local secret=${OPERATOR_HMAC_SECRET:?OPERATOR_HMAC_SECRET is required}
+  local key body signature
+  key="cli-$(date +%s)-$$-${action}"
+  body=$(jq -cn --arg reason "$reason" '{reason:$reason}')
+  signature=$(
+    printf '%s\n%s' "$key" "$body" |
+      openssl dgst -sha256 -hmac "$secret" -hex |
+      awk '{print $NF}'
+  )
+  curl -fsS \
+    -H 'content-type: application/json' \
+    -H "x-idempotency-key: $key" \
+    -H "x-operator-signature: $signature" \
+    --data "$body" \
+    "$base_url$path" |
+    jq .
+}
+
+require_reason() {
+  test -n "${1:-}" || {
+    usage >&2
+    exit 2
+  }
+}
+
+command=${1:-}
+case "$command" in
+  status) read_endpoint /v1/status ;;
+  capabilities) read_endpoint /v1/capabilities ;;
+  adapter-status) read_endpoint /v1/adapter/status ;;
+  portfolios) read_endpoint /v1/portfolios ;;
+  opportunities) read_endpoint /v1/opportunities ;;
+  pnl) read_endpoint /v1/pnl ;;
+  compare) read_endpoint /v1/pnl/comparison ;;
+  pause-entries | pause-all | resume | reconcile)
+    require_reason "${2:-}"
+    mutate "$command" "/v1/$command" "$2"
+    ;;
+  exit)
+    test "${4:-}" = '--approve-paper' || {
+      printf 'paper exit requires --approve-paper\n' >&2
+      exit 2
+    }
+    require_reason "${3:-}"
+    case "${2:-}" in
+      sol-control) portfolio=local-sol-control ;;
+      jitosol-carry) portfolio=local-jitosol-carry ;;
+      local-sol-control | local-jitosol-carry) portfolio=$2 ;;
+      *)
+        printf 'unknown paper portfolio\n' >&2
+        exit 2
+        ;;
+    esac
+    mutate exit "/v1/portfolios/$portfolio/exit" "$3"
+    ;;
+  flatten)
+    test "${3:-}" = '--approve-paper' || {
+      printf 'paper flatten requires --approve-paper\n' >&2
+      exit 2
+    }
+    require_reason "${2:-}"
+    mutate flatten /v1/emergency-flatten "$2"
+    ;;
+  alerts-test)
+    require_reason "${2:-}"
+    mutate alerts-test /v1/alerts/test "$2"
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

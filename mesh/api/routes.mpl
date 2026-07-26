@@ -4,11 +4,11 @@ from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
-from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_position
+from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
 from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_events
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, list_opportunities, load_paper_position, load_paper_runtime, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan
+from Packages.Storage import FundingPersistence, PendingPaperAction, list_opportunities, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -115,23 +115,38 @@ result :: OpportunitySet,
 portfolio_id :: String,
 variant :: PaperVariant,
 runtime :: PaperRuntime) -> Int ! String do
-  if runtime.pause_all do
-    return Ok(0)
-  end
   if runtime.state == Idle do
-    let plan = (runtime |4> plan_entry(snapshot, result, variant)) ?
-    plan |6> persist_paper_plan(pool, snapshot, result, portfolio_id, runtime)
-  else
-    if runtime.state != Hedged do
+    if runtime.pause_all do
       return Ok(0)
     end
-    let position = (portfolio_id |2> load_paper_position(pool)) ?
-    let plan = (position |3> plan_position(
-      snapshot,
-      result,
-      Env.get_int("REBALANCE_DELTA_BPS", 50)
-    )) ?
-    plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
+    let plan = (runtime |4> plan_entry(snapshot, result, variant)) ?
+    return plan |6> persist_paper_plan(pool, snapshot, result, portfolio_id, runtime)
+  end
+  if runtime.state != Hedged do
+    return Ok(0)
+  end
+  let position = (portfolio_id |2> load_paper_position(pool)) ?
+  case (portfolio_id |2> load_pending_paper_action(pool)) ? do
+    PendingAction(action, reason) -> do
+      let plan = plan_forced_exit(
+        snapshot,
+        result,
+        position,
+        action <> ":" <> reason
+      ) ?
+      plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
+    end
+    NoPendingAction -> do
+      if runtime.pause_all do
+        return Ok(0)
+      end
+      let plan = (position |3> plan_position(
+        snapshot,
+        result,
+        Env.get_int("REBALANCE_DELTA_BPS", 50)
+      )) ?
+      plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
+    end
   end
 end
 
@@ -142,8 +157,8 @@ fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: Opportu
   let max_age_ms = Env.get_int("MAX_SOURCE_AGE_MS", 5000)
   let sol_runtime = ("local-sol-control" |2> load_paper_runtime(pool, now_ms, max_age_ms)) ?
   let jitosol_runtime = ("local-jitosol-carry" |2> load_paper_runtime(pool, now_ms, max_age_ms)) ?
-  let _sol_applied = run_portfolio_cycle(pool, snapshot, result, "local-sol-control", SolControl, sol_runtime) ?
-  let _jitosol_applied = run_portfolio_cycle(pool, snapshot, result, "local-jitosol-carry", JitoSolCarry, jitosol_runtime) ?
+  run_portfolio_cycle(pool, snapshot, result, "local-sol-control", SolControl, sol_runtime) ?
+  run_portfolio_cycle(pool, snapshot, result, "local-jitosol-carry", JitoSolCarry, jitosol_runtime) ?
   Ok(inserted)
 end
 
@@ -281,7 +296,7 @@ fn authenticated_event_response(body :: String) do
   end
 end
 
-fn operator_response(request :: Request, action :: String) do
+fn operator_response(request :: Request, action :: String, target :: String) do
   let body = Request.body(request)
   let idempotency_key = request_header(request, "x-idempotency-key")
   if operator_authenticated(request, idempotency_key, body) == false do
@@ -316,6 +331,7 @@ fn operator_response(request :: Request, action :: String) do
       case persist_operator_command(
         get_pool(),
         action,
+        target,
         idempotency_key,
         reason,
         request_hash
@@ -352,19 +368,39 @@ pub fn handle_event(request :: Request) -> Response do
 end
 
 pub fn handle_pause_entries(request :: Request) -> Response do
-  operator_response(request, "pause_entries")
+  operator_response(request, "pause_entries", "")
 end
 
 pub fn handle_pause_all(request :: Request) -> Response do
-  operator_response(request, "pause_all")
+  operator_response(request, "pause_all", "")
 end
 
 pub fn handle_resume(request :: Request) -> Response do
-  operator_response(request, "resume")
+  operator_response(request, "resume", "")
 end
 
 pub fn handle_reconcile(request :: Request) -> Response do
-  operator_response(request, "reconcile")
+  operator_response(request, "reconcile", "")
+end
+
+pub fn handle_portfolio_exit(request :: Request) -> Response do
+  case Request.param(request, "portfolio") do
+    Some(portfolio_id) -> do
+      if portfolio_id != "local-sol-control" && portfolio_id != "local-jitosol-carry" do
+        return error_response(404, "not_found", "paper portfolio not found")
+      end
+      operator_response(request, "exit_position", portfolio_id)
+    end
+    None -> error_response(400, "invalid_request", "missing portfolio")
+  end
+end
+
+pub fn handle_emergency_flatten(request :: Request) -> Response do
+  operator_response(request, "emergency_flatten", "*")
+end
+
+pub fn handle_alerts_test(request :: Request) -> Response do
+  operator_response(request, "alerts_test", "")
 end
 
 pub fn handle_health(_request :: Request) -> Response do
@@ -385,7 +421,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "7256eba370b78fb16661fad298b6538e9bdb61c0"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 8
+    schemaVersion : 9
   })
 end
 
@@ -517,7 +553,7 @@ pub fn handle_config(_request :: Request) -> Response do
     maxSourceAgeMs : Env.get_int("MAX_SOURCE_AGE_MS", 5000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 8,
+    databaseSchemaVersion : 9,
     liveEnabled : false
   })
 end

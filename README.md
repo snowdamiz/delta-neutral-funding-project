@@ -16,5 +16,14 @@ The complete stack is started with Docker Compose:
 docker compose up --build
 ```
 
+Read-only operator commands use `bin/collector` directly. Mutations require the
+separate operator secret, and paper exits/flattening also require the explicit
+`--approve-paper` argument:
+
+```sh
+OPERATOR_HMAC_SECRET=local-operator-only-change-me \
+  bin/collector exit jitosol-carry "manual paper exit" --approve-paper
+```
+
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).

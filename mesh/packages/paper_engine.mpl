@@ -717,6 +717,16 @@ reason :: String) -> PositionPlan ! String do
   placed_fill(perp_fill)))
 end
 
+pub fn plan_forced_exit(snapshot :: MarketSnapshot,
+opportunity :: OpportunitySet,
+position :: PaperPosition,
+reason :: String) -> PositionPlan ! String do
+  if String.length(String.trim(reason)) == 0 do
+    return Err("paper exit reason is required")
+  end
+  plan_exit(snapshot, position, position_valuation(snapshot, opportunity, position) ?, reason)
+end
+
 pub fn plan_position(snapshot :: MarketSnapshot,
 opportunity :: OpportunitySet,
 position :: PaperPosition,

@@ -1,4 +1,4 @@
-from Api.Routes import handle_adapter_status, handle_build, handle_capabilities, handle_config, handle_event, handle_executor_status, handle_fills, handle_funding, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_risk_events, handle_status
+from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_risk_events, handle_status
 
 pub fn build_router() do
   HTTP.router()
@@ -27,4 +27,7 @@ pub fn build_router() do
     |> HTTP.on_post("/v1/pause-all", handle_pause_all)
     |> HTTP.on_post("/v1/resume", handle_resume)
     |> HTTP.on_post("/v1/reconcile", handle_reconcile)
+    |> HTTP.on_post("/v1/portfolios/:portfolio/exit", handle_portfolio_exit)
+    |> HTTP.on_post("/v1/emergency-flatten", handle_emergency_flatten)
+    |> HTTP.on_post("/v1/alerts/test", handle_alerts_test)
 end
