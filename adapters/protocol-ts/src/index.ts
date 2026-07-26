@@ -11,7 +11,6 @@ import { postEvent } from "./transport.js";
 
 const config = loadConfig();
 let sequence = 1n;
-let observedAtMs = BigInt(Date.now());
 let stopping = false;
 let lastDelivery = "not_started";
 let previousNavLamports: bigint | undefined;
@@ -64,6 +63,7 @@ health.listen(config.healthPort, "0.0.0.0", () => {
 while (!stopping) {
   try {
     if (!pending) {
+      const observedAtMs = BigInt(Date.now());
       if (config.mode === "synthetic") {
         pending = {
           snapshot: buildSyntheticEvent(sequence, observedAtMs, config.sessionId),
@@ -131,7 +131,6 @@ while (!stopping) {
     pending = undefined;
     lastDelivery = "accepted";
     sequence += 1n;
-    observedAtMs = BigInt(Date.now());
   } catch (error) {
     lastDelivery = "error";
     log("error", "event_delivery_failed", {
