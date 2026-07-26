@@ -42,8 +42,15 @@ docker run -d --rm \
   -e POSTGRES_PASSWORD=paper \
   postgres:17-alpine >/dev/null
 attempt=0
-until docker exec "$restore_container" \
-  pg_isready -U funding -d funding >/dev/null 2>&1; do
+ready_checks=0
+until [ "$ready_checks" -eq 2 ]; do
+  if docker exec "$restore_container" \
+    psql -U funding -d funding -Atc "SELECT 1" 2>/dev/null |
+    grep -qx 1; then
+    ready_checks=$((ready_checks + 1))
+  else
+    ready_checks=0
+  fi
   attempt=$((attempt + 1))
   [ "$attempt" -lt 30 ] || exit 1
   sleep 1
