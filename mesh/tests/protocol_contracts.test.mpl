@@ -9,6 +9,23 @@ fn valid_shadow_result() -> String do
   "{\"schemaVersion\":1,\"intent\":{\"schemaVersion\":1,\"intentId\":\"intent-1\",\"instrument\":\"SOL-PERP\"},\"action\":{\"schemaVersion\":1,\"commandId\":\"intent-1:shadow:1\",\"intentHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"market\":\"SOL-PERP\",\"simulateOnly\":true,\"submit\":false,\"messageHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"simulatedQuantityAtoms\":\"10\",\"simulatedAveragePriceAtoms\":\"20\",\"simulatedFeeAtoms\":\"3\",\"computeUnitsConsumed\":\"4\"},\"report\":{\"schemaVersion\":1,\"intentId\":\"intent-1\",\"commandId\":\"intent-1:shadow:1\",\"mode\":\"shadow\",\"status\":\"PLANNED\",\"authoritativeReference\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"simulatedQuantityAtoms\":\"10\",\"simulatedAveragePriceAtoms\":\"20\",\"simulatedFeeAtoms\":\"3\",\"computeUnitsConsumed\":\"4\"},\"paperEstimate\":{\"quantityAtoms\":\"10\",\"averagePriceAtoms\":\"19\",\"feeAtoms\":\"2\"}}"
 end
 
+fn assert_shadow_mutations_rejected(
+  bodies :: List<String>,
+  index :: Int
+) -> Int do
+  if index >= List.length(bodies) do
+    index
+  else
+    case parse_shadow_result(List.get(bodies, index)) do
+      Ok(result) -> do
+        assert(false)
+        index
+      end
+      Err(error) -> bodies |> assert_shadow_mutations_rejected(index + 1)
+    end
+  end
+end
+
 describe("shadow result v1") do
   test("binds an isolated action and excludes its outcome from idempotency") do
     case parse_shadow_result(valid_shadow_result()) do
@@ -29,6 +46,19 @@ describe("shadow result v1") do
       Ok(result) -> assert(false)
       Err(error) -> assert(error == "shadow action is not simulation-only")
     end
+  end
+
+  test("rejects deterministic trust-boundary mutations") do
+    let valid = valid_shadow_result()
+    let mutations = [
+      "{",
+      valid |> String.replace("\"submit\":false", "\"submit\":true"),
+      valid |> String.replace("\"simulatedQuantityAtoms\":\"10\"", "\"simulatedQuantityAtoms\":10"),
+      valid |> String.replace("\"simulatedFeeAtoms\":\"3\"", "\"simulatedFeeAtoms\":\"-0\""),
+      valid |> String.replace("\"commandId\":\"intent-1:shadow:1\"", "\"commandId\":\"intent-2:shadow:1\""),
+      valid |> String.replace("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "not-a-hash")
+    ]
+    assert((mutations |> assert_shadow_mutations_rejected(0)) == List.length(mutations))
   end
 end
 
@@ -94,6 +124,12 @@ describe("protocol event v1") do
     case parse_market_snapshot(invalid_failures) do
       Ok(snapshot) -> assert(false)
       Err(error) -> assert(error == "paper failure rates exceed one million ppm")
+    end
+
+    let negative_zero = String.replace(valid_snapshot(), "\"shortReceiptPpm\":\"250\"", "\"shortReceiptPpm\":\"-0\"")
+    case parse_market_snapshot(negative_zero) do
+      Ok(snapshot) -> assert(false)
+      Err(error) -> assert(error == "shortReceiptPpm must be a canonical base-10 integer string")
     end
   end
 end

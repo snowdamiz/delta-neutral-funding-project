@@ -68,7 +68,7 @@ export type FundingSettlementEvent = {
 export type ProtocolEvent = MarketSnapshotEvent | FundingSettlementEvent;
 
 const unsignedInteger = /^(0|[1-9][0-9]*)$/;
-const signedInteger = /^-?(0|[1-9][0-9]*)$/;
+const signedInteger = /^(0|-?[1-9][0-9]*)$/;
 const payloadFields = [
   "epoch",
   "totalPoolLamports",

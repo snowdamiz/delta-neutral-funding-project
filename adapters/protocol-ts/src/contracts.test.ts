@@ -35,6 +35,14 @@ test("builds a session-scoped v1 event with integer strings", () => {
     () =>
       validateEvent({
         ...event,
+        payload: { ...event.payload, shortReceiptPpm: "-0" },
+      }),
+    /shortReceiptPpm/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
         payload: { ...event.payload, rejectRatePpm: "600000", unknownRatePpm: "500000" },
       }),
     /failure rates/,
@@ -75,6 +83,14 @@ test("builds a signed-rate funding settlement with a session-scoped payment iden
       validateEvent({
         ...event,
         payload: { ...event.payload, realizedShortRatePpm: 250 },
+      }),
+    /realizedShortRatePpm/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: { ...event.payload, realizedShortRatePpm: "-0" },
       }),
     /realizedShortRatePpm/,
   );

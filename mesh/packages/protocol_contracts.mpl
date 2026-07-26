@@ -67,7 +67,7 @@ end
 
 fn required_int(raw :: String, field :: String, allow_negative :: Bool) -> Int ! String do
   let canonical = if allow_negative do
-    Regex.is_match(~r/^-?(0|[1-9][0-9]*)$/, raw)
+    Regex.is_match(~r/^(0|-?[1-9][0-9]*)$/, raw)
   else
     Regex.is_match(~r/^(0|[1-9][0-9]*)$/, raw)
   end
