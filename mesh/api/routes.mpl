@@ -7,7 +7,7 @@ from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_po
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
 from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_events
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, list_opportunities, load_paper_position, load_paper_runtime, persist_funding_settlement, persist_opportunities, persist_paper_plan, persist_position_plan
+from Packages.Storage import FundingPersistence, list_opportunities, load_paper_position, load_paper_runtime, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -56,11 +56,15 @@ fn read_response(result) do
   end
 end
 
-fn request_signature(request :: Request) -> String do
-  case Request.header(request, "x-adapter-signature") do
-    Some(signature) -> signature
+fn request_header(request :: Request, name :: String) -> String do
+  case Request.header(request, name) do
+    Some(value) -> value
     None -> ""
   end
+end
+
+fn request_signature(request :: Request) -> String do
+  request_header(request, "x-adapter-signature")
 end
 
 fn authenticated(request :: Request, body :: String) -> Bool do
@@ -70,6 +74,22 @@ fn authenticated(request :: Request, body :: String) -> Bool do
   else
     let expected_signature = body |2> Crypto.hmac_sha256(secret)
     request_signature(request) |> Crypto.secure_compare(expected_signature)
+  end
+end
+
+fn operator_authenticated(
+  request :: Request,
+  idempotency_key :: String,
+  body :: String
+) -> Bool do
+  let secret = Env.get("OPERATOR_HMAC_SECRET", "")
+  if String.length(secret) == 0 || String.length(idempotency_key) == 0 do
+    false
+  else
+    let signed_body = "${idempotency_key}\n${body}"
+    let expected = signed_body |2> Crypto.hmac_sha256(secret)
+    request_header(request, "x-operator-signature")
+      |> Crypto.secure_compare(expected)
   end
 end
 
@@ -94,19 +114,23 @@ result :: OpportunitySet,
 portfolio_id :: String,
 variant :: PaperVariant,
 runtime :: PaperRuntime) -> Int ! String do
+  if runtime.pause_all do
+    return Ok(0)
+  end
   if runtime.state == Idle do
     let plan = (runtime |4> plan_entry(snapshot, result, variant)) ?
     plan |6> persist_paper_plan(pool, snapshot, result, portfolio_id, runtime)
   else
-    if runtime.state == Hedged do
-      let position = (portfolio_id |2> load_paper_position(pool)) ?
-      let plan = (position |3> plan_position(snapshot,
-      result,
-      Env.get_int("REBALANCE_DELTA_BPS", 50))) ?
-      plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
-    else
-      Ok(0)
+    if runtime.state != Hedged do
+      return Ok(0)
     end
+    let position = (portfolio_id |2> load_paper_position(pool)) ?
+    let plan = (position |3> plan_position(
+      snapshot,
+      result,
+      Env.get_int("REBALANCE_DELTA_BPS", 50)
+    )) ?
+    plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
   end
 end
 
@@ -256,6 +280,50 @@ fn authenticated_event_response(body :: String) do
   end
 end
 
+fn operator_response(request :: Request, action :: String) do
+  let body = Request.body(request)
+  let idempotency_key = request_header(request, "x-idempotency-key")
+  if operator_authenticated(request, idempotency_key, body) == false do
+    warn("operator_command_rejected", "{\"action\":\"${action}\",\"reason\":\"authentication\"}")
+    return error_response(401, "unauthorized", "invalid operator signature")
+  end
+  if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
+    return error_response(400, "invalid_request", "invalid idempotency key")
+  end
+  case Json.parse(body) do
+    Err(reason) -> error_response(400, "invalid_request", reason)
+    Ok(_parsed) -> do
+      if Json.is_string(body, "reason") == false do
+        return error_response(400, "invalid_request", "reason must be a JSON string")
+      end
+      let reason = String.trim(Json.get(body, "reason"))
+      if String.length(reason) == 0 || String.length(reason) > 500 do
+        return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
+      end
+      let request_hash = "${idempotency_key}\n${body}" |> Crypto.sha256
+      case persist_operator_command(
+        get_pool(),
+        action,
+        idempotency_key,
+        reason,
+        request_hash
+      ) do
+        Ok(result) -> do
+          info("operator_command_applied", "{\"action\":\"${action}\",\"idempotencyKey\":\"${idempotency_key}\"}")
+          HTTP.response(202, result)
+        end
+        Err(error) -> do
+          if String.contains(error, "idempotency key reused") do
+            error_response(409, "idempotency_conflict", "idempotency key reused for a different command")
+          else
+            error_response(500, "operator_command_failed", error)
+          end
+        end
+      end
+    end
+  end
+end
+
 pub fn handle_event(request :: Request) -> Response do
   let body = Request.body(request)
   if authenticated(request, body) == false do
@@ -265,6 +333,22 @@ pub fn handle_event(request :: Request) -> Response do
   else
     authenticated_event_response(body)
   end
+end
+
+pub fn handle_pause_entries(request :: Request) -> Response do
+  operator_response(request, "pause_entries")
+end
+
+pub fn handle_pause_all(request :: Request) -> Response do
+  operator_response(request, "pause_all")
+end
+
+pub fn handle_resume(request :: Request) -> Response do
+  operator_response(request, "resume")
+end
+
+pub fn handle_reconcile(request :: Request) -> Response do
+  operator_response(request, "reconcile")
 end
 
 pub fn handle_health(_request :: Request) -> Response do
@@ -279,7 +363,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "dc36f28c549bc628b9106a6b90ce6a5b3c293a89"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 6
+    schemaVersion : 7
   })
 end
 
@@ -411,7 +495,7 @@ pub fn handle_config(_request :: Request) -> Response do
     maxSourceAgeMs : Env.get_int("MAX_SOURCE_AGE_MS", 5000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 6,
+    databaseSchemaVersion : 7,
     liveEnabled : false
   })
 end

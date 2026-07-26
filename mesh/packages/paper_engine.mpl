@@ -72,6 +72,7 @@ pub struct PaperRuntime do
   now_ms :: Int
   max_age_ms :: Int
   paused :: Bool
+  pause_all :: Bool
   state :: PortfolioState
   state_version :: Int
   random_state :: Int

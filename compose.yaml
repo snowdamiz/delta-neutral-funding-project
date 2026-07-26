@@ -50,6 +50,7 @@ services:
     environment:
       <<: *paper-environment
       DATABASE_URL: postgresql://funding:${POSTGRES_PASSWORD:-paper}@postgres:5432/funding
+      OPERATOR_HMAC_SECRET: ${OPERATOR_HMAC_SECRET:-local-operator-only-change-me}
       PORT: 8080
       CODE_COMMIT: ${CODE_COMMIT:-development}
       MESH_COMMIT: dc36f28c549bc628b9106a6b90ce6a5b3c293a89

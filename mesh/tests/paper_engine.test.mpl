@@ -53,6 +53,7 @@ describe("paper entry planner") do
           now_ms : 1785024001000,
           max_age_ms : 5000,
           paused : false,
+          pause_all : false,
           state : Idle,
           state_version : 0,
           random_state : Random.seed(42)
@@ -74,6 +75,7 @@ describe("paper entry planner") do
           now_ms : 1785024001000,
           max_age_ms : 5000,
           paused : false,
+          pause_all : false,
           state : Idle,
           state_version : 0,
           random_state : Random.seed(42)
@@ -99,6 +101,7 @@ describe("paper entry planner") do
         now_ms : 1785024001000,
         max_age_ms : 5000,
         paused : false,
+        pause_all : false,
         state : Idle,
         state_version : 0,
         random_state : Random.seed(42)
@@ -123,6 +126,7 @@ describe("paper entry planner") do
         now_ms : 1785024001000,
         max_age_ms : 5000,
         paused : false,
+        pause_all : false,
         state : Idle,
         state_version : 0,
         random_state : Random.seed(42)
@@ -149,6 +153,7 @@ describe("paper entry planner") do
         now_ms : 1785024001000,
         max_age_ms : 5000,
         paused : false,
+        pause_all : false,
         state : Hedged,
         state_version : 4,
         random_state : Random.seed(42)
