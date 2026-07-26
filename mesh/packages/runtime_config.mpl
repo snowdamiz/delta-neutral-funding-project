@@ -1,6 +1,16 @@
 pub struct RuntimeConfig do
   execution_mode :: String
+  adapter_mode :: String
+  emit_interval_ms :: Int
+  funding_interval_events :: Int
+  source_max_slot_drift :: Int
+  source_max_funding_age_ms :: Int
   target_notional_usd_micros :: Int
+  paper_maximum_jitosol_atoms :: Int
+  paper_collateral_usd_micros :: Int
+  paper_costs_usd_micros :: Int
+  paper_risk_haircut_usd_micros :: Int
+  paper_slippage_bps :: Int
   max_source_age_ms :: Int
   minimum_margin_ratio_ppm :: Int
   minimum_liquidation_distance_bps :: Int
@@ -30,8 +40,27 @@ end
 pub fn load_runtime_config() -> RuntimeConfig ! String do
   RuntimeConfig {
     execution_mode : Env.get("EXECUTION_MODE", ""),
+    adapter_mode : Env.get("ADAPTER_MODE", "synthetic"),
+    emit_interval_ms : ("EMIT_INTERVAL_MS"
+      |> unsigned_env(10000)) ?,
+    funding_interval_events : ("FUNDING_INTERVAL_EVENTS"
+      |> unsigned_env(12)) ?,
+    source_max_slot_drift : ("SOURCE_MAX_SLOT_DRIFT"
+      |> unsigned_env(5000)) ?,
+    source_max_funding_age_ms : ("SOURCE_MAX_FUNDING_AGE_MS"
+      |> unsigned_env(7200000)) ?,
     target_notional_usd_micros : ("PAPER_NOTIONAL_USD_MICROS"
       |> unsigned_env(500000000)) ?,
+    paper_maximum_jitosol_atoms : ("PAPER_MAX_JITOSOL_ATOMS"
+      |> unsigned_env(10000000000)) ?,
+    paper_collateral_usd_micros : ("PAPER_COLLATERAL_USD_MICROS"
+      |> unsigned_env(500000000)) ?,
+    paper_costs_usd_micros : ("PAPER_COSTS_USD_MICROS"
+      |> unsigned_env(200000)) ?,
+    paper_risk_haircut_usd_micros : ("PAPER_RISK_HAIRCUT_USD_MICROS"
+      |> unsigned_env(50000)) ?,
+    paper_slippage_bps : ("PAPER_SLIPPAGE_BPS"
+      |> unsigned_env(50)) ?,
     max_source_age_ms : ("MAX_SOURCE_AGE_MS"
       |> unsigned_env(5000)) ?,
     minimum_margin_ratio_ppm : ("MIN_MARGIN_RATIO_PPM"
@@ -80,8 +109,30 @@ pub fn validate_runtime_config(
   if config.execution_mode != "paper" do
     return Err("EXECUTION_MODE must be paper")
   end
+  if (["synthetic", "authoritative"]
+    |> List.contains(config.adapter_mode)) == false do
+    return Err("ADAPTER_MODE must be synthetic or authoritative")
+  end
+  if config.emit_interval_ms <= 0 do
+    return Err("EMIT_INTERVAL_MS must be positive")
+  end
+  if config.funding_interval_events <= 0 do
+    return Err("FUNDING_INTERVAL_EVENTS must be positive")
+  end
+  if config.source_max_funding_age_ms <= 0 do
+    return Err("SOURCE_MAX_FUNDING_AGE_MS must be positive")
+  end
   if config.target_notional_usd_micros <= 0 do
     return Err("PAPER_NOTIONAL_USD_MICROS must be positive")
+  end
+  if config.paper_maximum_jitosol_atoms <= 0 do
+    return Err("PAPER_MAX_JITOSOL_ATOMS must be positive")
+  end
+  if config.paper_collateral_usd_micros <= 0 do
+    return Err("PAPER_COLLATERAL_USD_MICROS must be positive")
+  end
+  if config.paper_slippage_bps > 10000 do
+    return Err("PAPER_SLIPPAGE_BPS must be between 0 and 10000")
   end
   if config.max_source_age_ms <= 0 do
     return Err("MAX_SOURCE_AGE_MS must be positive")
@@ -115,7 +166,7 @@ pub fn validate_runtime_config(
 end
 
 pub fn canonical_runtime_config(config :: RuntimeConfig) -> String do
-  "{\"configSchemaVersion\":1,\"directUnstakeCapitalDelayHaircutUsdMicros\":\"${config.direct_unstake_capital_delay_haircut_usd_micros}\",\"directUnstakeChainFeesUsdMicros\":\"${config.direct_unstake_chain_fees_usd_micros}\",\"directUnstakeFeePpm\":\"${config.direct_unstake_fee_ppm}\",\"directUnstakeFinalHedgeCloseCostUsdMicros\":\"${config.direct_unstake_final_hedge_close_cost_usd_micros}\",\"directUnstakeHedgeCostUsdMicros\":\"${config.direct_unstake_hedge_cost_usd_micros}\",\"directUnstakeScenario\":\"${config.direct_unstake_scenario}\",\"executionIntentTtlMs\":\"${config.execution_intent_ttl_ms}\",\"executionMode\":\"${config.execution_mode}\",\"executionPolicyProfile\":\"${config.execution_policy_profile}\",\"maxSourceAgeMs\":\"${config.max_source_age_ms}\",\"maximumExecutionSlippageBps\":\"${config.maximum_execution_slippage_bps}\",\"minimumLiquidationDistanceBps\":\"${config.minimum_liquidation_distance_bps}\",\"minimumMarginRatioPpm\":\"${config.minimum_margin_ratio_ppm}\",\"rebalanceDeltaBps\":\"${config.rebalance_delta_bps}\",\"targetNotionalUsdMicros\":\"${config.target_notional_usd_micros}\"}"
+  "{\"adapterMode\":\"${config.adapter_mode}\",\"configSchemaVersion\":1,\"directUnstakeCapitalDelayHaircutUsdMicros\":\"${config.direct_unstake_capital_delay_haircut_usd_micros}\",\"directUnstakeChainFeesUsdMicros\":\"${config.direct_unstake_chain_fees_usd_micros}\",\"directUnstakeFeePpm\":\"${config.direct_unstake_fee_ppm}\",\"directUnstakeFinalHedgeCloseCostUsdMicros\":\"${config.direct_unstake_final_hedge_close_cost_usd_micros}\",\"directUnstakeHedgeCostUsdMicros\":\"${config.direct_unstake_hedge_cost_usd_micros}\",\"directUnstakeScenario\":\"${config.direct_unstake_scenario}\",\"emitIntervalMs\":\"${config.emit_interval_ms}\",\"executionIntentTtlMs\":\"${config.execution_intent_ttl_ms}\",\"executionMode\":\"${config.execution_mode}\",\"executionPolicyProfile\":\"${config.execution_policy_profile}\",\"fundingIntervalEvents\":\"${config.funding_interval_events}\",\"maxSourceAgeMs\":\"${config.max_source_age_ms}\",\"maximumExecutionSlippageBps\":\"${config.maximum_execution_slippage_bps}\",\"minimumLiquidationDistanceBps\":\"${config.minimum_liquidation_distance_bps}\",\"minimumMarginRatioPpm\":\"${config.minimum_margin_ratio_ppm}\",\"paperCollateralUsdMicros\":\"${config.paper_collateral_usd_micros}\",\"paperCostsUsdMicros\":\"${config.paper_costs_usd_micros}\",\"paperMaximumJitoSolAtoms\":\"${config.paper_maximum_jitosol_atoms}\",\"paperRiskHaircutUsdMicros\":\"${config.paper_risk_haircut_usd_micros}\",\"paperSlippageBps\":\"${config.paper_slippage_bps}\",\"rebalanceDeltaBps\":\"${config.rebalance_delta_bps}\",\"sourceMaxFundingAgeMs\":\"${config.source_max_funding_age_ms}\",\"sourceMaxSlotDrift\":\"${config.source_max_slot_drift}\",\"targetNotionalUsdMicros\":\"${config.target_notional_usd_micros}\"}"
 end
 
 pub fn runtime_config_hash(config :: RuntimeConfig) -> String do
