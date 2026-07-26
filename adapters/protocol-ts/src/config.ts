@@ -85,8 +85,15 @@ export function loadConfig(
     throw new Error("ADAPTER_MODE must be synthetic or authoritative");
   }
   const jupiterApiKey = env.JUPITER_API_KEY ?? "";
-  if (mode === "authoritative" && jupiterApiKey.length === 0) {
-    throw new Error("JUPITER_API_KEY is required in authoritative mode");
+  const emitIntervalMs = positiveInteger(env, "EMIT_INTERVAL_MS", 10_000);
+  if (
+    mode === "authoritative" &&
+    jupiterApiKey.length === 0 &&
+    emitIntervalMs < 10_000
+  ) {
+    throw new Error(
+      "EMIT_INTERVAL_MS must be at least 10000 for keyless Jupiter access",
+    );
   }
   const sessionId = env.ADAPTER_SESSION_ID ?? `local-${Date.now()}`;
   if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
@@ -108,7 +115,7 @@ export function loadConfig(
     sessionId,
     collectorUrl: env.COLLECTOR_URL ?? "http://collector:8080/v1/events",
     hmacSecret,
-    emitIntervalMs: positiveInteger(env, "EMIT_INTERVAL_MS", 5000),
+    emitIntervalMs,
     fundingIntervalEvents: positiveInteger(env, "FUNDING_INTERVAL_EVENTS", 12),
     requestTimeoutMs: positiveInteger(env, "REQUEST_TIMEOUT_MS", 3000),
     healthPort: positiveInteger(env, "HEALTH_PORT", 8090),

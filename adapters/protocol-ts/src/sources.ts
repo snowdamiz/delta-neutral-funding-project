@@ -466,6 +466,10 @@ function quote(
 
 async function jupiter(config: AdapterConfig): Promise<JupiterCapture> {
   return firstProvider("Jupiter", config.jupiterUrls, async (endpoint) => {
+    const request =
+      config.jupiterApiKey.length > 0
+        ? { headers: { "x-api-key": config.jupiterApiKey } }
+        : {};
     const specs = [
       [solMint, usdcMint, config.paperQuantityAtoms, "ExactIn"],
       [usdcMint, solMint, config.paperQuantityAtoms, "ExactOut"],
@@ -476,7 +480,7 @@ async function jupiter(config: AdapterConfig): Promise<JupiterCapture> {
       fetchJson(
         quoteUrl(endpoint, input, output, amount, mode, config.paperSlippageBps),
         config.requestTimeoutMs,
-        { headers: { "x-api-key": config.jupiterApiKey } },
+        request,
       ),
     ));
     const quotes = responses.map((response, index) => {

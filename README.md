@@ -21,13 +21,14 @@ paper capture is opt-in and fails closed; it never falls back to synthetic data:
 
 ```sh
 ADAPTER_MODE=authoritative \
-JUPITER_API_KEY=replace-with-read-only-api-key \
 docker compose up --build
 ```
 
 That mode combines the Phoenix SOL orderbook and hourly funding record, JitoSOL
 stake-pool and mint accounts from Solana RPC, and exact-size Jupiter spot
-quotes. Comma-separated `PHOENIX_URLS`, `SOLANA_RPC_URLS`, and `JUPITER_URLS`
+quotes. Jupiter's bounded keyless access is sufficient for the default ten-second
+capture interval; `JUPITER_API_KEY` enables a separately managed higher-rate
+quota. Comma-separated `PHOENIX_URLS`, `SOLANA_RPC_URLS`, and `JUPITER_URLS`
 provide ordered failover.
 
 Read-only operator commands use `bin/collector` directly. Mutations require the

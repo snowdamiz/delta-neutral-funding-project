@@ -43,6 +43,11 @@ Official sources:
 The adapter combines a slotted Phoenix SOL book and funding record, slotted
 JitoSOL stake-pool state from Solana RPC, and exact Jupiter spot quotes. It
 converts decimal source fields to checked integer atoms at the boundary.
+Jupiter's official keyless tier is used at no more than 24 quote requests per
+minute at the default interval; a key is optional and never grants mutation
+authority. Swap V1 remains necessary for exact-output paper quotes while Swap
+V2 supports only exact-input orders, and must be reconsidered if that contract
+changes.
 Opportunity estimates may use the latest completed hourly rate, but the ledger
 settles only from a unique authoritative funding record or reconciled account
 delta.

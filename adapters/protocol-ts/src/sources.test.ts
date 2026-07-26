@@ -35,6 +35,7 @@ async function listen(
 test("normalizes a slotted source bundle, fails over, and rejects corrupt pool state", async () => {
   let primaryRequests = 0;
   let mismatchMintSupply = false;
+  let expectedJupiterKey: string | undefined = "test-jupiter-key";
   const primary = await listen((_request, response) => {
     primaryRequests += 1;
     json(response, { error: "primary unavailable" }, 503);
@@ -124,7 +125,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         return;
       }
       if (url.pathname === "/jupiter/quote") {
-        assert.equal(request.headers["x-api-key"], "test-jupiter-key");
+        assert.equal(request.headers["x-api-key"], expectedJupiterKey);
         const input = url.searchParams.get("inputMint");
         const output = url.searchParams.get("outputMint");
         const swapMode = url.searchParams.get("swapMode");
@@ -209,9 +210,35 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert.match(captured.snapshot.rawPayloadHash, /^[0-9a-f]{64}$/);
     assert(primaryRequests >= 3);
 
+    expectedJupiterKey = undefined;
+    const keylessConfig = loadConfig({
+      ADAPTER_HMAC_SECRET: "secret",
+      ADAPTER_MODE: "authoritative",
+      ADAPTER_SESSION_ID: "source-test-keyless",
+      EMIT_INTERVAL_MS: "10000",
+      PHOENIX_URLS: `${backup.url}/phoenix`,
+      SOLANA_RPC_URLS: `${backup.url}/rpc`,
+      JUPITER_URLS: `${backup.url}/jupiter`,
+      SOURCE_MAX_SLOT_DRIFT: "10",
+      SOURCE_MAX_FUNDING_AGE_MS: "7200000",
+      PAPER_QUANTITY_ATOMS: "2000000000",
+      PAPER_NOTIONAL_USD_MICROS: "500000000",
+      PAPER_COLLATERAL_USD_MICROS: "500000000",
+      PAPER_COSTS_USD_MICROS: "200000",
+      PAPER_RISK_HAIRCUT_USD_MICROS: "50000",
+      PAPER_SLIPPAGE_BPS: "5",
+    });
+    const keyless = await buildAuthoritativeEvents(
+      keylessConfig,
+      8n,
+      1_785_024_000_000n,
+    );
+    assert.equal(keyless.snapshot.source, "authoritative:source-test-keyless");
+
+    expectedJupiterKey = "test-jupiter-key";
     mismatchMintSupply = true;
     await assert.rejects(
-      buildAuthoritativeEvents(config, 8n, 1_785_024_001_000n),
+      buildAuthoritativeEvents(config, 9n, 1_785_024_001_000n),
       /mint supply does not match stake pool/,
     );
   } finally {
