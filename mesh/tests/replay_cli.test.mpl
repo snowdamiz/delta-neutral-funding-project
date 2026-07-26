@@ -17,6 +17,8 @@ describe("replay CLI") do
       Ok(output) -> do
         assert(Json.get(output, "bundle_id") == "calm-v1")
         assert(Json.get(output, "event_count") == "4")
+        assert(Json.get(output, "sol_rebalances") == "0")
+        assert(Json.get(output, "jitosol_emergencies") == "0")
         assert(Json.get(output, "sol_funding_usd_micros") == "92525")
       end
       Err(error) -> assert(false)

@@ -34,6 +34,10 @@ struct PortfolioStep do
   trace :: String
   entries :: Int
   exits :: Int
+  rebalances :: Int
+  emergencies :: Int
+  reward_lamports :: Int
+  basis_lamports :: Int
 end
 
 struct ReplayState do
@@ -45,6 +49,14 @@ struct ReplayState do
   jitosol_entries :: Int
   sol_exits :: Int
   jitosol_exits :: Int
+  sol_rebalances :: Int
+  jitosol_rebalances :: Int
+  sol_emergencies :: Int
+  jitosol_emergencies :: Int
+  sol_reward_lamports :: Int
+  jitosol_reward_lamports :: Int
+  sol_basis_lamports :: Int
+  jitosol_basis_lamports :: Int
   sol_funding_usd_micros :: Int
   jitosol_funding_usd_micros :: Int
   last_observed_at_ms :: Int
@@ -67,6 +79,14 @@ pub struct ReplayReport do
   jitosol_entries :: Int
   sol_exits :: Int
   jitosol_exits :: Int
+  sol_rebalances :: Int
+  jitosol_rebalances :: Int
+  sol_emergencies :: Int
+  jitosol_emergencies :: Int
+  sol_reward_lamports :: Int
+  jitosol_reward_lamports :: Int
+  sol_basis_lamports :: Int
+  jitosol_basis_lamports :: Int
   sol_funding_usd_micros :: Int
   jitosol_funding_usd_micros :: Int
   trace_hash :: String
@@ -191,6 +211,14 @@ fn initial_state(seed :: Int) -> ReplayState do
     jitosol_entries : 0,
     sol_exits : 0,
     jitosol_exits : 0,
+    sol_rebalances : 0,
+    jitosol_rebalances : 0,
+    sol_emergencies : 0,
+    jitosol_emergencies : 0,
+    sol_reward_lamports : 0,
+    jitosol_reward_lamports : 0,
+    sol_basis_lamports : 0,
+    jitosol_basis_lamports : 0,
     sol_funding_usd_micros : 0,
     jitosol_funding_usd_micros : 0,
     last_observed_at_ms : 0,
@@ -267,19 +295,31 @@ fn step_idle(
       portfolio : ReplayOpen(open_position(snapshot, opportunity, variant, plan) ?),
       trace : trace,
       entries : 1,
-      exits : 0
+      exits : 0,
+      rebalances : 0,
+      emergencies : 0,
+      reward_lamports : 0,
+      basis_lamports : 0
     })
     EntrySkipped -> Ok(PortfolioStep {
       portfolio : ReplayIdle(variant, plan.next_random_state),
       trace : trace,
       entries : 0,
-      exits : 0
+      exits : 0,
+      rebalances : 0,
+      emergencies : 0,
+      reward_lamports : 0,
+      basis_lamports : 0
     })
     _ -> Ok(PortfolioStep {
       portfolio : ReplayStopped(variant, plan.next_random_state, plan.reason),
       trace : trace,
       entries : 0,
-      exits : 0
+      exits : 0,
+      rebalances : 0,
+      emergencies : 1,
+      reward_lamports : 0,
+      basis_lamports : 0
     })
   end
 end
@@ -316,19 +356,31 @@ fn step_open(
       portfolio : ReplayIdle(position.variant, plan.next_random_state),
       trace : trace,
       entries : 0,
-      exits : 1
+      exits : 1,
+      rebalances : 0,
+      emergencies : 0,
+      reward_lamports : plan.valuation.reward_sol_lamports.atoms,
+      basis_lamports : plan.valuation.basis_sol_lamports.atoms
     })
     EmergencyPosition -> Ok(PortfolioStep {
       portfolio : ReplayStopped(position.variant, plan.next_random_state, plan.reason),
       trace : trace,
       entries : 0,
-      exits : 0
+      exits : 0,
+      rebalances : 0,
+      emergencies : 1,
+      reward_lamports : plan.valuation.reward_sol_lamports.atoms,
+      basis_lamports : plan.valuation.basis_sol_lamports.atoms
     })
     _ -> Ok(PortfolioStep {
       portfolio : ReplayOpen(next_position(position, plan)),
       trace : trace,
       entries : 0,
-      exits : 0
+      exits : 0,
+      rebalances : if plan.action == RebalancePerp do 1 else 0 end,
+      emergencies : 0,
+      reward_lamports : plan.valuation.reward_sol_lamports.atoms,
+      basis_lamports : plan.valuation.basis_sol_lamports.atoms
     })
   end
 end
@@ -352,7 +404,11 @@ fn step_portfolio(
       portfolio : ReplayStopped(variant, random_state, reason),
       trace : "${snapshot.observed_at_ms}|${snapshot.event_id}|${variant_name(variant)}|stopped|${reason}",
       entries : 0,
-      exits : 0
+      exits : 0,
+      rebalances : 0,
+      emergencies : 0,
+      reward_lamports : 0,
+      basis_lamports : 0
     })
   end
 end
@@ -375,6 +431,18 @@ fn apply_snapshot(
     jitosol_entries : state.jitosol_entries + jitosol.entries,
     sol_exits : state.sol_exits + sol.exits,
     jitosol_exits : state.jitosol_exits + jitosol.exits,
+    sol_rebalances : state.sol_rebalances + sol.rebalances,
+    jitosol_rebalances : state.jitosol_rebalances + jitosol.rebalances,
+    sol_emergencies : state.sol_emergencies + sol.emergencies,
+    jitosol_emergencies : state.jitosol_emergencies + jitosol.emergencies,
+    sol_reward_lamports : (state.sol_reward_lamports
+      |> Checked.add(sol.reward_lamports)) ?,
+    jitosol_reward_lamports : (state.jitosol_reward_lamports
+      |> Checked.add(jitosol.reward_lamports)) ?,
+    sol_basis_lamports : (state.sol_basis_lamports
+      |> Checked.add(sol.basis_lamports)) ?,
+    jitosol_basis_lamports : (state.jitosol_basis_lamports
+      |> Checked.add(jitosol.basis_lamports)) ?,
     trace : state.trace
       |> List.append(sol.trace)
       |> List.append(jitosol.trace)
@@ -471,6 +539,14 @@ pub fn run_replay(
     jitosol_entries : state.jitosol_entries,
     sol_exits : state.sol_exits,
     jitosol_exits : state.jitosol_exits,
+    sol_rebalances : state.sol_rebalances,
+    jitosol_rebalances : state.jitosol_rebalances,
+    sol_emergencies : state.sol_emergencies,
+    jitosol_emergencies : state.jitosol_emergencies,
+    sol_reward_lamports : state.sol_reward_lamports,
+    jitosol_reward_lamports : state.jitosol_reward_lamports,
+    sol_basis_lamports : state.sol_basis_lamports,
+    jitosol_basis_lamports : state.jitosol_basis_lamports,
     sol_funding_usd_micros : state.sol_funding_usd_micros,
     jitosol_funding_usd_micros : state.jitosol_funding_usd_micros,
     trace_hash : state.trace
