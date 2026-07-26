@@ -63,6 +63,9 @@ services:
       dockerfile: infra/docker/collector.Dockerfile
       additional_contexts:
         mesh_lang: ../mesh-lang
+      args:
+        CODE_COMMIT: ${CODE_COMMIT:-development}
+        MESH_COMMIT: 6fdb83afe68703f9459a4e7035b1b84d96316e6b
       sbom: true
       provenance: mode=max
     depends_on:
@@ -77,8 +80,6 @@ services:
       LEADER_LEASE_MS: ${LEADER_LEASE_MS:-10000}
       LEADER_RENEW_MS: ${LEADER_RENEW_MS:-3000}
       PORT: 8080
-      CODE_COMMIT: ${CODE_COMMIT:-development}
-      MESH_COMMIT: 6fdb83afe68703f9459a4e7035b1b84d96316e6b
     init: true
     read_only: true
     cap_drop:
@@ -100,6 +101,8 @@ services:
     build:
       context: .
       dockerfile: infra/docker/adapter.Dockerfile
+      args:
+        CODE_COMMIT: ${CODE_COMMIT:-development}
       sbom: true
       provenance: mode=max
     depends_on:

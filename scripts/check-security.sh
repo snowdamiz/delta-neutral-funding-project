@@ -4,6 +4,8 @@ set -eu
 project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 mesh_dir="$project_dir/../mesh-lang"
 expected_mesh=6fdb83afe68703f9459a4e7035b1b84d96316e6b
+project_commit=$(git -C "$project_dir" rev-parse HEAD)
+mesh_tag=$(printf '%.7s' "$expected_mesh")
 collector=delta-neutral-funding-collector:latest
 adapter=delta-neutral-funding-adapter:latest
 executor=delta-neutral-funding-executor:latest
@@ -35,6 +37,12 @@ jq -e '
 test "$(docker image inspect --format '{{.Config.User}}' "$collector")" = "collector:collector"
 test "$(docker image inspect --format '{{.Config.User}}' "$adapter")" = "65532:65532"
 test "$(docker image inspect --format '{{.Config.User}}' "$executor")" = "65532:65532"
+for image in "$collector" "$adapter" "$executor"; do
+  test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$project_commit"
+done
+docker image inspect "delta-neutral-funding-collector:$project_commit-$mesh_tag" >/dev/null
+docker image inspect "delta-neutral-funding-adapter:$project_commit" >/dev/null
+docker image inspect "delta-neutral-funding-executor:$project_commit" >/dev/null
 
 for image in "$collector" "$adapter" "$executor"; do
   name=${image%%:*}
