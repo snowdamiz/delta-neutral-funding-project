@@ -1,5 +1,13 @@
 from Packages.Finance import Lamports, UsdMicros
 
+pub struct MarginInput do
+  collateral_usd_micros :: UsdMicros
+  maintenance_requirement_usd_micros :: UsdMicros
+  minimum_margin_ratio_ppm :: Int
+  liquidation_distance_bps :: Int
+  minimum_liquidation_distance_bps :: Int
+end
+
 pub struct RiskInput do
   observed_at_ms :: Int
   now_ms :: Int
@@ -9,6 +17,7 @@ pub struct RiskInput do
   exit_depth :: Lamports
   hedge :: Lamports
   net_carry :: UsdMicros
+  margin :: MarginInput
 end
 
 pub struct RiskDecision do
@@ -18,6 +27,25 @@ end deriving(Eq, Json)
 
 fn reject(code :: String) -> RiskDecision do
   RiskDecision { approved : false, code : code }
+end
+
+pub fn margin_health(input :: MarginInput) -> RiskDecision do
+  if input.maintenance_requirement_usd_micros.atoms <= 0 || input.minimum_margin_ratio_ppm <= 0 || input.liquidation_distance_bps < 0 || input.minimum_liquidation_distance_bps < 0 do
+    return reject("margin_input_invalid")
+  end
+  case input.collateral_usd_micros.atoms
+    |> Checked.mul_div(1000000, input.maintenance_requirement_usd_micros.atoms, :floor) do
+    Ok(ratio) -> if ratio < input.minimum_margin_ratio_ppm do
+      reject("margin_ratio_below_minimum")
+    else
+      if input.liquidation_distance_bps < input.minimum_liquidation_distance_bps do
+        reject("liquidation_distance_below_minimum")
+      else
+        RiskDecision { approved : true, code : "approved" }
+      end
+    end
+    Err(error) -> reject("margin_input_invalid")
+  end
 end
 
 pub fn source_health(
@@ -47,6 +75,10 @@ pub fn approve_entry(input :: RiskInput) -> RiskDecision do
   end
   if input.oracle_valid == false do
     return reject("oracle_invalid")
+  end
+  let margin = input.margin |> margin_health
+  if margin.approved == false do
+    return margin
   end
   if input.exit_depth.atoms < input.hedge.atoms do
     return reject("insufficient_exit_depth")

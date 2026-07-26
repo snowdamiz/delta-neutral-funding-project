@@ -2,7 +2,7 @@ from Packages.BrokerPaper import FailureOutcome, FillStatus, OrderSide, PaperFil
 from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, UsdMicros, position_delta
 from Packages.Opportunity import OpportunitySet
 from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
-from Packages.RiskEngine import RiskInput, approve_entry, source_health
+from Packages.RiskEngine import MarginInput, RiskInput, approve_entry, margin_health, source_health
 from Packages.StateMachine import PortfolioSignal, PortfolioState, transition
 
 pub type PaperVariant do
@@ -73,6 +73,9 @@ pub struct PaperRuntime do
   max_age_ms :: Int
   paused :: Bool
   pause_all :: Bool
+  minimum_margin_ratio_ppm :: Int
+  minimum_liquidation_distance_bps :: Int
+  rebalance_delta_bps :: Int
   state :: PortfolioState
   state_version :: Int
   random_state :: Int
@@ -426,6 +429,16 @@ random_state :: Int) -> PaperPlan ! String do
   end
 end
 
+fn margin_input(snapshot :: MarketSnapshot, runtime :: PaperRuntime) -> MarginInput do
+  MarginInput {
+    collateral_usd_micros : snapshot.collateral_usd_micros,
+    maintenance_requirement_usd_micros : snapshot.maintenance_requirement_usd_micros,
+    minimum_margin_ratio_ppm : runtime.minimum_margin_ratio_ppm,
+    liquidation_distance_bps : snapshot.liquidation_distance_bps,
+    minimum_liquidation_distance_bps : runtime.minimum_liquidation_distance_bps
+  }
+end
+
 pub fn plan_entry(snapshot :: MarketSnapshot,
 opportunity :: OpportunitySet,
 variant :: PaperVariant,
@@ -442,7 +455,8 @@ runtime :: PaperRuntime) -> PaperPlan ! String do
     oracle_valid : oracle_valid(snapshot.oracle_status),
     exit_depth : minimum_depth(leg.exit_depth, snapshot.perp_exit_depth_lamports),
     hedge : opportunity.hedge_lamports,
-    net_carry : leg.net_carry
+    net_carry : leg.net_carry,
+    margin : margin_input(snapshot, runtime)
   })
   if decision.approved == false do
     return Ok(skipped_plan(variant, decision.code, runtime.random_state))
@@ -757,17 +771,19 @@ end
 pub fn plan_position(snapshot :: MarketSnapshot,
 opportunity :: OpportunitySet,
 position :: PaperPosition,
-now_ms :: Int,
-max_age_ms :: Int,
-rebalance_delta_bps :: Int) -> PositionPlan ! String do
-  if rebalance_delta_bps < 0 do
+runtime :: PaperRuntime) -> PositionPlan ! String do
+  if runtime.rebalance_delta_bps < 0 do
     return Err("rebalance delta threshold must be non-negative")
   end
   let valuation = position_valuation(snapshot, opportunity, position) ?
   let source = snapshot.observed_at_ms
-    |> source_health(now_ms, max_age_ms)
+    |> source_health(runtime.now_ms, runtime.max_age_ms)
   if source.approved == false do
     return Ok(hold_position(position, valuation, source.code))
+  end
+  let margin = margin_input(snapshot, runtime) |> margin_health
+  if margin.approved == false do
+    return plan_exit(snapshot, position, valuation, margin.code)
   end
   let net_carry = if position.variant == SolControl do
     opportunity.sol_net_carry_usd_micros
@@ -788,7 +804,7 @@ rebalance_delta_bps :: Int) -> PositionPlan ! String do
   if net_carry.atoms <= 0 do
     return plan_exit(snapshot, position, valuation, "carry_non_positive")
   end
-  if valuation.delta_bps >= rebalance_delta_bps && valuation.delta_lamports.atoms != 0 do
+  if valuation.delta_bps >= runtime.rebalance_delta_bps && valuation.delta_lamports.atoms != 0 do
     plan_rebalance(snapshot, position, valuation)
   else
     Ok(hold_position(position, valuation, "within_delta_band"))

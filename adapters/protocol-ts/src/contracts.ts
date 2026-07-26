@@ -11,6 +11,9 @@ export type MarketSnapshotPayload = {
   priorNavLamports: string;
   costsUsdMicros: string;
   riskHaircutUsdMicros: string;
+  collateralUsdMicros: string;
+  maintenanceRequirementUsdMicros: string;
+  liquidationDistanceBps: string;
   solSpotBidPriceUsdMicros: string;
   solSpotAskPriceUsdMicros: string;
   jitosolSpotBidPriceUsdMicros: string;
@@ -75,6 +78,9 @@ const payloadFields = [
   "priorNavLamports",
   "costsUsdMicros",
   "riskHaircutUsdMicros",
+  "collateralUsdMicros",
+  "maintenanceRequirementUsdMicros",
+  "liquidationDistanceBps",
   "solSpotBidPriceUsdMicros",
   "solSpotAskPriceUsdMicros",
   "jitosolSpotBidPriceUsdMicros",
@@ -188,6 +194,9 @@ export function validateEvent(value: unknown): ProtocolEvent {
   ) {
     throw new Error("paper failure rates exceed one million ppm");
   }
+  if (BigInt(payload.maintenanceRequirementUsdMicros as string) === 0n) {
+    throw new Error("maintenanceRequirementUsdMicros must be positive");
+  }
   return value as MarketSnapshotEvent;
 }
 
@@ -207,6 +216,9 @@ export function buildSyntheticEvent(
     priorNavLamports: "1234000000",
     costsUsdMicros: "200000",
     riskHaircutUsdMicros: "50000",
+    collateralUsdMicros: "200000000",
+    maintenanceRequirementUsdMicros: "50000000",
+    liquidationDistanceBps: "5000",
     solSpotBidPriceUsdMicros: "149950000",
     solSpotAskPriceUsdMicros: "150050000",
     jitosolSpotBidPriceUsdMicros: "185050000",

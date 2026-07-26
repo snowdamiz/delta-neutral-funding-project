@@ -23,6 +23,9 @@ fn snapshot(oracle_status :: OracleStatus, fill_rate :: Int, reject_rate :: Int)
     prior_nav_lamports : Lamports { atoms : 1234000000 },
     costs_usd_micros : UsdMicros { atoms : 10000 },
     risk_haircut_usd_micros : UsdMicros { atoms : 5000 },
+    collateral_usd_micros : UsdMicros { atoms : 200000000 },
+    maintenance_requirement_usd_micros : UsdMicros { atoms : 50000000 },
+    liquidation_distance_bps : 5000,
     sol_spot_bid_price_usd_micros : PriceMicros { atoms : 149950000 },
     sol_spot_ask_price_usd_micros : PriceMicros { atoms : 150050000 },
     jitosol_spot_bid_price_usd_micros : PriceMicros { atoms : 185050000 },
@@ -41,6 +44,21 @@ fn snapshot(oracle_status :: OracleStatus, fill_rate :: Int, reject_rate :: Int)
   }
 end
 
+fn runtime(state :: PortfolioState, now_ms :: Int) -> PaperRuntime do
+  PaperRuntime {
+    now_ms : now_ms,
+    max_age_ms : 5000,
+    paused : false,
+    pause_all : false,
+    minimum_margin_ratio_ppm : 1500000,
+    minimum_liquidation_distance_bps : 1000,
+    rebalance_delta_bps : 50,
+    state : state,
+    state_version : if state == Idle do 0 else 4 end,
+    random_state : Random.seed(42)
+  }
+end
+
 describe("paper entry planner") do
   test("hedges both variants in spot-first order and stops partial spot entry") do
     let full = snapshot(OracleValid, 1000000, 0)
@@ -49,15 +67,7 @@ describe("paper entry planner") do
         case plan_entry(full,
         opportunity,
         JitoSolCarry,
-        PaperRuntime {
-          now_ms : 1785024001000,
-          max_age_ms : 5000,
-          paused : false,
-          pause_all : false,
-          state : Idle,
-          state_version : 0,
-          random_state : Random.seed(42)
-        }) do
+        runtime(Idle, 1785024001000)) do
           Ok( plan) -> do
             assert(plan.outcome == EntryHedged)
             assert(plan.next_state == Hedged)
@@ -71,15 +81,7 @@ describe("paper entry planner") do
         case plan_entry(partial,
         opportunity,
         SolControl,
-        PaperRuntime {
-          now_ms : 1785024001000,
-          max_age_ms : 5000,
-          paused : false,
-          pause_all : false,
-          state : Idle,
-          state_version : 0,
-          random_state : Random.seed(42)
-        }) do
+        runtime(Idle, 1785024001000)) do
           Ok( plan) -> do
             assert(plan.outcome == EntryPartial)
             assert(plan.next_state == OpeningSpot)
@@ -97,15 +99,7 @@ describe("paper entry planner") do
       Ok( opportunity) -> case plan_entry(invalid,
       opportunity,
       SolControl,
-      PaperRuntime {
-        now_ms : 1785024001000,
-        max_age_ms : 5000,
-        paused : false,
-        pause_all : false,
-        state : Idle,
-        state_version : 0,
-        random_state : Random.seed(42)
-      }) do
+      runtime(Idle, 1785024001000)) do
         Ok( plan) -> do
           assert(plan.outcome == EntrySkipped)
           assert(plan.reason == "oracle_invalid")
@@ -122,15 +116,7 @@ describe("paper entry planner") do
       Ok(opportunity) -> case plan_entry(rejected,
       opportunity,
       SolControl,
-      PaperRuntime {
-        now_ms : 1785024001000,
-        max_age_ms : 5000,
-        paused : false,
-        pause_all : false,
-        state : Idle,
-        state_version : 0,
-        random_state : Random.seed(42)
-      }) do
+      runtime(Idle, 1785024001000)) do
         Ok(plan) -> do
           assert(plan.outcome == EntryRejected)
           assert(plan.next_state == EmergencyFlatten)
@@ -149,15 +135,7 @@ describe("paper entry planner") do
       Ok(opportunity) -> case plan_entry(full,
       opportunity,
       SolControl,
-      PaperRuntime {
-        now_ms : 1785024001000,
-        max_age_ms : 5000,
-        paused : false,
-        pause_all : false,
-        state : Hedged,
-        state_version : 4,
-        random_state : Random.seed(42)
-      }) do
+      runtime(Hedged, 1785024001000)) do
         Ok(plan) -> do
           assert(plan.outcome == EntrySkipped)
           assert(plan.reason == "portfolio_not_idle")
@@ -183,9 +161,7 @@ describe("paper entry planner") do
           state_version : 4,
           random_state : Random.seed(42)
         },
-        1785024001000,
-        5000,
-        50) do
+        runtime(Hedged, 1785024001000)) do
           Ok(plan) -> do
             assert(plan.action == RebalancePerp)
             assert(plan.next_state == Hedged)
@@ -208,9 +184,7 @@ describe("paper entry planner") do
           state_version : 4,
           random_state : Random.seed(42)
         },
-        1785024001000,
-        5000,
-        50) do
+        runtime(Hedged, 1785024001000)) do
           Ok(plan) -> do
             assert(plan.action == ExitPosition)
             assert(plan.next_state == Idle)
@@ -241,9 +215,7 @@ describe("paper entry planner") do
           state_version : 4,
           random_state : Random.seed(42)
         },
-        1785024001000,
-        5000,
-        50
+        runtime(Hedged, 1785024001000)
       ) do
         Ok(plan) -> do
           assert(plan.action == EmergencyPosition)
@@ -274,14 +246,41 @@ describe("paper entry planner") do
           state_version : 4,
           random_state : Random.seed(42)
         },
-        1785024010000,
-        5000,
-        50
+        runtime(Hedged, 1785024010000)
       ) do
         Ok(plan) -> do
           assert(plan.action == HoldPosition)
           assert(plan.reason == "source_stale")
           assert(plan.perp_fill.placed == false)
+        end
+        Err(error) -> assert(false)
+      end
+      Err(error) -> assert(false)
+    end
+  end
+
+  test("exits a position inside the liquidation distance limit") do
+    let unsafe = %{snapshot(OracleValid, 1000000, 0) |
+      liquidation_distance_bps : 999
+    }
+    case evaluate_snapshot(unsafe) do
+      Ok(opportunity) -> case plan_position(
+        unsafe,
+        opportunity,
+        PaperPosition {
+          variant : SolControl,
+          spot_quantity : TokenAtoms { atoms : 1000000000 },
+          perp_short_quantity : Lamports { atoms : 1000000000 },
+          prior_nav_lamports : Lamports { atoms : 1000000000 },
+          prior_market_rate_lamports : Lamports { atoms : 1000000000 },
+          state_version : 4,
+          random_state : Random.seed(42)
+        },
+        runtime(Hedged, 1785024001000)
+      ) do
+        Ok(plan) -> do
+          assert(plan.action == ExitPosition)
+          assert(plan.reason == "liquidation_distance_below_minimum")
         end
         Err(error) -> assert(false)
       end

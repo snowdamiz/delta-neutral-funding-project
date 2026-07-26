@@ -140,25 +140,33 @@ runtime :: PaperRuntime) -> Int ! String do
       if runtime.pause_all do
         return Ok(0)
       end
-      let plan = (position |3> plan_position(
+      let plan = (runtime |4> plan_position(
         snapshot,
         result,
-        runtime.now_ms,
-        runtime.max_age_ms,
-        Env.get_int("REBALANCE_DELTA_BPS", 50)
+        position
       )) ?
       plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
     end
   end
 end
 
+fn paper_runtime(pool :: PoolHandle, portfolio_id :: String, now_ms :: Int) -> PaperRuntime ! String do
+  portfolio_id |2> load_paper_runtime(
+    pool,
+    now_ms,
+    Env.get_int("MAX_SOURCE_AGE_MS", 5000),
+    Env.get_int("MIN_MARGIN_RATIO_PPM", 1500000),
+    Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
+    Env.get_int("REBALANCE_DELTA_BPS", 50)
+  )
+end
+
 fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) -> Int ! String do
   let pool = get_pool()
   let inserted = (Env.get("CONFIG_HASH", "") |5> persist_opportunities(pool, body, snapshot, result)) ?
   let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
-  let max_age_ms = Env.get_int("MAX_SOURCE_AGE_MS", 5000)
-  let sol_runtime = ("local-sol-control" |2> load_paper_runtime(pool, now_ms, max_age_ms)) ?
-  let jitosol_runtime = ("local-jitosol-carry" |2> load_paper_runtime(pool, now_ms, max_age_ms)) ?
+  let sol_runtime = ("local-sol-control" |2> paper_runtime(pool, now_ms)) ?
+  let jitosol_runtime = ("local-jitosol-carry" |2> paper_runtime(pool, now_ms)) ?
   run_portfolio_cycle(pool, snapshot, result, "local-sol-control", SolControl, sol_runtime) ?
   run_portfolio_cycle(pool, snapshot, result, "local-jitosol-carry", JitoSolCarry, jitosol_runtime) ?
   Ok(inserted)
@@ -198,11 +206,7 @@ fn funding_payment(
   event :: FundingSettlement,
   now_ms :: Int
 ) -> String ! String do
-  let runtime = (portfolio_id |2> load_paper_runtime(
-    pool,
-    now_ms,
-    Env.get_int("MAX_SOURCE_AGE_MS", 5000)
-  )) ?
+  let runtime = (portfolio_id |2> paper_runtime(pool, now_ms)) ?
   if runtime.state != Hedged do
     Ok(json { enabled : false })
   else
@@ -557,6 +561,8 @@ pub fn handle_config(_request :: Request) -> Response do
     executionMode : "paper",
     deploymentEnvironment : "local",
     maxSourceAgeMs : Env.get_int("MAX_SOURCE_AGE_MS", 5000),
+    minimumMarginRatioPpm : Env.get_int("MIN_MARGIN_RATIO_PPM", 1500000),
+    minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
     databaseSchemaVersion : 10,

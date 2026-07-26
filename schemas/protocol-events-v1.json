@@ -72,6 +72,9 @@
         "priorNavLamports",
         "costsUsdMicros",
         "riskHaircutUsdMicros",
+        "collateralUsdMicros",
+        "maintenanceRequirementUsdMicros",
+        "liquidationDistanceBps",
         "solSpotBidPriceUsdMicros",
         "solSpotAskPriceUsdMicros",
         "jitosolSpotBidPriceUsdMicros",
@@ -99,6 +102,12 @@
         "priorNavLamports": { "$ref": "#/$defs/unsignedInteger" },
         "costsUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
         "riskHaircutUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "collateralUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "maintenanceRequirementUsdMicros": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "liquidationDistanceBps": { "$ref": "#/$defs/unsignedInteger" },
         "solSpotBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
         "solSpotAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
         "jitosolSpotBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },

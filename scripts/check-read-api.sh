@@ -10,7 +10,7 @@ curl -fsS "$base_url/v1/portfolios" |
 curl -fsS "$base_url/v1/portfolios/local-sol-control" |
   jq -e '.id == "local-sol-control"' >/dev/null
 curl -fsS "$base_url/v1/positions" |
-  jq -e 'length == 2 and all(.[]; .spotQuantity.scale == 9)' >/dev/null
+  jq -e 'length == 2 and all(.[]; .spotQuantity.scale == 9 and .marginSnapshot.collateralUsd.scale == 6 and .marginSnapshot.marginRatioPpm == "4000000")' >/dev/null
 curl -fsS "$base_url/v1/orders?limit=2&offset=0" |
   jq -e '.limit == 2 and .offset == 0 and (.items | length) <= 2' >/dev/null
 curl -fsS "$base_url/v1/fills?limit=2&offset=0" |
@@ -22,7 +22,7 @@ curl -fsS "$base_url/v1/pnl" |
 curl -fsS "$base_url/v1/pnl/comparison" |
   jq -e '.jitosolIncrementalNetRecordedUsd.scale == 6' >/dev/null
 curl -fsS "$base_url/v1/config" |
-  jq -e '.executionMode == "paper" and .liveEnabled == false' >/dev/null
+  jq -e '.executionMode == "paper" and .liveEnabled == false and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000' >/dev/null
 
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/v1/orders?limit=101")" = "400"
 printf 'read API checks passed\n'

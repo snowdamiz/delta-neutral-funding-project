@@ -56,7 +56,15 @@ pub fn load_pending_paper_action(
   end
 end
 
-pub fn load_paper_runtime(pool :: PoolHandle, portfolio_id :: String, now_ms :: Int, max_age_ms :: Int) -> PaperRuntime ! String do
+pub fn load_paper_runtime(
+  pool :: PoolHandle,
+  portfolio_id :: String,
+  now_ms :: Int,
+  max_age_ms :: Int,
+  minimum_margin_ratio_ppm :: Int,
+  minimum_liquidation_distance_bps :: Int,
+  rebalance_delta_bps :: Int
+) -> PaperRuntime ! String do
   let rows = Pool.query(pool, "SELECT p.state::text, p.state_version::text, p.random_state::text, (c.pause_entries OR c.pause_all)::text AS paused, c.pause_all::text FROM portfolio_runs p CROSS JOIN control_state c WHERE p.id = $1", [portfolio_id]) ?
   if List.length(rows) != 1 do
     return Err("paper portfolio not found")
@@ -70,6 +78,9 @@ pub fn load_paper_runtime(pool :: PoolHandle, portfolio_id :: String, now_ms :: 
     max_age_ms : max_age_ms,
     paused : Map.get(row, "paused") == "true",
     pause_all : Map.get(row, "pause_all") == "true",
+    minimum_margin_ratio_ppm : minimum_margin_ratio_ppm,
+    minimum_liquidation_distance_bps : minimum_liquidation_distance_bps,
+    rebalance_delta_bps : rebalance_delta_bps,
     state : state,
     state_version : state_version,
     random_state : random_state

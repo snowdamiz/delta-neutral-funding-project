@@ -23,6 +23,9 @@ pub struct MarketSnapshot do
   prior_nav_lamports :: Lamports
   costs_usd_micros :: UsdMicros
   risk_haircut_usd_micros :: UsdMicros
+  collateral_usd_micros :: UsdMicros
+  maintenance_requirement_usd_micros :: UsdMicros
+  liquidation_distance_bps :: Int
   sol_spot_bid_price_usd_micros :: PriceMicros
   sol_spot_ask_price_usd_micros :: PriceMicros
   jitosol_spot_bid_price_usd_micros :: PriceMicros
@@ -131,6 +134,10 @@ pub fn parse_market_snapshot(body :: String) -> MarketSnapshot ! String do
       if failure_total > 1000000 do
         return Err("paper failure rates exceed one million ppm")
       end
+      let maintenance = (payload |> required_int_field("maintenanceRequirementUsdMicros", "maintenanceRequirementUsdMicros", false)) ?
+      if maintenance == 0 do
+        return Err("maintenanceRequirementUsdMicros must be positive")
+      end
       Ok(MarketSnapshot {
         event_id : (body |> required_string("eventId", "eventId")) ?,
         source : (body |> required_string("source", "source")) ?,
@@ -149,6 +156,9 @@ pub fn parse_market_snapshot(body :: String) -> MarketSnapshot ! String do
         prior_nav_lamports : Lamports { atoms : (payload |> required_int_field("priorNavLamports", "priorNavLamports", false)) ? },
         costs_usd_micros : UsdMicros { atoms : (payload |> required_int_field("costsUsdMicros", "costsUsdMicros", false)) ? },
         risk_haircut_usd_micros : UsdMicros { atoms : (payload |> required_int_field("riskHaircutUsdMicros", "riskHaircutUsdMicros", false)) ? },
+        collateral_usd_micros : UsdMicros { atoms : (payload |> required_int_field("collateralUsdMicros", "collateralUsdMicros", false)) ? },
+        maintenance_requirement_usd_micros : UsdMicros { atoms : maintenance },
+        liquidation_distance_bps : (payload |> required_int_field("liquidationDistanceBps", "liquidationDistanceBps", false)) ?,
         sol_spot_bid_price_usd_micros : PriceMicros { atoms : (payload |> required_int_field("solSpotBidPriceUsdMicros", "solSpotBidPriceUsdMicros", false)) ? },
         sol_spot_ask_price_usd_micros : PriceMicros { atoms : (payload |> required_int_field("solSpotAskPriceUsdMicros", "solSpotAskPriceUsdMicros", false)) ? },
         jitosol_spot_bid_price_usd_micros : PriceMicros { atoms : (payload |> required_int_field("jitosolSpotBidPriceUsdMicros", "jitosolSpotBidPriceUsdMicros", false)) ? },

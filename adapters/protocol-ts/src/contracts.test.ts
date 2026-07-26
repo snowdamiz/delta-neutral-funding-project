@@ -17,6 +17,8 @@ test("builds a session-scoped v1 event with integer strings", () => {
   assert.equal(event.payload.oracleStatus, "valid");
   assert.equal(event.payload.perpExitDepthLamports, "100000000000");
   assert.equal(event.payload.shortReceiptPpm, "250");
+  assert.equal(event.payload.collateralUsdMicros, "200000000");
+  assert.equal(event.payload.liquidationDistanceBps, "5000");
   assert.match(event.rawPayloadHash, /^[0-9a-f]{64}$/);
   assert.equal(validateEvent(event), event);
 
@@ -35,6 +37,14 @@ test("builds a session-scoped v1 event with integer strings", () => {
         payload: { ...event.payload, rejectRatePpm: "600000", unknownRatePpm: "500000" },
       }),
     /failure rates/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: { ...event.payload, maintenanceRequirementUsdMicros: "0" },
+      }),
+    /maintenanceRequirementUsdMicros/,
   );
 
   assert.notEqual(

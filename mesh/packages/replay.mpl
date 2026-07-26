@@ -8,6 +8,8 @@ from Packages.StateMachine import PortfolioState
 struct ReplayConfig do
   seed :: Int
   max_source_age_ms :: Int
+  minimum_margin_ratio_ppm :: Int
+  minimum_liquidation_distance_bps :: Int
   rebalance_delta_bps :: Int
 end
 
@@ -134,6 +136,10 @@ fn parse_config(body :: String) -> ReplayConfig ! String do
       |> required_int("seed")) ?,
     max_source_age_ms : (body
       |> required_int("maxSourceAgeMs")) ?,
+    minimum_margin_ratio_ppm : (body
+      |> required_int("minimumMarginRatioPpm")) ?,
+    minimum_liquidation_distance_bps : (body
+      |> required_int("minimumLiquidationDistanceBps")) ?,
     rebalance_delta_bps : (body
       |> required_int("rebalanceDeltaBps")) ?
   })
@@ -230,6 +236,27 @@ fn initial_state(seed :: Int) -> ReplayState do
   }
 end
 
+fn paper_runtime(
+  config :: ReplayConfig,
+  state :: PortfolioState,
+  state_version :: Int,
+  random_state :: Int,
+  now_ms :: Int
+) -> PaperRuntime do
+  PaperRuntime {
+    now_ms : now_ms,
+    max_age_ms : config.max_source_age_ms,
+    paused : false,
+    pause_all : false,
+    minimum_margin_ratio_ppm : config.minimum_margin_ratio_ppm,
+    minimum_liquidation_distance_bps : config.minimum_liquidation_distance_bps,
+    rebalance_delta_bps : config.rebalance_delta_bps,
+    state : state,
+    state_version : state_version,
+    random_state : random_state
+  }
+end
+
 fn market_rate(snapshot :: MarketSnapshot, variant :: PaperVariant) -> Lamports ! String do
   case variant do
     SolControl -> Ok(Lamports { atoms : 1000000000 })
@@ -280,15 +307,8 @@ fn step_idle(
   variant :: PaperVariant,
   random_state :: Int
 ) -> PortfolioStep ! String do
-  let plan = (PaperRuntime {
-    now_ms : snapshot.observed_at_ms,
-    max_age_ms : config.max_source_age_ms,
-    paused : false,
-    pause_all : false,
-    state : Idle,
-    state_version : 0,
-    random_state : random_state
-  } |4> plan_entry(snapshot, opportunity, variant)) ?
+  let plan = (paper_runtime(config, Idle, 0, random_state, snapshot.observed_at_ms)
+    |4> plan_entry(snapshot, opportunity, variant)) ?
   let trace = entry_trace(snapshot, opportunity, variant, plan)
   case plan.outcome do
     EntryHedged -> Ok(PortfolioStep {
@@ -349,12 +369,16 @@ fn step_open(
   config :: ReplayConfig,
   position :: PaperPosition
 ) -> PortfolioStep ! String do
-  let plan = (position |3> plan_position(
+  let plan = (paper_runtime(
+    config,
+    Hedged,
+    position.state_version,
+    position.random_state,
+    snapshot.observed_at_ms
+  ) |4> plan_position(
     snapshot,
     opportunity,
-    snapshot.observed_at_ms,
-    config.max_source_age_ms,
-    config.rebalance_delta_bps
+    position
   )) ?
   let trace = position_trace(snapshot, position, plan)
   case plan.action do
