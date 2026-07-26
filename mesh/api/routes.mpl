@@ -75,8 +75,9 @@ fn authenticated(request :: Request, body :: String) -> Bool do
   if String.length(secret) == 0 do
     false
   else
-    let expected_signature = body |2> Crypto.hmac_sha256(secret)
-    request_signature(request) |> Crypto.secure_compare(expected_signature)
+    body
+      |2> Crypto.hmac_sha256(secret)
+      |2> Crypto.secure_compare(request_signature(request))
   end
 end
 
@@ -89,10 +90,11 @@ fn operator_authenticated(
   if String.length(secret) == 0 || String.length(idempotency_key) == 0 do
     false
   else
-    let signed_body = "${idempotency_key}\n${body}"
-    let expected = signed_body |2> Crypto.hmac_sha256(secret)
-    request_header(request, "x-operator-signature")
-      |> Crypto.secure_compare(expected)
+    "${idempotency_key}\n${body}"
+      |2> Crypto.hmac_sha256(secret)
+      |2> Crypto.secure_compare(
+        request_header(request, "x-operator-signature")
+      )
   end
 end
 
@@ -679,15 +681,15 @@ fn operator_response(request :: Request, action :: String, target :: String) do
       if String.length(reason) == 0 || String.length(reason) > 500 do
         return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
       end
-      let request_hash = "${idempotency_key}\n${body}" |> Crypto.sha256
-      case persist_operator_command(
-        get_pool(),
-        action,
-        target,
-        idempotency_key,
-        reason,
-        request_hash
-      ) do
+      case ("${idempotency_key}\n${body}"
+        |> Crypto.sha256
+        |6> persist_operator_command(
+          get_pool(),
+          action,
+          target,
+          idempotency_key,
+          reason
+        )) do
         Ok(result) -> do
           info("operator_command_applied", "{\"action\":\"${action}\",\"idempotencyKey\":\"${idempotency_key}\"}")
           HTTP.response(202, result)

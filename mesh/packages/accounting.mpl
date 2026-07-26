@@ -74,10 +74,9 @@ pub fn realized_funding_usd(
   sol_price :: UsdMicros,
   realized_short_rate :: RatePpm
 ) -> UsdMicros ! String do
-  let notional = (perp_short_quantity
+  ((perp_short_quantity
     |> lamports_to_usd(sol_price, :half_even)) ?
-  notional
-    |> apply_rate(realized_short_rate, :toward_zero)
+    |> apply_rate(realized_short_rate, :toward_zero))
 end
 
 fn validate_direct_unstake(

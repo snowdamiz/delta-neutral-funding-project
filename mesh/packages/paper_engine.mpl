@@ -479,9 +479,15 @@ runtime :: PaperRuntime) -> PaperPlan ! String do
   if schedule.eligible == false do
     return Ok(skipped_plan(variant, "opportunity_ineligible", runtime.random_state))
   end
-  let candidate = transition(Idle, OpportunityFound) ?
-  let opening_spot = transition(candidate, OpenApproved) ?
-  plan_spot(snapshot, opportunity, variant, leg, opening_spot, runtime.random_state)
+  (((Idle |> transition(OpportunityFound)) ?
+    |> transition(OpenApproved)) ?
+    |5> plan_spot(
+      snapshot,
+      opportunity,
+      variant,
+      leg,
+      runtime.random_state
+    ))
 end
 
 pub fn plan_entry(snapshot :: MarketSnapshot,

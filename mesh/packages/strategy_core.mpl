@@ -33,9 +33,9 @@ pub fn reward_usd_micros(reward :: Lamports, sol_price :: UsdMicros) -> UsdMicro
 end
 
 pub fn net_carry_usd_micros(funding :: UsdMicros, reward :: UsdMicros, costs :: UsdMicros, risk_haircut :: UsdMicros) -> UsdMicros ! String do
-  let gross = usd_add(funding, reward) ?
-  let after_costs = usd_sub(gross, costs) ?
-  after_costs |> usd_sub(risk_haircut)
+  (((usd_add(funding, reward)) ?
+    |> usd_sub(costs)) ?
+    |> usd_sub(risk_haircut))
 end
 
 pub fn is_entry_eligible(short_receipt_ppm :: RatePpm, net_carry_usd_micros :: UsdMicros) -> Bool do

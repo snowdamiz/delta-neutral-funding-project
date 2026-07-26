@@ -94,8 +94,9 @@ fn required_string(body :: String, key :: String, field :: String) -> String ! S
 end
 
 fn required_int_field(body :: String, key :: String, field :: String, allow_negative :: Bool) -> Int ! String do
-  let value = (body |> required_string(key, field)) ?
-  value |> required_int(field, allow_negative)
+  ((body
+    |> required_string(key, field)) ?
+    |> required_int(field, allow_negative))
 end
 
 fn required_sha256(
