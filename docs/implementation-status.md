@@ -21,5 +21,6 @@ Completing local code does not complete the 30-day soak or authorize a
 transaction.
 
 The effective paper policy is parsed once through a shared strict Mesh contract
-and deterministically fingerprinted. A changed policy cannot attach to an
-existing strategy run or mutate its build/comparison metadata.
+and deterministically fingerprinted. A changed application commit, Mesh commit,
+or policy cannot attach to an existing strategy run or mutate its
+build/comparison metadata.

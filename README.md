@@ -83,8 +83,10 @@ delivery remains intentionally unconfigured until an operator destination is
 provided.
 The soak report derives authoritative duration, continuity, paired-decision,
 funding-interval, epoch-transition, and unresolved-safety evidence from
-PostgreSQL. Prometheus retains 35 days within a 2 GB cap for the matching
-runtime-stability review.
+PostgreSQL. Collector startup rejects an application, Mesh, or configuration
+identity that differs from the release already pinned to the paper run.
+Prometheus retains 35 days within a 2 GB cap for the matching runtime-stability
+review.
 
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md). Every

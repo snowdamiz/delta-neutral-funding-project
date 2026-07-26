@@ -858,13 +858,37 @@ pub fn list_opportunities(pool :: PoolHandle) -> String ! String do
   Ok(rows |> rows_to_json(0, List.new()))
 end
 
+pub fn release_identity_matches(
+  recorded_code_commit :: String,
+  recorded_mesh_commit :: String,
+  recorded_config_hash :: String,
+  code_commit :: String,
+  mesh_commit :: String,
+  config_hash :: String
+) -> Bool do
+  recorded_code_commit == code_commit && recorded_mesh_commit == mesh_commit && recorded_config_hash == config_hash
+end
+
 pub fn bootstrap_paper_runs(pool :: PoolHandle, code_commit :: String, mesh_commit :: String, config_hash :: String, target_notional :: Int) -> Int ! String do
-  let existing = Pool.query(pool, "SELECT config_hash FROM strategy_runs WHERE id = 'local-paper-run'", []) ?
-  if List.length(existing) > 1 || (
-    List.length(existing) == 1
-    && Map.get(List.head(existing), "config_hash") != config_hash
-  ) do
-    return Err("running paper strategy config does not match runtime fingerprint")
+  let existing = Pool.query(pool, "SELECT run.config_hash, build.code_commit, build.mesh_commit FROM strategy_runs run JOIN build_manifests build ON build.id = run.build_manifest_id WHERE run.id = 'local-paper-run'", []) ?
+  if List.length(existing) > 1 do
+    return Err("database returned an invalid paper strategy identity")
+  end
+  if List.length(existing) == 1 do
+    let identity = List.head(existing)
+    if Map.get(identity, "config_hash") != config_hash do
+      return Err("running paper strategy config does not match runtime fingerprint")
+    end
+    if (Map.get(identity, "code_commit")
+      |> release_identity_matches(
+        Map.get(identity, "mesh_commit"),
+        Map.get(identity, "config_hash"),
+        code_commit,
+        mesh_commit,
+        config_hash
+      )) == false do
+      return Err("running paper strategy build does not match pinned release")
+    end
   end
   let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 27, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), comparison AS (INSERT INTO comparison_groups (id, strategy_run_id, mode, target_notional_usd_micros, entry_policy_version, exit_policy_version) VALUES ('local-paper-run:independent', 'local-paper-run', 'independent', $4, 'paper-entry-v1', 'paper-exit-v1'), ('local-paper-run:synchronized', 'local-paper-run', 'synchronized', $4, 'paper-entry-v1', 'paper-exit-v1') ON CONFLICT (id) DO UPDATE SET mode = EXCLUDED.mode, target_notional_usd_micros = EXCLUDED.target_notional_usd_micros, entry_policy_version = EXCLUDED.entry_policy_version, exit_policy_version = EXCLUDED.exit_policy_version RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, comparison_group_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'local-paper-run:independent', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'local-paper-run:independent', 'jitosol_carry', 'paper', 1000000000), ('local-sync-sol-control', 'local-paper-run', 'local-paper-run:synchronized', 'sol_control', 'paper', 1000000000), ('local-sync-jitosol-carry', 'local-paper-run', 'local-paper-run:synchronized', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO UPDATE SET comparison_group_id = EXCLUDED.comparison_group_id RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios ON CONFLICT (id) DO NOTHING RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash, "${target_notional}"])) ?
   let capability_rows = ("SELECT record_language_capability_results($1)::text AS count" |2> Pool.query(pool, ["local-paper-build"])) ?
