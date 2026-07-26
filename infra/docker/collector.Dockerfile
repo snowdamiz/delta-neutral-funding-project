@@ -30,6 +30,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     && cargo test --locked -q -p meshc --test e2e_stdlib e2e_list_contains \
     && cargo test --locked -q -p meshc --test e2e_stdlib e2e_cluster_telemetry_is_available_as_a_typed_map \
     && cargo test --locked -q -p meshc --test e2e_stdlib e2e_http_server_drains_accepted_requests_before_returning \
+    && cargo test --locked -q -p mesh-rt channel::tests \
     && cargo test --locked -q -p mesh-rt http::server::tests::request_parser_rejects_unbounded_or_ambiguous_input \
     && cargo test --locked -q -p mesh-rt actor::mailbox::tests::test_mailbox_concurrent_push \
     && cargo test --locked -q -p meshc --test e2e e2e_bounded_channel \

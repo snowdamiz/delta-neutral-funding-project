@@ -31,6 +31,7 @@ cargo test -p mesh-rt env::tests::test_env_args
 cargo test -p meshc --test e2e e2e_checked_mul_div
 cargo test -p meshc --test e2e e2e_monotonic_duration
 cargo test -p meshc --test e2e e2e_bounded_channel
+cargo test -p mesh-rt channel::tests
 cargo test -p mesh-rt actor::mailbox::tests::test_mailbox_concurrent_push
 cargo test -p mesh-rt http::server::tests::request_parser_rejects_unbounded_or_ambiguous_input
 cargo test -p meshc --test e2e_stdlib e2e_http_server_drains_accepted_requests_before_returning
