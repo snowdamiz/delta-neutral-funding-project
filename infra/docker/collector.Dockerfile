@@ -23,11 +23,15 @@ ENV CARGO_TARGET_DIR=/workspace/target
 WORKDIR /workspace/mesh-lang
 COPY --from=mesh_lang . .
 COPY mesh /workspace/project/mesh
+COPY replay /workspace/project/replay
+COPY tests/vectors /workspace/project/tests/vectors
 RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     --mount=type=cache,target=/root/.cargo/git,sharing=locked \
     --mount=type=cache,target=/workspace/target,sharing=locked \
     cargo build --locked -q -p mesh-rt -p meshc \
-    && /workspace/target/debug/meshc build /workspace/project/mesh \
+    && cd /workspace/project \
+    && /workspace/target/debug/meshc test mesh \
+    && /workspace/target/debug/meshc build mesh \
       --output /tmp/funding-collector --no-color \
     && test -x /tmp/funding-collector
 

@@ -5,7 +5,8 @@ COPY adapters/protocol-ts/package.json adapters/protocol-ts/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY adapters/protocol-ts/tsconfig.json ./
 COPY adapters/protocol-ts/src ./src
-RUN npm run build && npm prune --omit=dev
+COPY tests/vectors /tests/vectors
+RUN CONFORMANCE_VECTOR_DIR=/tests/vectors npm test && npm prune --omit=dev
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
