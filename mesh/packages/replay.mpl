@@ -1,7 +1,7 @@
 from Packages.Accounting import realized_funding_usd
 from Packages.Finance import Lamports, TokenAtoms
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
-from Packages.PaperEngine import EntryOutcome, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, action_name, outcome_name, plan_entry, plan_position, variant_name
+from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, action_name, outcome_name, plan_entry, plan_position, variant_name
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
 from Packages.StateMachine import PortfolioState
 
@@ -40,6 +40,7 @@ struct PortfolioStep do
   emergencies :: Int
   reward_lamports :: Int
   basis_lamports :: Int
+  execution_fees_usd_micros :: Int
 end
 
 struct ReplayState do
@@ -61,6 +62,8 @@ struct ReplayState do
   jitosol_basis_lamports :: Int
   sol_funding_usd_micros :: Int
   jitosol_funding_usd_micros :: Int
+  sol_execution_fees_usd_micros :: Int
+  jitosol_execution_fees_usd_micros :: Int
   last_observed_at_ms :: Int
   last_source_slot :: Int
   last_event_rank :: Int
@@ -91,6 +94,8 @@ pub struct ReplayReport do
   jitosol_basis_lamports :: Int
   sol_funding_usd_micros :: Int
   jitosol_funding_usd_micros :: Int
+  sol_execution_fees_usd_micros :: Int
+  jitosol_execution_fees_usd_micros :: Int
   trace_hash :: String
 end deriving(Json)
 
@@ -227,6 +232,8 @@ fn initial_state(seed :: Int) -> ReplayState do
     jitosol_basis_lamports : 0,
     sol_funding_usd_micros : 0,
     jitosol_funding_usd_micros : 0,
+    sol_execution_fees_usd_micros : 0,
+    jitosol_execution_fees_usd_micros : 0,
     last_observed_at_ms : 0,
     last_source_slot : 0,
     last_event_rank : 0,
@@ -297,7 +304,12 @@ fn entry_trace(
   else
     opportunity.jitosol_net_carry_usd_micros.atoms
   end
-  "${snapshot.observed_at_ms}|${snapshot.event_id}|${variant_name(variant)}|entry|${outcome_name(plan.outcome)}|${plan.reason}|${plan.spot_fill.filled_quantity.atoms}|${plan.perp_fill.filled_quantity.atoms}|${carry}|${plan.next_random_state}"
+  "${snapshot.observed_at_ms}|${snapshot.event_id}|${variant_name(variant)}|entry|${outcome_name(plan.outcome)}|${plan.reason}|${plan.spot_fill.filled_quantity.atoms}|${plan.spot_fill.average_price.atoms}|${plan.spot_fill.fee_usd.atoms}|${plan.perp_fill.filled_quantity.atoms}|${plan.perp_fill.average_price.atoms}|${plan.perp_fill.fee_usd.atoms}|${carry}|${plan.next_random_state}"
+end
+
+fn execution_fees(spot :: LegFill, perp :: LegFill) -> Int ! String do
+  spot.fee_usd.atoms
+    |> Checked.add(perp.fee_usd.atoms)
 end
 
 fn step_idle(
@@ -310,6 +322,7 @@ fn step_idle(
   let plan = (paper_runtime(config, Idle, 0, random_state, snapshot.observed_at_ms)
     |4> plan_entry(snapshot, opportunity, variant)) ?
   let trace = entry_trace(snapshot, opportunity, variant, plan)
+  let fees = execution_fees(plan.spot_fill, plan.perp_fill) ?
   case plan.outcome do
     EntryHedged -> Ok(PortfolioStep {
       portfolio : ReplayOpen(open_position(snapshot, opportunity, variant, plan) ?),
@@ -319,7 +332,8 @@ fn step_idle(
       rebalances : 0,
       emergencies : 0,
       reward_lamports : 0,
-      basis_lamports : 0
+      basis_lamports : 0,
+      execution_fees_usd_micros : fees
     })
     EntrySkipped -> Ok(PortfolioStep {
       portfolio : ReplayIdle(variant, plan.next_random_state),
@@ -329,7 +343,8 @@ fn step_idle(
       rebalances : 0,
       emergencies : 0,
       reward_lamports : 0,
-      basis_lamports : 0
+      basis_lamports : 0,
+      execution_fees_usd_micros : fees
     })
     _ -> Ok(PortfolioStep {
       portfolio : ReplayStopped(variant, plan.next_random_state, plan.reason),
@@ -339,7 +354,8 @@ fn step_idle(
       rebalances : 0,
       emergencies : 1,
       reward_lamports : 0,
-      basis_lamports : 0
+      basis_lamports : 0,
+      execution_fees_usd_micros : fees
     })
   end
 end
@@ -360,7 +376,7 @@ fn next_position(position :: PaperPosition, plan :: PositionPlan) -> PaperPositi
 end
 
 fn position_trace(snapshot :: MarketSnapshot, position :: PaperPosition, plan :: PositionPlan) -> String do
-  "${snapshot.observed_at_ms}|${snapshot.event_id}|${variant_name(position.variant)}|position|${action_name(plan.action)}|${plan.reason}|${plan.next_spot_quantity.atoms}|${plan.next_perp_short_quantity.atoms}|${plan.valuation.delta_lamports.atoms}|${plan.next_random_state}"
+  "${snapshot.observed_at_ms}|${snapshot.event_id}|${variant_name(position.variant)}|position|${action_name(plan.action)}|${plan.reason}|${plan.next_spot_quantity.atoms}|${plan.next_perp_short_quantity.atoms}|${plan.valuation.delta_lamports.atoms}|${plan.spot_fill.average_price.atoms}|${plan.spot_fill.fee_usd.atoms}|${plan.perp_fill.average_price.atoms}|${plan.perp_fill.fee_usd.atoms}|${plan.next_random_state}"
 end
 
 fn step_open(
@@ -381,6 +397,7 @@ fn step_open(
     position
   )) ?
   let trace = position_trace(snapshot, position, plan)
+  let fees = execution_fees(plan.spot_fill, plan.perp_fill) ?
   case plan.action do
     ExitPosition -> Ok(PortfolioStep {
       portfolio : ReplayIdle(position.variant, plan.next_random_state),
@@ -390,7 +407,8 @@ fn step_open(
       rebalances : 0,
       emergencies : 0,
       reward_lamports : plan.valuation.reward_sol_lamports.atoms,
-      basis_lamports : plan.valuation.basis_sol_lamports.atoms
+      basis_lamports : plan.valuation.basis_sol_lamports.atoms,
+      execution_fees_usd_micros : fees
     })
     EmergencyPosition -> Ok(PortfolioStep {
       portfolio : ReplayStopped(position.variant, plan.next_random_state, plan.reason),
@@ -400,7 +418,8 @@ fn step_open(
       rebalances : 0,
       emergencies : 1,
       reward_lamports : plan.valuation.reward_sol_lamports.atoms,
-      basis_lamports : plan.valuation.basis_sol_lamports.atoms
+      basis_lamports : plan.valuation.basis_sol_lamports.atoms,
+      execution_fees_usd_micros : fees
     })
     _ -> Ok(PortfolioStep {
       portfolio : ReplayOpen(next_position(position, plan)),
@@ -410,7 +429,8 @@ fn step_open(
       rebalances : if plan.action == RebalancePerp do 1 else 0 end,
       emergencies : 0,
       reward_lamports : plan.valuation.reward_sol_lamports.atoms,
-      basis_lamports : plan.valuation.basis_sol_lamports.atoms
+      basis_lamports : plan.valuation.basis_sol_lamports.atoms,
+      execution_fees_usd_micros : fees
     })
   end
 end
@@ -438,7 +458,8 @@ fn step_portfolio(
       rebalances : 0,
       emergencies : 0,
       reward_lamports : 0,
-      basis_lamports : 0
+      basis_lamports : 0,
+      execution_fees_usd_micros : 0
     })
   end
 end
@@ -473,6 +494,12 @@ fn apply_snapshot(
       |> Checked.add(sol.basis_lamports)) ?,
     jitosol_basis_lamports : (state.jitosol_basis_lamports
       |> Checked.add(jitosol.basis_lamports)) ?,
+    sol_execution_fees_usd_micros : (state.sol_execution_fees_usd_micros
+      |> Checked.add(sol.execution_fees_usd_micros)) ?,
+    jitosol_execution_fees_usd_micros : (
+      state.jitosol_execution_fees_usd_micros
+      |> Checked.add(jitosol.execution_fees_usd_micros)
+    ) ?,
     trace : state.trace
       |> List.append(sol.trace)
       |> List.append(jitosol.trace)
@@ -579,6 +606,8 @@ pub fn run_replay(
     jitosol_basis_lamports : state.jitosol_basis_lamports,
     sol_funding_usd_micros : state.sol_funding_usd_micros,
     jitosol_funding_usd_micros : state.jitosol_funding_usd_micros,
+    sol_execution_fees_usd_micros : state.sol_execution_fees_usd_micros,
+    jitosol_execution_fees_usd_micros : state.jitosol_execution_fees_usd_micros,
     trace_hash : state.trace
       |> String.join("\n")
       |> Crypto.sha256

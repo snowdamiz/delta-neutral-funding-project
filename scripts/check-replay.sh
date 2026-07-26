@@ -7,7 +7,7 @@ trap 'find "$temp_dir" -depth -delete' EXIT HUP INT TERM
 
 config="$project_dir/replay/configs/baseline-v1.json"
 
-for scenario in calm volatile liquidity-loss epoch-boundary failure; do
+for scenario in calm volatile liquidity-loss doubled-costs epoch-boundary failure; do
   bundle="$project_dir/replay/bundles/$scenario-v1.jsonl"
   first="$temp_dir/$scenario-first.json"
   second="$temp_dir/$scenario-second.json"
@@ -25,35 +25,42 @@ for scenario in calm volatile liquidity-loss epoch-boundary failure; do
       jq -e '
         .sol_funding_usd_micros == 92525 and
         .jitosol_funding_usd_micros == 92525 and
-        .trace_hash == "4284bb84e784e9ad28c1a2baae1e7762181606b27a044a2a1e5bc32ff0b5002a"
+        .trace_hash == "958bc37dcf2056845805e07965411bc82f3d07551c84387708fa1b1cfa3c6d2b"
       ' "$first" >/dev/null
       ;;
     volatile)
       jq -e '
         .jitosol_rebalances == 1 and
         .jitosol_basis_lamports == -334000000 and
-        .trace_hash == "4a2cde515e35d92a02bb722de638258853529c4a7b8732a1c48843e98e44b530"
+        .trace_hash == "0da7b7d82558228ddf246bd46755febd74ba15babb26a7222b6112a4cfc9cc8d"
       ' "$first" >/dev/null
       ;;
     liquidity-loss)
       jq -e '
         .sol_emergencies == 0 and
         .jitosol_emergencies == 1 and
-        .trace_hash == "83ddc654b3199c724c65a67149261422965751c69e25df9f218f0f51c8cc53e0"
+        .trace_hash == "8d1d3a027f0bbd2f1751e79c8fe420fed6a981d216dc74bd0ac37becc728c10b"
+      ' "$first" >/dev/null
+      ;;
+    doubled-costs)
+      jq -e '
+        .sol_execution_fees_usd_micros == 1332362 and
+        .jitosol_execution_fees_usd_micros == 1332762 and
+        .trace_hash == "683a8f2306d27d778bb87860e452c4bc284ab36655f9625b3a9fbd9a25b10f3a"
       ' "$first" >/dev/null
       ;;
     epoch-boundary)
       jq -e '
         .jitosol_reward_lamports == 2000000 and
         .jitosol_basis_lamports == -2000000 and
-        .trace_hash == "11f222a7349bacd1b05cab33b324705f23aa5456144bc99ace2ec3d139c94c22"
+        .trace_hash == "8c0383435ce507a86ddb296a853c20585661c84ff0a2c0139f379c8ba21266b0"
       ' "$first" >/dev/null
       ;;
     failure)
       jq -e '
         .jitosol_rebalances == 0 and
         .jitosol_emergencies == 1 and
-        .trace_hash == "5ca1c040728222c855fbaf9f5be9b439eca541320c180331aab987ac27361013"
+        .trace_hash == "0d756f74ae845ce17d17b90d49f9a965d80c94c73bd8a0d8e2f73f2873cc252f"
       ' "$first" >/dev/null
       ;;
   esac

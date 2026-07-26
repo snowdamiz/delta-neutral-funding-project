@@ -18,7 +18,7 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 | SOL control comparison | COLLECTING | Independent and synchronized comparison groups are active |
 | Reward/basis/cost/rehedge decomposition | COLLECTING | Balanced ledger/read models are implemented; sample is still accruing |
 | No dependence on one extreme period | COLLECTING | Requires the full observation window |
-| Doubled cost and liquidity-loss stress | PARTIAL | Golden liquidity-loss replay passes; doubled calibrated live costs remain |
+| Doubled cost and liquidity-loss stress | PARTIAL | Deterministic doubled-fee/slippage and liquidity-loss golden replays pass; canary calibration still requires the authoritative sample and approved size |
 | 1× and 2× canary instant-exit depth | COLLECTING | Exact-size quotes exist; canary size is not approved |
 | Manual delayed-unstake/hedge runbook | PASS | `docs/runbooks/operations.md` |
 

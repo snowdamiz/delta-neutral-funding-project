@@ -13,7 +13,7 @@ describe("golden replay bundles") do
       Ok(report) -> do
         assert(report.sol_exits == 1)
         assert(report.jitosol_exits == 1)
-        assert(report.trace_hash == "4284bb84e784e9ad28c1a2baae1e7762181606b27a044a2a1e5bc32ff0b5002a")
+        assert(report.trace_hash == "958bc37dcf2056845805e07965411bc82f3d07551c84387708fa1b1cfa3c6d2b")
       end
       Err(error) -> assert(false)
     end
@@ -21,7 +21,7 @@ describe("golden replay bundles") do
       Ok(report) -> do
         assert(report.jitosol_rebalances == 1)
         assert(report.jitosol_basis_lamports == -334000000)
-        assert(report.trace_hash == "4a2cde515e35d92a02bb722de638258853529c4a7b8732a1c48843e98e44b530")
+        assert(report.trace_hash == "0da7b7d82558228ddf246bd46755febd74ba15babb26a7222b6112a4cfc9cc8d")
       end
       Err(error) -> assert(false)
     end
@@ -30,7 +30,15 @@ describe("golden replay bundles") do
         assert(report.sol_emergencies == 0)
         assert(report.jitosol_emergencies == 1)
         assert(report.jitosol_exits == 0)
-        assert(report.trace_hash == "83ddc654b3199c724c65a67149261422965751c69e25df9f218f0f51c8cc53e0")
+        assert(report.trace_hash == "8d1d3a027f0bbd2f1751e79c8fe420fed6a981d216dc74bd0ac37becc728c10b")
+      end
+      Err(error) -> assert(false)
+    end
+    case replay("doubled-costs") do
+      Ok(report) -> do
+        assert(report.sol_execution_fees_usd_micros == 1332362)
+        assert(report.jitosol_execution_fees_usd_micros == 1332762)
+        assert(report.trace_hash == "683a8f2306d27d778bb87860e452c4bc284ab36655f9625b3a9fbd9a25b10f3a")
       end
       Err(error) -> assert(false)
     end
@@ -38,7 +46,7 @@ describe("golden replay bundles") do
       Ok(report) -> do
         assert(report.jitosol_reward_lamports == 2000000)
         assert(report.jitosol_basis_lamports == -2000000)
-        assert(report.trace_hash == "11f222a7349bacd1b05cab33b324705f23aa5456144bc99ace2ec3d139c94c22")
+        assert(report.trace_hash == "8c0383435ce507a86ddb296a853c20585661c84ff0a2c0139f379c8ba21266b0")
       end
       Err(error) -> assert(false)
     end
@@ -47,7 +55,7 @@ describe("golden replay bundles") do
         assert(report.sol_exits == 1)
         assert(report.jitosol_rebalances == 0)
         assert(report.jitosol_emergencies == 1)
-        assert(report.trace_hash == "5ca1c040728222c855fbaf9f5be9b439eca541320c180331aab987ac27361013")
+        assert(report.trace_hash == "0d756f74ae845ce17d17b90d49f9a965d80c94c73bd8a0d8e2f73f2873cc252f")
       end
       Err(error) -> assert(false)
     end
