@@ -16,6 +16,20 @@ The complete stack is started with Docker Compose:
 docker compose up --build
 ```
 
+The default adapter is deterministic and synthetic. Read-only authoritative
+paper capture is opt-in and fails closed; it never falls back to synthetic data:
+
+```sh
+ADAPTER_MODE=authoritative \
+JUPITER_API_KEY=replace-with-read-only-api-key \
+docker compose up --build
+```
+
+That mode combines the Phoenix SOL orderbook and hourly funding record, JitoSOL
+stake-pool and mint accounts from Solana RPC, and exact-size Jupiter spot
+quotes. Comma-separated `PHOENIX_URLS`, `SOLANA_RPC_URLS`, and `JUPITER_URLS`
+provide ordered failover.
+
 Read-only operator commands use `bin/collector` directly. Mutations require the
 separate operator secret, and paper exits/flattening also require the explicit
 `--approve-paper` argument:

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadConfig } from "./config.js";
 
-test("loads bounded synthetic adapter configuration", () => {
+test("loads bounded adapter configuration", () => {
   const config = loadConfig({
     ADAPTER_HMAC_SECRET: "secret",
     ADAPTER_SESSION_ID: "test-session",
@@ -16,6 +16,7 @@ test("loads bounded synthetic adapter configuration", () => {
   assert.equal(config.fundingIntervalEvents, 12);
   assert.equal(config.sessionId, "test-session");
   assert.equal(config.healthPort, 8090);
+  assert.equal(config.mode, "synthetic");
   assert.throws(() => loadConfig({}), /ADAPTER_HMAC_SECRET/);
   assert.throws(
     () => loadConfig({ ADAPTER_HMAC_SECRET: "secret", EMIT_INTERVAL_MS: "0" }),
@@ -28,5 +29,13 @@ test("loads bounded synthetic adapter configuration", () => {
   assert.throws(
     () => loadConfig({ ADAPTER_HMAC_SECRET: "secret", ADAPTER_SESSION_ID: "bad session" }),
     /ADAPTER_SESSION_ID/,
+  );
+  assert.throws(
+    () =>
+      loadConfig({
+        ADAPTER_HMAC_SECRET: "secret",
+        ADAPTER_MODE: "authoritative",
+      }),
+    /JUPITER_API_KEY/,
   );
 });
