@@ -171,7 +171,11 @@ fn persist_response(body :: String, snapshot :: MarketSnapshot, result :: Opport
     end
     Err(reason) -> do
       record_rejected()
-      error_response(500, "persistence_failed", reason)
+      if String.contains(reason, "source sequence gap or regression") do
+        error_response(409, "source_gap", "source continuity lost; resnapshot required")
+      else
+        error_response(500, "persistence_failed", reason)
+      end
     end
   end
 end
@@ -421,7 +425,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 9
+    schemaVersion : 10
   })
 end
 
@@ -553,7 +557,7 @@ pub fn handle_config(_request :: Request) -> Response do
     maxSourceAgeMs : Env.get_int("MAX_SOURCE_AGE_MS", 5000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 9,
+    databaseSchemaVersion : 10,
     liveEnabled : false
   })
 end
