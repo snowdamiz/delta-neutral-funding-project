@@ -6,11 +6,11 @@ base_url=${1:-http://127.0.0.1:8080}
 curl -fsS "$base_url/v1/status" |
   jq -e '.executionMode == "paper" and .signerReachable == false' >/dev/null
 curl -fsS "$base_url/v1/portfolios" |
-  jq -e 'length == 2 and all(.[]; .comparisonMode == "independent" and .initialCapitalUsd.scale == 6)' >/dev/null
+  jq -e 'length == 4 and all(.[]; (.comparisonMode == "independent" or .comparisonMode == "synchronized") and .initialCapitalUsd.scale == 6)' >/dev/null
 curl -fsS "$base_url/v1/portfolios/local-sol-control" |
   jq -e '.id == "local-sol-control"' >/dev/null
 curl -fsS "$base_url/v1/positions" |
-  jq -e 'length == 2 and all(.[]; .spotQuantity.scale == 9 and .marginSnapshot.collateralUsd.scale == 6 and .marginSnapshot.marginRatioPpm == "4000000")' >/dev/null
+  jq -e 'length == 4 and all(.[]; .spotQuantity.scale == 9 and .marginSnapshot.collateralUsd.scale == 6 and .marginSnapshot.marginRatioPpm == "4000000")' >/dev/null
 curl -fsS "$base_url/v1/orders?limit=2&offset=0" |
   jq -e '.limit == 2 and .offset == 0 and (.items | length) <= 2' >/dev/null
 curl -fsS "$base_url/v1/fills?limit=2&offset=0" |
@@ -18,9 +18,11 @@ curl -fsS "$base_url/v1/fills?limit=2&offset=0" |
 curl -fsS "$base_url/v1/funding?limit=2&offset=0" |
   jq -e '.limit == 2 and all(.items[]; .amountUsd.scale == 6)' >/dev/null
 curl -fsS "$base_url/v1/pnl" |
-  jq -e 'length == 2 and all(.[]; .scope == "recorded_attribution_v1")' >/dev/null
+  jq -e 'length == 4 and all(.[]; .scope == "recorded_attribution_v1")' >/dev/null
 curl -fsS "$base_url/v1/pnl/comparison" |
-  jq -e 'length == 1 and .[0].mode == "independent" and .[0].jitosolIncrementalNetRecordedUsd.scale == 6' >/dev/null
+  jq -e 'length == 2 and any(.[]; .mode == "independent") and any(.[]; .mode == "synchronized") and all(.[]; .jitosolIncrementalNetRecordedUsd.scale == 6)' >/dev/null
+curl -fsS "$base_url/v1/jitosol" |
+  jq -e '.directUnstakeCounterfactuals | type == "array"' >/dev/null
 curl -fsS "$base_url/v1/risk-decisions?limit=4&offset=0" |
   jq -e '.limit == 4 and (.items | length) > 0 and all(.items[]; .healthSnapshot.marginRatioPpm == "4000000")' >/dev/null
 curl -fsS "$base_url/v1/config" |

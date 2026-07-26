@@ -8,7 +8,7 @@ from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, Paper
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
 from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, PendingPaperAction, list_opportunities, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_synchronized_paper_entries, persist_synchronized_position_plans
+from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_synchronized_paper_entries, persist_synchronized_position_plans
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -464,6 +464,11 @@ end
 fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) -> Int ! String do
   let pool = get_pool()
   let inserted = (Env.get("CONFIG_HASH", "") |5> persist_opportunities(pool, body, snapshot, result)) ?
+  (snapshot.event_id |2> advance_direct_unstakes(
+    pool,
+    snapshot.epoch,
+    Env.get("DIRECT_UNSTAKE_SCENARIO", "withdraw")
+  )) ?
   let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
   (now_ms |4> run_independent_pair(pool, snapshot, result)) ?
   (now_ms |4> run_synchronized_pair(pool, snapshot, result)) ?
@@ -528,7 +533,8 @@ fn funding_accepted_response(event :: FundingSettlement, result :: FundingPersis
   HTTP.response(202, json {
     status : if result.inserted_event do "accepted" else "duplicate" end,
     eventId : event.event_id,
-    payments : result.payments
+    payments : result.payments,
+    counterfactualPayments : result.counterfactual_payments
   })
 end
 
@@ -572,15 +578,26 @@ fn funding_response(body :: String, event :: FundingSettlement) do
     0,
     List.new()
   ) do
-    Ok(payments) -> case persist_funding_settlement(pool, body, payments) do
-      Ok(result) -> do
-        record_accepted()
-        info("funding_event_accepted", "{\"eventId\":\"${event.event_id}\",\"payments\":\"${result.payments}\"}")
-        funding_accepted_response(event, result)
+    Ok(payments) -> case (event |2> load_direct_unstake_funding_payments(pool)) do
+      Ok(counterfactual_payments) -> case persist_funding_settlement(
+        pool,
+        body,
+        payments,
+        counterfactual_payments
+      ) do
+        Ok(result) -> do
+          record_accepted()
+          info("funding_event_accepted", "{\"eventId\":\"${event.event_id}\",\"payments\":\"${result.payments}\",\"counterfactualPayments\":\"${result.counterfactual_payments}\"}")
+          funding_accepted_response(event, result)
+        end
+        Err(reason) -> do
+          record_rejected()
+          error_response(500, "persistence_failed", reason)
+        end
       end
       Err(reason) -> do
         record_rejected()
-        error_response(500, "persistence_failed", reason)
+        error_response(500, "funding_evaluation_failed", reason)
       end
     end
     Err(reason) -> do
@@ -755,7 +772,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 21
+    schemaVersion : 23
   })
 end
 
@@ -895,8 +912,14 @@ pub fn handle_config(_request :: Request) -> Response do
     minimumMarginRatioPpm : Env.get_int("MIN_MARGIN_RATIO_PPM", 1500000),
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
+    directUnstakeScenario : Env.get("DIRECT_UNSTAKE_SCENARIO", "withdraw"),
+    directUnstakeFeePpm : Env.get_int("DIRECT_UNSTAKE_FEE_PPM", 1000),
+    directUnstakeChainFeesUsdMicros : Env.get_int("DIRECT_UNSTAKE_CHAIN_FEES_USD_MICROS", 20000),
+    directUnstakeHedgeCostUsdMicros : Env.get_int("DIRECT_UNSTAKE_HEDGE_COST_USD_MICROS", 0),
+    directUnstakeCapitalDelayHaircutUsdMicros : Env.get_int("DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS", 1000000),
+    directUnstakeFinalHedgeCloseCostUsdMicros : Env.get_int("DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS", 250000),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 21,
+    databaseSchemaVersion : 23,
     liveEnabled : false
   })
 end

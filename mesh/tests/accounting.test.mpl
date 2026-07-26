@@ -1,4 +1,4 @@
-from Packages.Accounting import DirectUnstakeProcess, DirectUnstakeState, advance_direct_unstake, realized_funding_usd, start_direct_unstake
+from Packages.Accounting import DirectUnstakeProcess, DirectUnstakeState, advance_direct_unstake, complete_direct_unstake, realized_funding_usd, record_direct_unstake_funding, start_direct_unstake
 from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 
 fn advance_to_withdrawable(requested :: DirectUnstakeProcess) -> DirectUnstakeProcess ! String do
@@ -56,11 +56,26 @@ describe("direct-unstake counterfactual") do
         assert(requested.projection.cooldown_funding_usd_micros.atoms == 3600000)
         assert(requested.projection.net_usd_micros.atoms == 376455000)
 
+        case requested
+          |> record_direct_unstake_funding(UsdMicros { atoms : -75000 }) do
+          Ok(accrued) -> do
+            assert(accrued.projection.cooldown_funding_usd_micros.atoms == 3525000)
+            assert(accrued.projection.net_usd_micros.atoms == 376380000)
+          end
+          Err(error) -> assert(false)
+        end
+
         case requested |> advance_to_withdrawable do
           Ok(withdrawable) -> do
             assert(withdrawable.state == Withdrawable)
             case withdrawable |> advance_direct_unstake(901, false) do
-              Ok(withdrawn) -> assert(withdrawn.state == Withdrawn)
+              Ok(missed) -> do
+                assert(missed.state == Withdrawable)
+                case missed |> complete_direct_unstake(false) do
+                  Ok(withdrawn) -> assert(withdrawn.state == Withdrawn)
+                  Err(error) -> assert(false)
+                end
+              end
               Err(error) -> assert(false)
             end
           end
@@ -72,6 +87,24 @@ describe("direct-unstake counterfactual") do
           Err(error) -> assert(false)
         end
       end
+      Err(error) -> assert(false)
+    end
+
+    case start_direct_unstake(
+      TokenAtoms { atoms : 2000000000 },
+      Lamports { atoms : 1234567890 },
+      UsdMicros { atoms : 150000000 },
+      Lamports { atoms : 2467333332 },
+      RatePpm { atoms : 0 },
+      900,
+      RatePpm { atoms : 1000 },
+      UsdMicros { atoms : 0 },
+      0,
+      UsdMicros { atoms : 0 },
+      UsdMicros { atoms : 0 },
+      UsdMicros { atoms : 0 }
+    ) do
+      Ok(rounded) -> assert(rounded.projection.net_usd_micros.atoms == 369999997)
       Err(error) -> assert(false)
     end
   end

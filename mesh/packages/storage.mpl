@@ -1,8 +1,9 @@
+from Packages.Accounting import realized_funding_usd, start_direct_unstake
 from Packages.BrokerPaper import fill_status_name
 from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, TokenAtoms, UsdMicros, lamports_to_usd
 from Packages.Opportunity import OpportunitySet
 from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, action_name, outcome_name, variant_from_name, variant_name
-from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
+from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, OracleStatus
 from Packages.RiskEngine import margin_ratio_ppm
 from Packages.StateMachine import PortfolioState, state_from_name, state_name
 
@@ -79,6 +80,7 @@ end
 pub struct FundingPersistence do
   inserted_event :: Bool
   payments :: Int
+  counterfactual_payments :: Int
 end
 
 pub type PendingPaperAction do
@@ -422,6 +424,66 @@ fn position_operation(action :: PaperAction) -> String do
   end
 end
 
+fn direct_unstake_record(
+  snapshot :: MarketSnapshot,
+  position :: PaperPosition,
+  plan :: PositionPlan
+) -> String ! String do
+  if position.variant != JitoSolCarry || plan.action != ExitPosition do
+    return Ok(json { enabled : false })
+  end
+  let process = (position.spot_quantity
+    |> start_direct_unstake(
+    plan.valuation.protocol_nav_lamports,
+    snapshot.sol_price_usd_micros,
+    position.perp_short_quantity,
+    RatePpm { atoms : 0 },
+    snapshot.epoch,
+    RatePpm {
+      atoms : Env.get_int("DIRECT_UNSTAKE_FEE_PPM", 1000)
+    },
+    UsdMicros {
+      atoms : Env.get_int("DIRECT_UNSTAKE_CHAIN_FEES_USD_MICROS", 20000)
+    },
+    0,
+    UsdMicros {
+      atoms : Env.get_int("DIRECT_UNSTAKE_HEDGE_COST_USD_MICROS", 0)
+    },
+    UsdMicros {
+      atoms : Env.get_int(
+        "DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS",
+        1000000
+      )
+    },
+    UsdMicros {
+      atoms : Env.get_int(
+        "DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS",
+        250000
+      )
+    }
+  )) ?
+  let projection = process.projection
+  Ok(json {
+    enabled : true,
+    state : "requested",
+    requestedEpoch : "${process.requested_epoch}",
+    availableEpoch : "${process.available_epoch}",
+    jitosolQuantityAtoms : "${position.spot_quantity.atoms}",
+    hedgeQuantityAtoms : "${position.perp_short_quantity.atoms}",
+    protocolRedemptionLamports : "${projection.protocol_redemption_lamports.atoms}",
+    withdrawalFeeLamports : "${projection.withdrawal_fee_lamports.atoms}",
+    netRedemptionLamports : "${projection.net_redemption_lamports.atoms}",
+    protocolRedemptionUsdMicros : "${projection.protocol_redemption_usd_micros.atoms}",
+    withdrawalFeeUsdMicros : "${projection.withdrawal_fee_usd_micros.atoms}",
+    cooldownFundingUsdMicros : "${projection.cooldown_funding_usd_micros.atoms}",
+    chainFeesUsdMicros : "${projection.chain_fees_usd_micros.atoms}",
+    hedgeCostUsdMicros : "${projection.hedge_cost_usd_micros.atoms}",
+    capitalDelayHaircutUsdMicros : "${projection.capital_delay_haircut_usd_micros.atoms}",
+    finalHedgeCloseCostUsdMicros : "${projection.final_hedge_close_cost_usd_micros.atoms}",
+    netUsdMicros : "${projection.net_usd_micros.atoms}"
+  })
+end
+
 fn position_record(
   snapshot :: MarketSnapshot,
   portfolio_id :: String,
@@ -497,7 +559,8 @@ fn position_record(
       perpFilledQuantityAtoms : "${plan.perp_fill.filled_quantity.atoms}",
       perpPriceAtoms : "${plan.perp_fill.average_price.atoms}",
       perpGrossUsdAtoms : "${plan.perp_fill.gross_usd.atoms}",
-      perpFeeUsdAtoms : "${plan.perp_fill.fee_usd.atoms}"
+      perpFeeUsdAtoms : "${plan.perp_fill.fee_usd.atoms}",
+      directUnstake : (plan |3> direct_unstake_record(snapshot, position)) ?
     },
     spotIntent : spot_intent,
     spotIntentHash : spot_intent |> Crypto.sha256,
@@ -632,14 +695,79 @@ pub fn persist_opportunities(pool :: PoolHandle, body :: String, snapshot :: Mar
   end
 end
 
+fn direct_unstake_funding_payments(
+  rows,
+  event :: FundingSettlement,
+  index :: Int,
+  payments :: List<String>
+) -> List<String> ! String do
+  if index >= List.length(rows) do
+    Ok(payments)
+  else
+    let row = List.get(rows, index)
+    let quantity = Lamports {
+      atoms : required_int(
+        Map.get(row, "hedge_quantity_atoms"),
+        "direct unstake hedge quantity"
+      ) ?
+    }
+    let amount = (quantity
+      |> realized_funding_usd(
+        event.sol_price_usd_micros,
+        event.realized_short_rate_ppm
+      )) ?
+    direct_unstake_funding_payments(
+      rows,
+      event,
+      index + 1,
+      List.append(payments, json {
+        counterfactualId : Map.get(row, "id"),
+        positionQuantityAtoms : "${quantity.atoms}",
+        amountUsdMicros : "${amount.atoms}"
+      })
+    )
+  end
+end
+
+pub fn load_direct_unstake_funding_payments(
+  pool :: PoolHandle,
+  event :: FundingSettlement
+) -> List<String> ! String do
+  (Pool.query(pool, "SELECT id, hedge_quantity_atoms FROM direct_unstake_counterfactuals WHERE state NOT IN ('withdrawn', 'failed') ORDER BY id", []) ?
+    |> direct_unstake_funding_payments(event, 0, List.new()))
+end
+
+pub fn advance_direct_unstakes(
+  pool :: PoolHandle,
+  source_event_id :: String,
+  epoch :: Int,
+  outcome :: String
+) -> Int ! String do
+  let rows = Pool.query(pool, "SELECT advance_direct_unstake_counterfactuals($1, $2::bigint, $3)::text AS applied", [
+    source_event_id,
+    "${epoch}",
+    outcome
+  ]) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid direct unstake advancement")
+  else
+    required_int(
+      Map.get(List.head(rows), "applied"),
+      "direct unstake advancement"
+    )
+  end
+end
+
 pub fn persist_funding_settlement(
   pool :: PoolHandle,
   body :: String,
-  payments :: List<String>
+  payments :: List<String>,
+  counterfactual_payments :: List<String>
 ) -> FundingPersistence ! String do
-  let rows = Pool.query(pool, "WITH applied AS (SELECT apply_funding_settlements($1::jsonb, $2::jsonb) AS result) SELECT result->>'insertedEvent' AS inserted_event, result->>'payments' AS payments FROM applied", [
+  let rows = Pool.query(pool, "WITH applied AS (SELECT apply_funding_settlements($1::jsonb, $2::jsonb, $3::jsonb) AS result) SELECT result->>'insertedEvent' AS inserted_event, result->>'payments' AS payments, result->>'counterfactualPayments' AS counterfactual_payments FROM applied", [
     body,
-    "[${String.join(payments, ",")}]"
+    "[${String.join(payments, ",")}]",
+    "[${String.join(counterfactual_payments, ",")}]"
   ]) ?
   if List.length(rows) != 1 do
     return Err("database returned invalid funding settlement result")
@@ -647,7 +775,11 @@ pub fn persist_funding_settlement(
   let row = List.head(rows)
   Ok(FundingPersistence {
     inserted_event : Map.get(row, "inserted_event") == "true",
-    payments : required_int(Map.get(row, "payments"), "funding payment count") ?
+    payments : required_int(Map.get(row, "payments"), "funding payment count") ?,
+    counterfactual_payments : required_int(
+      Map.get(row, "counterfactual_payments"),
+      "direct unstake funding payment count"
+    ) ?
   })
 end
 
@@ -715,7 +847,7 @@ pub fn list_opportunities(pool :: PoolHandle) -> String ! String do
 end
 
 pub fn bootstrap_paper_runs(pool :: PoolHandle, code_commit :: String, mesh_commit :: String, config_hash :: String) -> Int ! String do
-  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 21, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), comparison AS (INSERT INTO comparison_groups (id, strategy_run_id, mode, target_notional_usd_micros, entry_policy_version, exit_policy_version) VALUES ('local-paper-run:independent', 'local-paper-run', 'independent', 500000000, 'paper-entry-v1', 'paper-exit-v1'), ('local-paper-run:synchronized', 'local-paper-run', 'synchronized', 500000000, 'paper-entry-v1', 'paper-exit-v1') ON CONFLICT (id) DO UPDATE SET mode = EXCLUDED.mode, target_notional_usd_micros = EXCLUDED.target_notional_usd_micros, entry_policy_version = EXCLUDED.entry_policy_version, exit_policy_version = EXCLUDED.exit_policy_version RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, comparison_group_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'local-paper-run:independent', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'local-paper-run:independent', 'jitosol_carry', 'paper', 1000000000), ('local-sync-sol-control', 'local-paper-run', 'local-paper-run:synchronized', 'sol_control', 'paper', 1000000000), ('local-sync-jitosol-carry', 'local-paper-run', 'local-paper-run:synchronized', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO UPDATE SET comparison_group_id = EXCLUDED.comparison_group_id RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios ON CONFLICT (id) DO NOTHING RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])) ?
+  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 23, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), comparison AS (INSERT INTO comparison_groups (id, strategy_run_id, mode, target_notional_usd_micros, entry_policy_version, exit_policy_version) VALUES ('local-paper-run:independent', 'local-paper-run', 'independent', 500000000, 'paper-entry-v1', 'paper-exit-v1'), ('local-paper-run:synchronized', 'local-paper-run', 'synchronized', 500000000, 'paper-entry-v1', 'paper-exit-v1') ON CONFLICT (id) DO UPDATE SET mode = EXCLUDED.mode, target_notional_usd_micros = EXCLUDED.target_notional_usd_micros, entry_policy_version = EXCLUDED.entry_policy_version, exit_policy_version = EXCLUDED.exit_policy_version RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, comparison_group_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'local-paper-run:independent', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'local-paper-run:independent', 'jitosol_carry', 'paper', 1000000000), ('local-sync-sol-control', 'local-paper-run', 'local-paper-run:synchronized', 'sol_control', 'paper', 1000000000), ('local-sync-jitosol-carry', 'local-paper-run', 'local-paper-run:synchronized', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO UPDATE SET comparison_group_id = EXCLUDED.comparison_group_id RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios ON CONFLICT (id) DO NOTHING RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])) ?
   let rows = Pool.query(pool, "SELECT (config_hash = $1)::text AS matches FROM strategy_runs WHERE id = 'local-paper-run'", [config_hash]) ?
   if List.length(rows) != 1 || Map.get(List.head(rows), "matches") != "true" do
     Err("running paper strategy config does not match CONFIG_HASH")

@@ -42,6 +42,33 @@ fn with_direct_unstake_state(
   }
 end
 
+pub fn record_direct_unstake_funding(
+  process :: DirectUnstakeProcess,
+  funding :: UsdMicros
+) -> DirectUnstakeProcess ! String do
+  let projection = process.projection
+  Ok(DirectUnstakeProcess {
+    state : process.state,
+    requested_epoch : process.requested_epoch,
+    available_epoch : process.available_epoch,
+    projection : DirectUnstakeProjection {
+      protocol_redemption_lamports : projection.protocol_redemption_lamports,
+      withdrawal_fee_lamports : projection.withdrawal_fee_lamports,
+      net_redemption_lamports : projection.net_redemption_lamports,
+      protocol_redemption_usd_micros : projection.protocol_redemption_usd_micros,
+      withdrawal_fee_usd_micros : projection.withdrawal_fee_usd_micros,
+      cooldown_funding_usd_micros : (projection.cooldown_funding_usd_micros
+        |> usd_add(funding)) ?,
+      chain_fees_usd_micros : projection.chain_fees_usd_micros,
+      hedge_cost_usd_micros : projection.hedge_cost_usd_micros,
+      capital_delay_haircut_usd_micros : projection.capital_delay_haircut_usd_micros,
+      final_hedge_close_cost_usd_micros : projection.final_hedge_close_cost_usd_micros,
+      net_usd_micros : (projection.net_usd_micros
+        |> usd_add(funding)) ?
+    }
+  })
+end
+
 pub fn realized_funding_usd(
   perp_short_quantity :: Lamports,
   sol_price :: UsdMicros,
@@ -124,8 +151,8 @@ pub fn start_direct_unstake(
     |> lamports_to_usd(sol_price, :toward_zero)) ?
   let withdrawal_fee_usd = (Lamports { atoms : withdrawal_fee }
     |> lamports_to_usd(sol_price, :toward_zero)) ?
-  let net_redemption_usd = (Lamports { atoms : net_redemption }
-    |> lamports_to_usd(sol_price, :toward_zero)) ?
+  let net_redemption_usd = (protocol_redemption_usd
+    |> usd_sub(withdrawal_fee_usd)) ?
   let cooldown_funding = ((perp_short_quantity
     |> realized_funding_usd(sol_price, realized_short_rate)) ?.atoms
     |> Checked.mul(cooldown_intervals)) ?
@@ -172,9 +199,21 @@ pub fn advance_direct_unstake(
     Requested -> Deactivating
     Deactivating -> WaitingForEpoch
     WaitingForEpoch -> if current_epoch >= process.available_epoch do Withdrawable else WaitingForEpoch end
-    Withdrawable -> Withdrawn
+    Withdrawable -> Withdrawable
     Withdrawn -> Withdrawn
     Failed -> Failed
   end
   Ok(process |> with_direct_unstake_state(next_state))
+end
+
+pub fn complete_direct_unstake(
+  process :: DirectUnstakeProcess,
+  failed :: Bool
+) -> DirectUnstakeProcess ! String do
+  if process.state != Withdrawable do
+    return Err("direct unstake is not withdrawable")
+  end
+  Ok(process |> with_direct_unstake_state(
+    if failed do Failed else Withdrawn end
+  ))
 end

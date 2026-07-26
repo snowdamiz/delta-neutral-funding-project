@@ -37,7 +37,13 @@ clamped away.
 - An executable Jupiter sell quote is the immediate-exit reference.
 - Direct withdrawal currently has a 10 bps fee and can take up to one epoch.
 - The delayed path remains unavailable for immediate perp margin protection.
-- Paper compares both paths, including multi-step fees and capital lockup.
+- Paper persists the delayed path separately through requested, deactivating,
+  epoch-wait, withdrawable, withdrawn, missed, and failed outcomes.
+- Its default model uses a 10 bps fee, 20,000 micros of chain fees, a
+  1,000,000-micro capital-delay haircut, and a 250,000-micro final hedge-close
+  cost. These are calibration inputs, not verified live constants.
+- Actual signed funding records accrue against the retained counterfactual
+  hedge during cooldown; none of these entries alter the instant-exit ledger.
 
 Official sources:
 
@@ -45,4 +51,3 @@ Official sources:
 - https://www.jito.network/docs/jitosol/jitosol-liquid-staking/security/deployed-programs/
 - https://www.jito.network/docs/jitosol/get-started/unstaking-jitosol-flow/unstaking-overview/
 - https://www.jito.network/docs/jitosol/faqs/general-faqs/
-
