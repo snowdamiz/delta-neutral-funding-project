@@ -2,7 +2,8 @@ from Packages.BrokerPaper import fill_status_name
 from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, TokenAtoms, UsdMicros, lamports_to_usd
 from Packages.Opportunity import OpportunitySet
 from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, action_name, outcome_name, variant_from_name, variant_name
-from Packages.ProtocolContracts import MarketSnapshot
+from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
+from Packages.RiskEngine import margin_ratio_ppm
 from Packages.StateMachine import PortfolioState, state_from_name, state_name
 
 fn bool_string(value :: Bool) -> String do
@@ -25,6 +26,53 @@ fn required_int(value :: String, field :: String) -> Int ! String do
   case String.to_int(value) do
     Some(parsed) -> Ok(parsed)
     None -> Err("database returned invalid ${field}")
+  end
+end
+
+fn persist_risk_decision(
+  pool :: PoolHandle,
+  snapshot :: MarketSnapshot,
+  portfolio_id :: String,
+  runtime :: PaperRuntime,
+  approved :: Bool,
+  reason_code :: String,
+  action :: String
+) -> Int ! String do
+  let limits = json {
+    maxSourceAgeMs : "${runtime.max_age_ms}",
+    minimumMarginRatioPpm : "${runtime.minimum_margin_ratio_ppm}",
+    minimumLiquidationDistanceBps : "${runtime.minimum_liquidation_distance_bps}",
+    rebalanceDeltaBps : "${runtime.rebalance_delta_bps}"
+  }
+  let health = json {
+    observedAtMs : "${snapshot.observed_at_ms}",
+    evaluatedAtMs : "${runtime.now_ms}",
+    oracleValid : snapshot.oracle_status == OracleValid,
+    collateralUsdMicros : "${snapshot.collateral_usd_micros.atoms}",
+    maintenanceRequirementUsdMicros : "${snapshot.maintenance_requirement_usd_micros.atoms}",
+    marginRatioPpm : "${margin_ratio_ppm(
+      snapshot.collateral_usd_micros,
+      snapshot.maintenance_requirement_usd_micros
+    ) ?}",
+    liquidationDistanceBps : "${snapshot.liquidation_distance_bps}",
+    solExitDepthLamports : "${snapshot.sol_exit_depth_lamports.atoms}",
+    jitosolExitDepthLamports : "${snapshot.jitosol_exit_depth_lamports.atoms}",
+    perpExitDepthLamports : "${snapshot.perp_exit_depth_lamports.atoms}"
+  }
+  let rows = Pool.query(pool, "SELECT record_paper_risk_decision($1, $2, $3::bigint, $4::boolean, $5, $6, $7::jsonb, $8::jsonb)::text AS inserted", [
+    portfolio_id,
+    snapshot.event_id,
+    "${runtime.state_version}",
+    bool_string(approved),
+    reason_code,
+    action,
+    limits,
+    health
+  ]) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid risk decision result")
+  else
+    Ok(if Map.get(List.head(rows), "inserted") == "true" do 1 else 0 end)
   end
 end
 
@@ -135,6 +183,15 @@ pub fn persist_paper_plan(
   runtime :: PaperRuntime,
   plan :: PaperPlan
 ) -> Int ! String do
+  persist_risk_decision(
+    pool,
+    snapshot,
+    portfolio_id,
+    runtime,
+    plan.outcome != EntrySkipped,
+    plan.reason,
+    if plan.outcome == EntrySkipped do "skip" else "entry" end
+  ) ?
   if plan.outcome == EntrySkipped do
     return Ok(0)
   end
@@ -244,7 +301,18 @@ pub fn persist_position_plan(pool :: PoolHandle,
 snapshot :: MarketSnapshot,
 portfolio_id :: String,
 position :: PaperPosition,
+runtime :: PaperRuntime,
+risk_approved :: Bool,
 plan :: PositionPlan) -> Int ! String do
+  persist_risk_decision(
+    pool,
+    snapshot,
+    portfolio_id,
+    runtime,
+    risk_approved,
+    plan.reason,
+    action_name(plan.action)
+  ) ?
   let operation = position_operation(plan.action)
   let variant = variant_name(position.variant)
   let spot_intent = paper_intent(snapshot.event_id,
@@ -439,5 +507,11 @@ pub fn list_opportunities(pool :: PoolHandle) -> String ! String do
 end
 
 pub fn bootstrap_paper_runs(pool :: PoolHandle, code_commit :: String, mesh_commit :: String, config_hash :: String) -> Int ! String do
-  "WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 9, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO NOTHING RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO NOTHING RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])
+  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 11, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO NOTHING RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])) ?
+  let rows = Pool.query(pool, "SELECT (config_hash = $1)::text AS matches FROM strategy_runs WHERE id = 'local-paper-run'", [config_hash]) ?
+  if List.length(rows) != 1 || Map.get(List.head(rows), "matches") != "true" do
+    Err("running paper strategy config does not match CONFIG_HASH")
+  else
+    Ok(applied)
+  end
 end

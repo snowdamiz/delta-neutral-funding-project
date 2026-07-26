@@ -4,9 +4,9 @@ from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
-from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position
+from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position, position_risk_approved
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
-from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_events
+from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events
 from Packages.StateMachine import PortfolioState
 from Packages.Storage import FundingPersistence, PendingPaperAction, list_opportunities, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
@@ -134,7 +134,14 @@ runtime :: PaperRuntime) -> Int ! String do
         position,
         action <> ":" <> reason
       ) ?
-      plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
+      plan |7> persist_position_plan(
+        pool,
+        snapshot,
+        portfolio_id,
+        position,
+        runtime,
+        true
+      )
     end
     NoPendingAction -> do
       if runtime.pause_all do
@@ -145,7 +152,14 @@ runtime :: PaperRuntime) -> Int ! String do
         result,
         position
       )) ?
-      plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
+      plan |7> persist_position_plan(
+        pool,
+        snapshot,
+        portfolio_id,
+        position,
+        runtime,
+        position_risk_approved(plan)
+      )
     end
   end
 end
@@ -431,7 +445,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 10
+    schemaVersion : 11
   })
 end
 
@@ -551,6 +565,13 @@ pub fn handle_risk_events(request :: Request) -> Response do
   end
 end
 
+pub fn handle_risk_decisions(request :: Request) -> Response do
+  case page(request) do
+    Ok(value) -> read_response(risk_decisions(get_pool(), value.limit, value.offset))
+    Err(reason) -> error_response(400, "invalid_pagination", reason)
+  end
+end
+
 pub fn handle_latest_reconciliation(_request :: Request) -> Response do
   read_response(get_pool() |> latest_reconciliation)
 end
@@ -565,7 +586,7 @@ pub fn handle_config(_request :: Request) -> Response do
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 10,
+    databaseSchemaVersion : 11,
     liveEnabled : false
   })
 end

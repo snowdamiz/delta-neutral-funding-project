@@ -21,6 +21,8 @@ curl -fsS "$base_url/v1/pnl" |
   jq -e 'length == 2 and all(.[]; .scope == "recorded_attribution_v1")' >/dev/null
 curl -fsS "$base_url/v1/pnl/comparison" |
   jq -e '.jitosolIncrementalNetRecordedUsd.scale == 6' >/dev/null
+curl -fsS "$base_url/v1/risk-decisions?limit=4&offset=0" |
+  jq -e '.limit == 4 and (.items | length) > 0 and all(.items[]; .healthSnapshot.marginRatioPpm == "4000000")' >/dev/null
 curl -fsS "$base_url/v1/config" |
   jq -e '.executionMode == "paper" and .liveEnabled == false and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000' >/dev/null
 

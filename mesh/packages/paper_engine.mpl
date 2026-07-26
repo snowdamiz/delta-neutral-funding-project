@@ -136,6 +136,10 @@ pub struct PositionPlan do
   perp_fill :: LegFill
 end
 
+pub fn position_risk_approved(plan :: PositionPlan) -> Bool do
+  plan.action == RebalancePerp || (plan.action == HoldPosition && plan.reason == "within_delta_band")
+end
+
 struct PositionRequest do
   spot_quantity :: TokenAtoms
   perp_quantity :: Lamports

@@ -25,6 +25,17 @@ pub struct RiskDecision do
   code :: String
 end deriving(Eq, Json)
 
+pub fn margin_ratio_ppm(
+  collateral :: UsdMicros,
+  maintenance_requirement :: UsdMicros
+) -> Int ! String do
+  if maintenance_requirement.atoms <= 0 do
+    return Err("maintenance requirement must be positive")
+  end
+  collateral.atoms
+    |> Checked.mul_div(1000000, maintenance_requirement.atoms, :floor)
+end
+
 fn reject(code :: String) -> RiskDecision do
   RiskDecision { approved : false, code : code }
 end
@@ -33,8 +44,10 @@ pub fn margin_health(input :: MarginInput) -> RiskDecision do
   if input.maintenance_requirement_usd_micros.atoms <= 0 || input.minimum_margin_ratio_ppm <= 0 || input.liquidation_distance_bps < 0 || input.minimum_liquidation_distance_bps < 0 do
     return reject("margin_input_invalid")
   end
-  case input.collateral_usd_micros.atoms
-    |> Checked.mul_div(1000000, input.maintenance_requirement_usd_micros.atoms, :floor) do
+  case margin_ratio_ppm(
+    input.collateral_usd_micros,
+    input.maintenance_requirement_usd_micros
+  ) do
     Ok(ratio) -> if ratio < input.minimum_margin_ratio_ppm do
       reject("margin_ratio_below_minimum")
     else

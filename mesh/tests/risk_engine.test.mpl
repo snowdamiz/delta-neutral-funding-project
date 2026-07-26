@@ -1,5 +1,5 @@
 from Packages.Finance import Lamports, UsdMicros
-from Packages.RiskEngine import MarginInput, RiskInput, approve_entry
+from Packages.RiskEngine import MarginInput, RiskInput, approve_entry, margin_ratio_ppm
 
 fn healthy() -> RiskInput do
   RiskInput {
@@ -23,19 +23,26 @@ end
 
 describe("entry risk") do
   test("approves fresh liquid carry and rejects stale or paused input") do
-    let approved = approve_entry(healthy())
+    let base = healthy()
+    let approved = approve_entry(base)
     assert(approved.approved)
     assert(approved.code == "approved")
+    case margin_ratio_ppm(
+      base.margin.collateral_usd_micros,
+      base.margin.maintenance_requirement_usd_micros
+    ) do
+      Ok(ratio) -> assert(ratio == 4000000)
+      Err(error) -> assert(false)
+    end
 
-    let stale = approve_entry(%{healthy() | now_ms : 2000})
+    let stale = approve_entry(%{base | now_ms : 2000})
     assert(stale.approved == false)
     assert(stale.code == "source_stale")
 
-    let paused = approve_entry(%{healthy() | paused : true})
+    let paused = approve_entry(%{base | paused : true})
     assert(paused.approved == false)
     assert(paused.code == "entries_paused")
 
-    let base = healthy()
     let margin = approve_entry(%{base |
       margin : %{base.margin |
         collateral_usd_micros : UsdMicros { atoms : 70000000 }

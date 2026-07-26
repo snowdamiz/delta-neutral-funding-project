@@ -1,4 +1,4 @@
-from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_risk_events, handle_status
+from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_risk_decisions, handle_risk_events, handle_status
 
 pub fn build_router() do
   HTTP.router()
@@ -19,6 +19,7 @@ pub fn build_router() do
     |> HTTP.on_get("/v1/pnl/comparison", handle_pnl_comparison)
     |> HTTP.on_get("/v1/opportunities", handle_opportunities)
     |> HTTP.on_get("/v1/risk-events", handle_risk_events)
+    |> HTTP.on_get("/v1/risk-decisions", handle_risk_decisions)
     |> HTTP.on_get("/v1/reconciliations/latest", handle_latest_reconciliation)
     |> HTTP.on_get("/v1/config", handle_config)
     |> HTTP.on_get("/metrics", handle_metrics)

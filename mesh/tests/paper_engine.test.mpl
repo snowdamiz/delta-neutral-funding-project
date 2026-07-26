@@ -1,6 +1,6 @@
 from Packages.Finance import Lamports, PriceMicros, RatePpm, TokenAtoms, UsdMicros
 from Packages.Opportunity import evaluate_snapshot
-from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position
+from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position, position_risk_approved
 from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
 from Packages.StateMachine import PortfolioState
 
@@ -252,6 +252,7 @@ describe("paper entry planner") do
           assert(plan.action == HoldPosition)
           assert(plan.reason == "source_stale")
           assert(plan.perp_fill.placed == false)
+          assert(position_risk_approved(plan) == false)
         end
         Err(error) -> assert(false)
       end

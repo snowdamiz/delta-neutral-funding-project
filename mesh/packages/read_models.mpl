@@ -47,6 +47,10 @@ pub fn risk_events(pool :: PoolHandle, limit :: Int, offset :: Int) -> String ! 
   read_body(pool, "WITH items AS (SELECT jsonb_build_object('id', id, 'portfolioRunId', portfolio_run_id, 'severity', severity, 'code', code, 'message', message, 'observedValue', observed_value, 'limitValue', limit_value, 'actionTaken', action_taken, 'createdAt', created_at, 'resolvedAt', resolved_at) AS item FROM risk_events ORDER BY created_at DESC, id DESC LIMIT $1::int OFFSET $2::int) SELECT jsonb_build_object('items', COALESCE(jsonb_agg(item), '[]'::jsonb), 'limit', $1::int, 'offset', $2::int)::text AS body FROM items", ["${limit}", "${offset}"])
 end
 
+pub fn risk_decisions(pool :: PoolHandle, limit :: Int, offset :: Int) -> String ! String do
+  read_body(pool, "WITH items AS (SELECT jsonb_build_object('id', id, 'opportunityDecisionId', opportunity_decision_id, 'portfolioRunId', portfolio_run_id, 'sourceEventId', source_event_id, 'stateVersion', state_version::text, 'approved', approved, 'reasonCode', reason_code, 'action', action, 'limitsSnapshot', limits_snapshot, 'healthSnapshot', health_snapshot, 'createdAt', created_at) AS item FROM risk_decisions ORDER BY created_at DESC, id DESC LIMIT $1::int OFFSET $2::int) SELECT jsonb_build_object('items', COALESCE(jsonb_agg(item), '[]'::jsonb), 'limit', $1::int, 'offset', $2::int)::text AS body FROM items", ["${limit}", "${offset}"])
+end
+
 pub fn latest_reconciliation(pool :: PoolHandle) -> String ! String do
   read_body(pool, "SELECT COALESCE((SELECT jsonb_build_object('id', id, 'portfolioRunId', portfolio_run_id, 'executionMode', execution_mode::text, 'startedAt', started_at, 'completedAt', completed_at, 'walletSnapshot', wallet_snapshot, 'venueSnapshot', venue_snapshot, 'executorSnapshot', executor_snapshot, 'databaseSnapshot', database_snapshot, 'differences', differences, 'result', result) FROM reconciliations ORDER BY started_at DESC LIMIT 1), 'null'::jsonb)::text AS body", [])
 end
