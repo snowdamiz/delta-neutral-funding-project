@@ -23,6 +23,23 @@ pub type EntryOutcome do
   EntryUnknown
 end deriving(Eq, Display, Json)
 
+pub fn variant_name(variant :: PaperVariant) -> String do
+  case variant do
+    SolControl -> "sol_control"
+    JitoSolCarry -> "jitosol_carry"
+  end
+end
+
+pub fn outcome_name(outcome :: EntryOutcome) -> String do
+  case outcome do
+    EntrySkipped -> "skipped"
+    EntryHedged -> "hedged"
+    EntryPartial -> "partial"
+    EntryRejected -> "rejected"
+    EntryUnknown -> "unknown"
+  end
+end
+
 pub struct LegFill do
   placed :: Bool
   status :: FillStatus
@@ -47,6 +64,8 @@ pub struct PaperRuntime do
   now_ms :: Int
   max_age_ms :: Int
   paused :: Bool
+  state :: PortfolioState
+  state_version :: Int
   random_state :: Int
 end
 
@@ -323,6 +342,9 @@ opportunity :: OpportunitySet,
 variant :: PaperVariant,
 runtime :: PaperRuntime) -> PaperPlan ! String do
   let leg = spot_leg(snapshot, opportunity, variant)
+  if runtime.state != Idle do
+    return Ok(skipped_plan(variant, "portfolio_not_idle", runtime.random_state))
+  end
   let decision = approve_entry(RiskInput {
     observed_at_ms : snapshot.observed_at_ms,
     now_ms : runtime.now_ms,

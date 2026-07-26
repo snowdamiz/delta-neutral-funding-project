@@ -1,4 +1,4 @@
-from Packages.StateMachine import PortfolioSignal, PortfolioState, transition
+from Packages.StateMachine import PortfolioSignal, PortfolioState, state_from_name, transition
 
 describe("portfolio state machine") do
   test("opens in order, exits perp first, and fails closed") do
@@ -38,6 +38,11 @@ describe("portfolio state machine") do
     case transition(Idle, PerpFilled) do
       Ok(next) -> assert(false)
       Err(error) -> assert(error == "invalid portfolio transition")
+    end
+
+    case state_from_name("hedged") do
+      Ok(state) -> assert(state == Hedged)
+      Err(error) -> assert(false)
     end
   end
 end

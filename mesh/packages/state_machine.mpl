@@ -118,3 +118,21 @@ pub fn state_name(state :: PortfolioState) -> String do
     Paused -> "paused"
   end
 end
+
+pub fn state_from_name(name :: String) -> PortfolioState ! String do
+  case name do
+    "bootstrapping" -> Ok(Bootstrapping)
+    "reconciling" -> Ok(Reconciling)
+    "idle" -> Ok(Idle)
+    "candidate" -> Ok(Candidate)
+    "opening_spot" -> Ok(OpeningSpot)
+    "opening_perp" -> Ok(OpeningPerp)
+    "hedged" -> Ok(Hedged)
+    "rebalancing" -> Ok(Rebalancing)
+    "exiting_perp" -> Ok(ExitingPerp)
+    "exiting_spot" -> Ok(ExitingSpot)
+    "emergency_flatten" -> Ok(EmergencyFlatten)
+    "paused" -> Ok(Paused)
+    _ -> Err("invalid portfolio state")
+  end
+end

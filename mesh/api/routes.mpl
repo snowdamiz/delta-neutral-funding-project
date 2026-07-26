@@ -2,8 +2,9 @@ from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
+from Packages.PaperEngine import PaperVariant, plan_entry
 from Packages.ProtocolContracts import MarketSnapshot, parse_market_snapshot
-from Packages.Storage import list_opportunities, persist_opportunities
+from Packages.Storage import list_opportunities, load_paper_runtime, persist_opportunities, persist_paper_plan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -42,8 +43,22 @@ fn accepted_response(snapshot :: MarketSnapshot, result :: OpportunitySet, dupli
   })
 end
 
+fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) -> Int ! String do
+  let pool = get_pool()
+  let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
+  let max_age_ms = Env.get_int("MAX_SOURCE_AGE_MS", 5000)
+  let sol_runtime = ("local-sol-control" |2> load_paper_runtime(pool, now_ms, max_age_ms)) ?
+  let jitosol_runtime = ("local-jitosol-carry" |2> load_paper_runtime(pool, now_ms, max_age_ms)) ?
+  let sol_plan = plan_entry(snapshot, result, SolControl, sol_runtime) ?
+  let jitosol_plan = plan_entry(snapshot, result, JitoSolCarry, jitosol_runtime) ?
+  let inserted = (Env.get("CONFIG_HASH", "") |5> persist_opportunities(pool, body, snapshot, result)) ?
+  let _sol_applied = (sol_plan |6> persist_paper_plan(pool, snapshot, result, "local-sol-control", sol_runtime)) ?
+  let _jitosol_applied = (jitosol_plan |6> persist_paper_plan(pool, snapshot, result, "local-jitosol-carry", jitosol_runtime)) ?
+  Ok(inserted)
+end
+
 fn persist_response(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) do
-  case (Env.get("CONFIG_HASH", "") |5> persist_opportunities(get_pool(), body, snapshot, result)) do
+  case run_paper_cycle(body, snapshot, result) do
     Ok(inserted) -> do
       record_accepted()
       info("protocol_event_accepted", "{\"eventId\":\"${snapshot.event_id}\",\"inserted\":\"${inserted}\"}")
@@ -95,7 +110,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "6958d33854642c5e9ab81880b93277a0f5d2e7df"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 3
+    schemaVersion : 4
   })
 end
 

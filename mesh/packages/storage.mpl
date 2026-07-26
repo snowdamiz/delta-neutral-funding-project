@@ -1,6 +1,9 @@
-from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
+from Packages.BrokerPaper import fill_status_name
+from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, TokenAtoms, UsdMicros
 from Packages.Opportunity import OpportunitySet
+from Packages.PaperEngine import EntryOutcome, LegFill, PaperPlan, PaperRuntime, PaperVariant, outcome_name, variant_name
 from Packages.ProtocolContracts import MarketSnapshot
+from Packages.StateMachine import PortfolioState, state_from_name, state_name
 
 fn bool_string(value :: Bool) -> String do
   if value do
@@ -15,6 +18,148 @@ fn reason(eligible :: Bool) -> String do
     "positive_net_carry"
   else
     "entry_gate_failed"
+  end
+end
+
+fn required_int(value :: String, field :: String) -> Int ! String do
+  case String.to_int(value) do
+    Some(parsed) -> Ok(parsed)
+    None -> Err("database returned invalid ${field}")
+  end
+end
+
+pub fn load_paper_runtime(pool :: PoolHandle, portfolio_id :: String, now_ms :: Int, max_age_ms :: Int) -> PaperRuntime ! String do
+  let rows = Pool.query(pool, "SELECT p.state::text, p.state_version::text, p.random_state::text, (c.pause_entries OR c.pause_all)::text AS paused FROM portfolio_runs p CROSS JOIN control_state c WHERE p.id = $1", [portfolio_id]) ?
+  if List.length(rows) != 1 do
+    return Err("paper portfolio not found")
+  end
+  let row = List.head(rows)
+  let state = state_from_name(Map.get(row, "state")) ?
+  let state_version = required_int(Map.get(row, "state_version"), "state version") ?
+  let random_state = required_int(Map.get(row, "random_state"), "random state") ?
+  Ok(PaperRuntime {
+    now_ms : now_ms,
+    max_age_ms : max_age_ms,
+    paused : Map.get(row, "paused") == "true",
+    state : state,
+    state_version : state_version,
+    random_state : random_state
+  })
+end
+
+fn spot_requested_atoms(snapshot :: MarketSnapshot, result :: OpportunitySet, variant :: PaperVariant) -> Int do
+  case variant do
+    SolControl -> result.hedge_lamports.atoms
+    JitoSolCarry -> snapshot.jitosol_atoms.atoms
+  end
+end
+
+fn spot_quote_atoms(snapshot :: MarketSnapshot, variant :: PaperVariant) -> Int do
+  case variant do
+    SolControl -> snapshot.sol_spot_ask_price_usd_micros.atoms
+    JitoSolCarry -> snapshot.jitosol_spot_ask_price_usd_micros.atoms
+  end
+end
+
+fn paper_intent(
+  source_event_id :: String,
+  portfolio_id :: String,
+  variant :: String,
+  leg :: String,
+  asset :: String,
+  side :: String,
+  requested_atoms :: Int,
+  quoted_price_atoms :: Int
+) -> String do
+  json {
+    schemaVersion : 1,
+    sourceEventId : source_event_id,
+    portfolioRunId : portfolio_id,
+    executionMode : "paper",
+    variant : variant,
+    operation : "OPEN",
+    leg : leg,
+    asset : asset,
+    side : side,
+    requestedQuantityAtoms : "${requested_atoms}",
+    quotedPriceAtoms : "${quoted_price_atoms}"
+  }
+end
+
+pub fn persist_paper_plan(
+  pool :: PoolHandle,
+  snapshot :: MarketSnapshot,
+  result :: OpportunitySet,
+  portfolio_id :: String,
+  runtime :: PaperRuntime,
+  plan :: PaperPlan
+) -> Int ! String do
+  if plan.outcome == EntrySkipped do
+    return Ok(0)
+  end
+
+  let variant = variant_name(plan.variant)
+  let spot_requested = spot_requested_atoms(snapshot, result, plan.variant)
+  let perp_requested = result.hedge_lamports.atoms
+  let spot_intent = paper_intent(
+    snapshot.event_id,
+    portfolio_id,
+    variant,
+    "SPOT",
+    plan.spot_asset,
+    "BUY",
+    spot_requested,
+    spot_quote_atoms(snapshot, plan.variant)
+  )
+  let perp_intent = paper_intent(
+    snapshot.event_id,
+    portfolio_id,
+    variant,
+    "PERP",
+    "PERP-SOL",
+    "SELL",
+    perp_requested,
+    snapshot.perp_bid_price_usd_micros.atoms
+  )
+  let plan_json = json {
+    variant : variant,
+    outcome : outcome_name(plan.outcome),
+    reason : plan.reason,
+    nextState : state_name(plan.next_state),
+    nextRandomState : "${plan.next_random_state}",
+    spotPlaced : plan.spot_fill.placed,
+    spotStatus : fill_status_name(plan.spot_fill.status),
+    spotAsset : plan.spot_asset,
+    spotRequestedQuantityAtoms : "${spot_requested}",
+    spotFilledQuantityAtoms : "${plan.spot_fill.filled_quantity.atoms}",
+    spotPriceAtoms : "${plan.spot_fill.average_price.atoms}",
+    spotGrossUsdAtoms : "${plan.spot_fill.gross_usd.atoms}",
+    spotFeeUsdAtoms : "${plan.spot_fill.fee_usd.atoms}",
+    perpPlaced : plan.perp_fill.placed,
+    perpStatus : fill_status_name(plan.perp_fill.status),
+    perpRequestedQuantityAtoms : "${perp_requested}",
+    perpFilledQuantityAtoms : "${plan.perp_fill.filled_quantity.atoms}",
+    perpPriceAtoms : "${plan.perp_fill.average_price.atoms}",
+    perpGrossUsdAtoms : "${plan.perp_fill.gross_usd.atoms}",
+    perpFeeUsdAtoms : "${plan.perp_fill.fee_usd.atoms}"
+  }
+  let rows = Pool.query(pool, "SELECT apply_paper_plan($1, $2::bigint, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8)::text AS applied", [
+    portfolio_id,
+    "${runtime.state_version}",
+    snapshot.event_id,
+    plan_json,
+    spot_intent,
+    spot_intent |> Crypto.sha256,
+    perp_intent,
+    perp_intent |> Crypto.sha256
+  ]) ?
+  if List.length(rows) != 1 do
+    return Err("database returned invalid paper plan result")
+  end
+  if Map.get(List.head(rows), "applied") == "true" do
+    Ok(1)
+  else
+    Err("paper portfolio state changed")
   end
 end
 
@@ -78,5 +223,5 @@ pub fn list_opportunities(pool :: PoolHandle) -> String ! String do
 end
 
 pub fn bootstrap_paper_runs(pool :: PoolHandle, code_commit :: String, mesh_commit :: String, config_hash :: String) -> Int ! String do
-  "WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 3, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO NOTHING RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO NOTHING RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])
+  "WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 4, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO NOTHING RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO NOTHING RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])
 end

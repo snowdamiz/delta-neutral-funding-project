@@ -17,6 +17,14 @@ pub type FailureOutcome do
   Unknown
 end deriving(Eq, Display, Json)
 
+pub fn fill_status_name(status :: FillStatus) -> String do
+  case status do
+    Filled -> "filled"
+    Partial -> "partial"
+    Rejected -> "rejected"
+  end
+end
+
 pub struct PaperOrder do
   side :: OrderSide
   quantity :: QuantityAtoms

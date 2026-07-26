@@ -53,6 +53,8 @@ describe("paper entry planner") do
           now_ms : 1785024001000,
           max_age_ms : 5000,
           paused : false,
+          state : Idle,
+          state_version : 0,
           random_state : Random.seed(42)
         }) do
           Ok( plan) -> do
@@ -72,6 +74,8 @@ describe("paper entry planner") do
           now_ms : 1785024001000,
           max_age_ms : 5000,
           paused : false,
+          state : Idle,
+          state_version : 0,
           random_state : Random.seed(42)
         }) do
           Ok( plan) -> do
@@ -95,6 +99,8 @@ describe("paper entry planner") do
         now_ms : 1785024001000,
         max_age_ms : 5000,
         paused : false,
+        state : Idle,
+        state_version : 0,
         random_state : Random.seed(42)
       }) do
         Ok( plan) -> do
@@ -117,6 +123,8 @@ describe("paper entry planner") do
         now_ms : 1785024001000,
         max_age_ms : 5000,
         paused : false,
+        state : Idle,
+        state_version : 0,
         random_state : Random.seed(42)
       }) do
         Ok(plan) -> do
@@ -124,6 +132,30 @@ describe("paper entry planner") do
           assert(plan.next_state == EmergencyFlatten)
           assert(plan.spot_fill.placed == false)
           assert(plan.perp_fill.placed == false)
+        end
+        Err(error) -> assert(false)
+      end
+      Err(error) -> assert(false)
+    end
+  end
+
+  test("does not reopen a portfolio that has left idle") do
+    let full = snapshot(OracleValid, 1000000, 0)
+    case evaluate_snapshot(full) do
+      Ok(opportunity) -> case plan_entry(full,
+      opportunity,
+      SolControl,
+      PaperRuntime {
+        now_ms : 1785024001000,
+        max_age_ms : 5000,
+        paused : false,
+        state : Hedged,
+        state_version : 4,
+        random_state : Random.seed(42)
+      }) do
+        Ok(plan) -> do
+          assert(plan.outcome == EntrySkipped)
+          assert(plan.reason == "portfolio_not_idle")
         end
         Err(error) -> assert(false)
       end
