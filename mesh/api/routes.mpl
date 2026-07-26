@@ -772,7 +772,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "b07d37d07c6442590be24e656c6f1bd5f48c5500"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 25
+    schemaVersion : 26
   })
 end
 

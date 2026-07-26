@@ -14,7 +14,7 @@ test "$(tail -c 1 "$metrics_file" | wc -l | tr -d ' ')" = 1
 build=$(curl -fsS "$base_url/v1/build")
 app_commit=$(printf '%s' "$build" | jq -r .codeCommit)
 mesh_commit=$(printf '%s' "$build" | jq -r .meshCommit)
-grep -q "funding_collector_build_info{app_commit=\"$app_commit\",mesh_compiler_commit=\"$mesh_commit\",mesh_runtime_commit=\"$mesh_commit\",adapter_commit=\"$app_commit\",executor_commit=\"$app_commit\",schema_version=\"25\",execution_mode=\"paper\"} 1" \
+grep -q "funding_collector_build_info{app_commit=\"$app_commit\",mesh_compiler_commit=\"$mesh_commit\",mesh_runtime_commit=\"$mesh_commit\",adapter_commit=\"$app_commit\",executor_commit=\"$app_commit\",schema_version=\"26\",execution_mode=\"paper\"} 1" \
   "$metrics_file"
 
 for metric in \
@@ -80,6 +80,11 @@ curl -fsS http://127.0.0.1:9090/api/v1/rules |
       "CriticalLiquidationDistance", "CriticalDelta", "AdapterStale",
       "ReconciliationMismatch", "ShadowOutcomeUnknown", "CriticalRiskEvent"
     ][]; $rules | index(.) != null)
+  ' >/dev/null
+curl -fsS http://127.0.0.1:9090/api/v1/status/flags |
+  jq -e '
+    .data["storage.tsdb.retention.time"] == "35d" and
+    .data["storage.tsdb.retention.size"] == "2GB"
   ' >/dev/null
 
 printf 'observability checks passed\n'

@@ -168,7 +168,8 @@ services:
         condition: service_healthy
     command:
       - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.time=35d
+      - --storage.tsdb.retention.size=2GB
     ports:
       - "127.0.0.1:9090:9090"
     volumes:

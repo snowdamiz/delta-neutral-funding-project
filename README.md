@@ -56,6 +56,7 @@ scripts/check-shadow-persistence.sh
 scripts/check-recovery.sh
 scripts/check-security.sh
 scripts/check-observability.sh
+scripts/soak-report.sh
 ```
 
 The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
@@ -80,6 +81,10 @@ The observability check validates the live bounded-cardinality Prometheus
 exposition, build identity, alert rules, and all twelve Grafana panels. Alert
 delivery remains intentionally unconfigured until an operator destination is
 provided.
+The soak report derives authoritative duration, continuity, paired-decision,
+funding-interval, epoch-transition, and unresolved-safety evidence from
+PostgreSQL. Prometheus retains 35 days within a 2 GB cap for the matching
+runtime-stability review.
 
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).
