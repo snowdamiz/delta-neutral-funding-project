@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:funding-collector:execution-reports:v1",
+  "title": "Execution report v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "intentId",
+    "commandId",
+    "mode",
+    "status",
+    "observedAtMs",
+    "filledQuantityAtoms",
+    "averagePriceAtoms",
+    "feeAtoms",
+    "authoritativeReference"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "intentId": { "type": "string", "minLength": 1 },
+    "commandId": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["paper", "shadow", "live"] },
+    "status": { "enum": ["PLANNED", "PARTIAL", "FILLED", "REJECTED", "UNKNOWN"] },
+    "observedAtMs": { "$ref": "#/$defs/unsignedInteger" },
+    "filledQuantityAtoms": { "$ref": "#/$defs/unsignedInteger" },
+    "averagePriceAtoms": { "$ref": "#/$defs/unsignedInteger" },
+    "feeAtoms": { "$ref": "#/$defs/unsignedInteger" },
+    "authoritativeReference": { "type": "string" },
+    "failureCode": { "type": "string" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "unsignedInteger": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" }
+  }
+}

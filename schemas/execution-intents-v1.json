@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:funding-collector:execution-intents:v1",
+  "title": "Execution intent v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "intentId",
+    "strategyRunId",
+    "stateVersion",
+    "variant",
+    "operation",
+    "leg",
+    "instrument",
+    "side",
+    "maxQuantityAtoms",
+    "limitPriceAtoms",
+    "maxSlippageBps",
+    "reduceOnly",
+    "expiresAtMs",
+    "policyProfile",
+    "snapshotIds",
+    "configHash"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "intentId": { "type": "string", "minLength": 1 },
+    "strategyRunId": { "type": "string", "minLength": 1 },
+    "stateVersion": { "$ref": "#/$defs/unsignedInteger" },
+    "variant": { "enum": ["sol_control", "jitosol_carry"] },
+    "operation": { "enum": ["OPEN", "REBALANCE", "CLOSE", "EMERGENCY_FLATTEN"] },
+    "leg": { "enum": ["SPOT", "PERP"] },
+    "instrument": { "type": "string", "minLength": 1 },
+    "side": { "enum": ["BUY", "SELL"] },
+    "maxQuantityAtoms": { "$ref": "#/$defs/unsignedInteger" },
+    "limitPriceAtoms": { "$ref": "#/$defs/unsignedInteger" },
+    "maxSlippageBps": { "$ref": "#/$defs/unsignedInteger" },
+    "reduceOnly": { "type": "boolean" },
+    "expiresAtMs": { "$ref": "#/$defs/unsignedInteger" },
+    "policyProfile": { "type": "string", "minLength": 1 },
+    "snapshotIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "configHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "unsignedInteger": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" }
+  }
+}
+

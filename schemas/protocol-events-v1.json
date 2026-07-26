@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:funding-collector:protocol-events:v1",
+  "title": "Protocol event envelope v1",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventType",
+    "source",
+    "observedAtMs",
+    "sourceSequence",
+    "idempotencyKey",
+    "rawPayloadHash",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "eventId": { "type": "string", "minLength": 1 },
+    "eventType": {
+      "enum": [
+        "MarketSnapshot",
+        "FundingSettlement",
+        "JitoSolPoolState",
+        "AdapterStatus"
+      ]
+    },
+    "source": { "type": "string", "minLength": 1 },
+    "observedAtMs": { "$ref": "#/$defs/unsignedInteger" },
+    "sourceSequence": { "type": "string", "minLength": 1 },
+    "idempotencyKey": { "type": "string", "minLength": 1 },
+    "rawPayloadHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "signedInteger": { "type": "string", "pattern": "^-?(0|[1-9][0-9]*)$" },
+    "unsignedInteger": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" }
+  }
+}
+
