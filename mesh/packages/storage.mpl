@@ -467,7 +467,7 @@ pub fn persist_operator_command(
   reason :: String,
   request_hash :: String
 ) -> String ! String do
-  let rows = Pool.query(pool, "SELECT apply_operator_command($1, $2, $3, $4, $5)::text AS body", [
+  let rows = Pool.query(pool, "SELECT apply_reconciled_operator_command($1, $2, $3, $4, $5)::text AS body", [
     action,
     target,
     idempotency_key,
@@ -478,6 +478,20 @@ pub fn persist_operator_command(
     Err("database returned an invalid operator command result")
   else
     Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn reconcile_paper_state(
+  pool :: PoolHandle,
+  reconciliation_id :: String,
+  reason :: String
+) -> String ! String do
+  let rows = ("SELECT record_paper_reconciliation($1, $2)->>'result' AS result"
+    |2> Pool.query(pool, [reconciliation_id, reason])) ?
+  if List.length(rows) != 1 do
+    Err("database returned an invalid paper reconciliation result")
+  else
+    Ok(Map.get(List.head(rows), "result"))
   end
 end
 
@@ -509,7 +523,7 @@ pub fn list_opportunities(pool :: PoolHandle) -> String ! String do
 end
 
 pub fn bootstrap_paper_runs(pool :: PoolHandle, code_commit :: String, mesh_commit :: String, config_hash :: String) -> Int ! String do
-  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 12, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO NOTHING RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])) ?
+  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 13, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO NOTHING RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])) ?
   let rows = Pool.query(pool, "SELECT (config_hash = $1)::text AS matches FROM strategy_runs WHERE id = 'local-paper-run'", [config_hash]) ?
   if List.length(rows) != 1 || Map.get(List.head(rows), "matches") != "true" do
     Err("running paper strategy config does not match CONFIG_HASH")

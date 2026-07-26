@@ -2,7 +2,7 @@ from Api.Router import build_router
 from Packages.LeaderLease import acquire_startup, start_leader_lease_supervisor
 from Packages.Log import error, info
 from Packages.ReplayCli import run_replay_command
-from Packages.Storage import bootstrap_paper_runs
+from Packages.Storage import bootstrap_paper_runs, reconcile_paper_state
 from Runtime.Registry import start_registry
 
 fn serve(pool :: PoolHandle, port :: Int) do
@@ -18,10 +18,32 @@ fn serve(pool :: PoolHandle, port :: Int) do
         )
       ) do
         Ok(rows) -> do
-          start_registry(pool)
-          start_leader_lease_supervisor()
-          info("collector_started", "{\"mode\":\"paper\",\"port\":\"${port}\",\"bootstrapRows\":\"${rows}\",\"leaderGeneration\":\"${generation}\"}")
-          build_router() |> HTTP.serve(port)
+          let reconciliation_id = "reconciliation:startup:" <> Env.get("INSTANCE_ID", "") <> ":${generation}:" <> "${DateTime.utc_now() |> DateTime.to_unix_ms}"
+          case (reconciliation_id |2> reconcile_paper_state(
+            pool,
+            "collector_startup"
+          )) do
+            Ok("matched") -> do
+              start_registry(pool)
+              start_leader_lease_supervisor()
+              info("collector_started", "{\"mode\":\"paper\",\"port\":\"${port}\",\"bootstrapRows\":\"${rows}\",\"leaderGeneration\":\"${generation}\",\"reconciliation\":\"matched\"}")
+              build_router() |> HTTP.serve(port)
+            end
+            Ok("recovery_required") -> do
+              start_registry(pool)
+              start_leader_lease_supervisor()
+              info("collector_started", "{\"mode\":\"paper\",\"port\":\"${port}\",\"bootstrapRows\":\"${rows}\",\"leaderGeneration\":\"${generation}\",\"reconciliation\":\"recovery_required\"}")
+              build_router() |> HTTP.serve(port)
+            end
+            Ok(result) -> do
+              error("startup_reconciliation_failed", "{\"result\":\"${result}\"}")
+              Process.exit(1)
+            end
+            Err(reason) -> do
+              error("startup_reconciliation_failed", "{\"reason\":\"${reason}\"}")
+              Process.exit(1)
+            end
+          end
         end
         Err(reason) -> error("bootstrap_failed", "{\"reason\":\"${reason}\"}")
       end

@@ -461,7 +461,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 12
+    schemaVersion : 13
   })
 end
 
@@ -602,7 +602,7 @@ pub fn handle_config(_request :: Request) -> Response do
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 12,
+    databaseSchemaVersion : 13,
     liveEnabled : false
   })
 end

@@ -80,7 +80,7 @@ BEGIN
     RAISE EXCEPTION 'pause-all did not persist';
   END IF;
 
-  v_result := apply_operator_command(
+  v_result := apply_reconciled_operator_command(
     'resume',
     '',
     'operator-test:resume',
@@ -101,7 +101,7 @@ BEGIN
     RAISE EXCEPTION 'resume skipped reconciliation';
   END IF;
 
-  v_result := apply_operator_command(
+  v_result := apply_reconciled_operator_command(
     'reconcile',
     '',
     'operator-test:reconcile',
