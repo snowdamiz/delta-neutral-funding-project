@@ -1,5 +1,6 @@
 from Packages.Accounting import realized_funding_usd, start_direct_unstake
 from Packages.BrokerPaper import fill_status_name
+from Packages.ExecutionIntents import ExecutionIntent, canonical_execution_intent
 from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, TokenAtoms, UsdMicros, lamports_to_usd
 from Packages.Opportunity import OpportunitySet
 from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, action_name, outcome_name, variant_from_name, variant_name
@@ -151,64 +152,95 @@ fn spot_quote_atoms(snapshot :: MarketSnapshot, variant :: PaperVariant) -> Int 
   end
 end
 
+fn execution_instrument(asset :: String, leg :: String) -> String do
+  if leg == "PERP" do
+    "SOL-PERP"
+  else
+    if asset == "JitoSOL" do "JUPITER:JITOSOL-USDC" else "JUPITER:SOL-USDC" end
+  end
+end
+
 fn paper_intent(
+  intent_id :: String,
   source_event_id :: String,
   portfolio_id :: String,
+  state_version :: Int,
+  observed_at_ms :: Int,
   variant :: String,
   operation :: String,
   leg :: String,
   asset :: String,
   side :: String,
   requested_atoms :: Int,
-  quoted_price_atoms :: Int
-) -> String do
-  json {
-    schemaVersion : 1,
-    sourceEventId : source_event_id,
-    portfolioRunId : portfolio_id,
-    executionMode : "paper",
+  quoted_price_atoms :: Int,
+  placed :: Bool
+) -> String ! String do
+  if placed == false do
+    return Ok("{}")
+  end
+  ExecutionIntent {
+    intent_id : intent_id,
+    strategy_run_id : "local-paper-run",
+    state_version : state_version,
     variant : variant,
     operation : operation,
     leg : leg,
-    asset : asset,
+    instrument : asset |> execution_instrument(leg),
     side : side,
-    requestedQuantityAtoms : "${requested_atoms}",
-    quotedPriceAtoms : "${quoted_price_atoms}"
+    max_quantity_atoms : requested_atoms,
+    limit_price_atoms : quoted_price_atoms,
+    max_slippage_bps : Env.get_int("MAX_EXECUTION_SLIPPAGE_BPS", 50),
+    reduce_only : leg == "PERP" && operation != "OPEN",
+    expires_at_ms : (observed_at_ms
+      |> Checked.add(Env.get_int("EXECUTION_INTENT_TTL_MS", 5000))) ?,
+    policy_profile : Env.get("EXECUTION_POLICY_PROFILE", "shadow-v1"),
+    snapshot_ids : [source_event_id],
+    config_hash : Env.get("CONFIG_HASH", "")
   }
+    |> canonical_execution_intent
 end
 
-fn synchronized_entry(
+fn entry_record(
   snapshot :: MarketSnapshot,
   result :: OpportunitySet,
   portfolio_id :: String,
   runtime :: PaperRuntime,
   plan :: PaperPlan
-) -> String do
+) -> String ! String do
   let variant = plan.variant |> variant_name
+  let intent_base = "${snapshot.event_id}:${portfolio_id}:${variant}"
   let spot_requested = spot_requested_atoms(snapshot, result, plan.variant)
   let spot_intent = paper_intent(
+    "${intent_base}:spot:intent",
     snapshot.event_id,
     portfolio_id,
+    runtime.state_version,
+    snapshot.observed_at_ms,
     variant,
     "OPEN",
     "SPOT",
     plan.spot_asset,
     "BUY",
     spot_requested,
-    spot_quote_atoms(snapshot, plan.variant)
-  )
+    spot_quote_atoms(snapshot, plan.variant),
+    plan.spot_fill.placed
+  ) ?
   let perp_intent = paper_intent(
+    "${intent_base}:perp:intent",
     snapshot.event_id,
     portfolio_id,
+    runtime.state_version,
+    snapshot.observed_at_ms,
     variant,
     "OPEN",
     "PERP",
     "PERP-SOL",
     "SELL",
     result.hedge_lamports.atoms,
-    snapshot.perp_bid_price_usd_micros.atoms
-  )
-  json {
+    snapshot.perp_bid_price_usd_micros.atoms,
+    plan.perp_fill.placed
+  ) ?
+  Ok(json {
     portfolioRunId : portfolio_id,
     expectedStateVersion : "${runtime.state_version}",
     plan : json {
@@ -237,7 +269,7 @@ fn synchronized_entry(
     spotIntentHash : spot_intent |> Crypto.sha256,
     perpIntent : perp_intent,
     perpIntentHash : perp_intent |> Crypto.sha256
-  }
+  })
 end
 
 pub fn persist_paper_plan(
@@ -261,61 +293,15 @@ pub fn persist_paper_plan(
     return Ok(0)
   end
 
-  let variant = plan.variant |> variant_name
-  let spot_requested = spot_requested_atoms(snapshot, result, plan.variant)
-  let spot_intent = paper_intent(
-    snapshot.event_id,
+  let record = (plan |5> entry_record(
+    snapshot,
+    result,
     portfolio_id,
-    variant,
-    "OPEN",
-    "SPOT",
-    plan.spot_asset,
-    "BUY",
-    spot_requested,
-    spot_quote_atoms(snapshot, plan.variant)
-  )
-  let perp_intent = paper_intent(
-    snapshot.event_id,
-    portfolio_id,
-    variant,
-    "OPEN",
-    "PERP",
-    "PERP-SOL",
-    "SELL",
-    result.hedge_lamports.atoms,
-    snapshot.perp_bid_price_usd_micros.atoms
-  )
-  let plan_json = json {
-    variant : variant,
-    outcome : outcome_name(plan.outcome),
-    reason : plan.reason,
-    nextState : state_name(plan.next_state),
-    nextRandomState : "${plan.next_random_state}",
-    spotPlaced : plan.spot_fill.placed,
-    spotStatus : fill_status_name(plan.spot_fill.status),
-    spotAsset : plan.spot_asset,
-    spotRequestedQuantityAtoms : "${spot_requested}",
-    spotFilledQuantityAtoms : "${plan.spot_fill.filled_quantity.atoms}",
-    spotPriceAtoms : "${plan.spot_fill.average_price.atoms}",
-    spotGrossUsdAtoms : "${plan.spot_fill.gross_usd.atoms}",
-    spotFeeUsdAtoms : "${plan.spot_fill.fee_usd.atoms}",
-    perpPlaced : plan.perp_fill.placed,
-    perpStatus : fill_status_name(plan.perp_fill.status),
-    perpRequestedQuantityAtoms : "${result.hedge_lamports.atoms}",
-    perpFilledQuantityAtoms : "${plan.perp_fill.filled_quantity.atoms}",
-    perpPriceAtoms : "${plan.perp_fill.average_price.atoms}",
-    perpGrossUsdAtoms : "${plan.perp_fill.gross_usd.atoms}",
-    perpFeeUsdAtoms : "${plan.perp_fill.fee_usd.atoms}"
-  }
-  let rows = Pool.query(pool, "SELECT apply_paper_plan($1, $2::bigint, $3, $4::jsonb, $5::jsonb, $6, $7::jsonb, $8)::text AS applied", [
-    portfolio_id,
-    "${runtime.state_version}",
-    snapshot.event_id,
-    plan_json,
-    spot_intent,
-    spot_intent |> Crypto.sha256,
-    perp_intent,
-    perp_intent |> Crypto.sha256
+    runtime
+  )) ?
+  let rows = Pool.query(pool, "SELECT apply_paper_plan($1::jsonb->>'portfolioRunId', ($1::jsonb->>'expectedStateVersion')::bigint, $2, $1::jsonb->'plan', $1::jsonb->'spotIntent', ($1::jsonb->>'spotIntentHash')::char(64), $1::jsonb->'perpIntent', ($1::jsonb->>'perpIntentHash')::char(64))::text AS applied", [
+    record,
+    snapshot.event_id
   ]) ?
   if List.length(rows) != 1 do
     return Err("database returned invalid paper plan result")
@@ -361,18 +347,18 @@ pub fn persist_synchronized_paper_entries(
     return Ok(0)
   end
 
-  let sol_entry = (sol_plan |5> synchronized_entry(
+  let sol_entry = (sol_plan |5> entry_record(
     snapshot,
     result,
     sol_portfolio_id,
     sol_runtime
-  ))
-  let jito_entry = (jito_plan |5> synchronized_entry(
+  )) ?
+  let jito_entry = (jito_plan |5> entry_record(
     snapshot,
     result,
     jito_portfolio_id,
     jito_runtime
-  ))
+  )) ?
   let rows = Pool.query(pool, "SELECT apply_synchronized_paper_entries($1, $2, $3::jsonb, $4::jsonb)::text AS applied", [
     comparison_group_id,
     snapshot.event_id,
@@ -492,32 +478,45 @@ fn position_record(
 ) -> String ! String do
   let operation = position_operation(plan.action)
   let variant = position.variant |> variant_name
-  let spot_intent = paper_intent(snapshot.event_id,
-  portfolio_id,
-  variant,
-  operation,
-  "SPOT",
-  plan.spot_asset,
-  "SELL",
-  plan.spot_requested_quantity.atoms,
-  if position.variant == SolControl do
-    snapshot.sol_spot_bid_price_usd_micros.atoms
-  else
-    snapshot.jitosol_spot_bid_price_usd_micros.atoms
-  end)
-  let perp_intent = paper_intent(snapshot.event_id,
-  portfolio_id,
-  variant,
-  operation,
-  "PERP",
-  "PERP-SOL",
-  plan.perp_side,
-  plan.perp_requested_quantity.atoms,
-  if plan.perp_side == "SELL" do
-    snapshot.perp_bid_price_usd_micros.atoms
-  else
-    snapshot.perp_ask_price_usd_micros.atoms
-  end)
+  let intent_base = "${snapshot.event_id}:${portfolio_id}:${variant}:${action_name(plan.action)}"
+  let spot_intent = paper_intent(
+    "${intent_base}:spot:intent",
+    snapshot.event_id,
+    portfolio_id,
+    position.state_version,
+    snapshot.observed_at_ms,
+    variant,
+    operation,
+    "SPOT",
+    plan.spot_asset,
+    "SELL",
+    plan.spot_requested_quantity.atoms,
+    if position.variant == SolControl do
+      snapshot.sol_spot_bid_price_usd_micros.atoms
+    else
+      snapshot.jitosol_spot_bid_price_usd_micros.atoms
+    end,
+    plan.spot_fill.placed
+  ) ?
+  let perp_intent = paper_intent(
+    "${intent_base}:perp:intent",
+    snapshot.event_id,
+    portfolio_id,
+    position.state_version,
+    snapshot.observed_at_ms,
+    variant,
+    operation,
+    "PERP",
+    "PERP-SOL",
+    plan.perp_side,
+    plan.perp_requested_quantity.atoms,
+    if plan.perp_side == "SELL" do
+      snapshot.perp_bid_price_usd_micros.atoms
+    else
+      snapshot.perp_ask_price_usd_micros.atoms
+    end,
+    plan.perp_fill.placed
+  ) ?
   let reward_usd = (plan.valuation.reward_sol_lamports
     |> lamports_to_usd(snapshot.sol_price_usd_micros, :toward_zero)) ?
   let basis_usd = (plan.valuation.basis_sol_lamports
