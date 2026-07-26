@@ -272,6 +272,19 @@ BEGIN
     RAISE EXCEPTION 'failed synchronized position transaction was not atomic';
   END IF;
 
+  UPDATE portfolio_runs
+  SET state = 'hedged', state_version = 4
+  WHERE id = 'comparison-independent-jito';
+  PERFORM apply_paper_position_plan(
+    'comparison-independent-jito',
+    4,
+    'comparison-hold-event',
+    v_jito_hold->'plan',
+    v_jito_hold->'spotIntent',
+    (v_jito_hold->>'spotIntentHash')::char(64),
+    v_jito_hold->'perpIntent',
+    (v_jito_hold->>'perpIntentHash')::char(64)
+  );
   PERFORM apply_synchronized_paper_position_plans(
     'comparison-synchronized',
     'comparison-hold-event',
@@ -282,8 +295,8 @@ BEGIN
     SELECT count(*)
     FROM position_snapshots
     WHERE source_event_id = 'comparison-hold-event'
-  ) <> 2 THEN
-    RAISE EXCEPTION 'synchronized position update did not commit both books';
+  ) <> 3 THEN
+    RAISE EXCEPTION 'same-variant books did not retain portfolio-scoped records';
   END IF;
 
   BEGIN

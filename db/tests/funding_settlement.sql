@@ -17,7 +17,65 @@ INSERT INTO portfolio_runs (
   initial_capital_usd_micros
 ) VALUES
   ('funding-test-sol', 'funding-test-run', 'sol_control', 'paper', 'hedged', 4, 1000000000),
-  ('funding-test-jito', 'funding-test-run', 'jitosol_carry', 'paper', 'hedged', 4, 1000000000);
+  ('funding-test-jito', 'funding-test-run', 'jitosol_carry', 'paper', 'hedged', 4, 1000000000),
+  ('funding-test-sync-sol', 'funding-test-run', 'sol_control', 'paper', 'hedged', 4, 1000000000),
+  ('funding-test-sync-jito', 'funding-test-run', 'jitosol_carry', 'paper', 'hedged', 4, 1000000000);
+
+INSERT INTO execution_intents (
+  id, portfolio_run_id, execution_mode, variant, state_version,
+  operation, leg, intent_json, intent_hash
+)
+SELECT
+  id || ':intent',
+  id,
+  'paper',
+  variant,
+  4,
+  'OPEN',
+  'PERP',
+  jsonb_build_object('side', 'SELL'),
+  repeat(substr(md5(id), 1, 32), 2)
+FROM portfolio_runs
+WHERE strategy_run_id = 'funding-test-run';
+INSERT INTO orders (
+  id, intent_id, portfolio_run_id, execution_mode, variant, status,
+  requested_quantity_atoms, filled_quantity_atoms
+)
+SELECT
+  id || ':order',
+  id || ':intent',
+  id,
+  'paper',
+  variant,
+  'filled',
+  '1000000000',
+  '1000000000'
+FROM portfolio_runs
+WHERE strategy_run_id = 'funding-test-run';
+INSERT INTO normalized_events (
+  id, schema_version, event_type, source, observed_at_ms, source_slot,
+  source_sequence, idempotency_key, raw_payload_hash, canonical_payload
+) VALUES (
+  'funding-test-position-event', 1, 'MarketSnapshot', 'funding-position-test',
+  1, 1, '1', 'funding-position-test:1', repeat('f', 64), '{}'::jsonb
+);
+INSERT INTO fills (
+  id, order_id, portfolio_run_id, execution_mode, variant,
+  quantity_atoms, price_atoms, fee_atoms, source_snapshot_id, explanation
+)
+SELECT
+  id || ':fill',
+  id || ':order',
+  id,
+  'paper',
+  variant,
+  '1000000000',
+  '150000000',
+  '0',
+  'funding-test-position-event',
+  '{}'::jsonb
+FROM portfolio_runs
+WHERE strategy_run_id = 'funding-test-run';
 
 DO $$
 DECLARE
@@ -38,28 +96,44 @@ DECLARE
       "solPriceUsdMicros": "150000000"
     }
   }'::jsonb;
-  v_sol jsonb := '{
-    "enabled": true,
-    "portfolioRunId": "funding-test-sol",
-    "stateVersion": "4",
-    "positionQuantityAtoms": "2000000000",
-    "amountUsdMicros": "75000"
-  }'::jsonb;
-  v_jito jsonb := '{
-    "enabled": true,
-    "portfolioRunId": "funding-test-jito",
-    "stateVersion": "4",
-    "positionQuantityAtoms": "1000000000",
-    "amountUsdMicros": "-30000"
-  }'::jsonb;
+  v_payments jsonb := '[
+    {
+      "enabled": true,
+      "portfolioRunId": "funding-test-sol",
+      "stateVersion": "4",
+      "positionQuantityAtoms": "1000000000",
+      "amountUsdMicros": "37500"
+    },
+    {
+      "enabled": true,
+      "portfolioRunId": "funding-test-jito",
+      "stateVersion": "4",
+      "positionQuantityAtoms": "1000000000",
+      "amountUsdMicros": "-30000"
+    },
+    {
+      "enabled": true,
+      "portfolioRunId": "funding-test-sync-sol",
+      "stateVersion": "4",
+      "positionQuantityAtoms": "1000000000",
+      "amountUsdMicros": "37500"
+    },
+    {
+      "enabled": true,
+      "portfolioRunId": "funding-test-sync-jito",
+      "stateVersion": "4",
+      "positionQuantityAtoms": "1000000000",
+      "amountUsdMicros": "37500"
+    }
+  ]'::jsonb;
   v_result jsonb;
 BEGIN
-  v_result := apply_funding_settlement(v_event, v_sol, v_jito);
+  v_result := apply_funding_settlements(v_event, v_payments);
   IF (v_result->>'insertedEvent')::boolean = false
-     OR (v_result->>'payments')::integer <> 2 THEN
-    RAISE EXCEPTION 'expected an event and two funding payments, got %', v_result;
+     OR (v_result->>'payments')::integer <> 4 THEN
+    RAISE EXCEPTION 'expected an event and four funding payments, got %', v_result;
   END IF;
-  v_result := apply_funding_settlement(v_event, v_sol, v_jito);
+  v_result := apply_funding_settlements(v_event, v_payments);
   IF (v_result->>'insertedEvent')::boolean
      OR (v_result->>'payments')::integer <> 0 THEN
     RAISE EXCEPTION 'exact funding retry was not a no-op';
@@ -69,14 +143,13 @@ $$;
 
 DO $$
 BEGIN
-  PERFORM apply_funding_settlement(
+  PERFORM apply_funding_settlements(
     jsonb_set(
       (SELECT canonical_payload FROM normalized_events WHERE id = 'funding-test-event'),
       '{rawPayloadHash}',
       '"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"'
     ),
-    '{"enabled": false}'::jsonb,
-    '{"enabled": false}'::jsonb
+    '[]'::jsonb
   );
   RAISE EXCEPTION 'conflicting duplicate was accepted';
 EXCEPTION
@@ -103,21 +176,20 @@ DECLARE
     '"13"'
   );
 BEGIN
-  PERFORM apply_funding_settlement(
+  PERFORM apply_funding_settlements(
     v_event,
-    '{
+    '[{
       "enabled": true,
       "portfolioRunId": "funding-test-sol",
       "stateVersion": "3",
-      "positionQuantityAtoms": "2000000000",
-      "amountUsdMicros": "75000"
-    }'::jsonb,
-    '{"enabled": false}'::jsonb
+      "positionQuantityAtoms": "1000000000",
+      "amountUsdMicros": "37500"
+    }]'::jsonb
   );
   RAISE EXCEPTION 'stale funding position was accepted';
 EXCEPTION
   WHEN raise_exception THEN
-    IF SQLERRM <> 'paper portfolio state changed before funding settlement' THEN
+    IF SQLERRM <> 'paper portfolio state or funding quantity changed' THEN
       RAISE;
     END IF;
 END;
@@ -125,7 +197,7 @@ $$;
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM funding_payments WHERE source_event_id = 'funding-test-event') <> 2 THEN
+  IF (SELECT count(*) FROM funding_payments WHERE source_event_id = 'funding-test-event') <> 4 THEN
     RAISE EXCEPTION 'funding payments were not idempotent';
   END IF;
   IF (
@@ -134,7 +206,7 @@ BEGIN
     JOIN funding_payments fp ON fp.id = lb.event_id
     WHERE lb.event_type = 'funding'
       AND fp.source_event_id = 'funding-test-event'
-  ) <> 2 THEN
+  ) <> 4 THEN
     RAISE EXCEPTION 'funding ledger batches are incomplete';
   END IF;
   IF NOT EXISTS (
@@ -144,7 +216,7 @@ BEGIN
     WHERE lb.portfolio_run_id = 'funding-test-sol'
       AND le.account_debit = 'paper_cash'
       AND le.account_credit = 'funding_income'
-      AND le.usd_value_atoms = '75000'
+      AND le.usd_value_atoms = '37500'
   ) THEN
     RAISE EXCEPTION 'received funding ledger direction is wrong';
   END IF;

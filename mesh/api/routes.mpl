@@ -532,34 +532,55 @@ fn funding_accepted_response(event :: FundingSettlement, result :: FundingPersis
   })
 end
 
+fn funding_payments(
+  pool :: PoolHandle,
+  event :: FundingSettlement,
+  now_ms :: Int,
+  portfolio_ids :: List<String>,
+  index :: Int,
+  payments :: List<String>
+) -> List<String> ! String do
+  if index >= List.length(portfolio_ids) do
+    Ok(payments)
+  else
+    let payment = (List.get(portfolio_ids, index)
+      |2> funding_payment(pool, event, now_ms)) ?
+    funding_payments(
+      pool,
+      event,
+      now_ms,
+      portfolio_ids,
+      index + 1,
+      List.append(payments, payment)
+    )
+  end
+end
+
 fn funding_response(body :: String, event :: FundingSettlement) do
   let pool = get_pool()
   let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
-  case funding_payment(pool, "local-sol-control", event, now_ms) do
-    Ok(sol_payment) -> do
-      case funding_payment(pool, "local-jitosol-carry", event, now_ms) do
-        Ok(jitosol_payment) -> do
-          case persist_funding_settlement(
-            pool,
-            body,
-            sol_payment,
-            jitosol_payment
-          ) do
-            Ok(result) -> do
-              record_accepted()
-              info("funding_event_accepted", "{\"eventId\":\"${event.event_id}\",\"payments\":\"${result.payments}\"}")
-              funding_accepted_response(event, result)
-            end
-            Err(reason) -> do
-              record_rejected()
-              error_response(500, "persistence_failed", reason)
-            end
-          end
-        end
-        Err(reason) -> do
-          record_rejected()
-          error_response(500, "funding_evaluation_failed", reason)
-        end
+  case funding_payments(
+    pool,
+    event,
+    now_ms,
+    [
+      "local-sol-control",
+      "local-jitosol-carry",
+      "local-sync-sol-control",
+      "local-sync-jitosol-carry"
+    ],
+    0,
+    List.new()
+  ) do
+    Ok(payments) -> case persist_funding_settlement(pool, body, payments) do
+      Ok(result) -> do
+        record_accepted()
+        info("funding_event_accepted", "{\"eventId\":\"${event.event_id}\",\"payments\":\"${result.payments}\"}")
+        funding_accepted_response(event, result)
+      end
+      Err(reason) -> do
+        record_rejected()
+        error_response(500, "persistence_failed", reason)
       end
     end
     Err(reason) -> do
@@ -729,7 +750,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 18
+    schemaVersion : 20
   })
 end
 
@@ -870,7 +891,7 @@ pub fn handle_config(_request :: Request) -> Response do
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 18,
+    databaseSchemaVersion : 20,
     liveEnabled : false
   })
 end
