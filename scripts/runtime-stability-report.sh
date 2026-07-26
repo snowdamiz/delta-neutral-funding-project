@@ -6,7 +6,8 @@ prometheus_url=${PROMETHEUS_URL:-http://127.0.0.1:9090}
 collector_url=${COLLECTOR_URL:-http://127.0.0.1:8080}
 soak=$("$project_dir/scripts/soak-report.sh")
 elapsed_ms=$(printf '%s' "$soak" | jq -er '.elapsedMs | tonumber')
-window_seconds=$(( (elapsed_ms + 999) / 1000 ))
+stale_ms=$(printf '%s' "$soak" | jq -er '.staleForMs | tonumber')
+window_seconds=$(( (elapsed_ms + stale_ms + 999) / 1000 ))
 test "$window_seconds" -gt 0 || window_seconds=1
 
 query_value() {
@@ -51,6 +52,8 @@ jq -n \
   --arg meshCommit "$(printf '%s' "$build" | jq -er .meshCommit)" \
   --arg firstObservedAtMs "$(printf '%s' "$soak" | jq -er .firstObservedAtMs)" \
   --arg lastObservedAtMs "$(printf '%s' "$soak" | jq -er .lastObservedAtMs)" \
+  --arg elapsedMs "$elapsed_ms" \
+  --arg staleForMs "$stale_ms" \
   --argjson windowSeconds "$window_seconds" \
   --argjson meshRuntimeMinimumUp "$mesh_runtime_minimum_up" \
   --argjson maximumResidentMemoryBytes "$maximum_resident_memory_bytes" \
@@ -69,6 +72,8 @@ jq -n \
     meshCommit: $meshCommit,
     firstObservedAtMs: $firstObservedAtMs,
     lastObservedAtMs: $lastObservedAtMs,
+    elapsedMs: $elapsedMs,
+    staleForMs: $staleForMs,
     windowSeconds: $windowSeconds,
     meshRuntimeMinimumUp: $meshRuntimeMinimumUp,
     maximumResidentMemoryBytes: $maximumResidentMemoryBytes,

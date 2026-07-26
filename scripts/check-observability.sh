@@ -88,6 +88,7 @@ curl -fsS http://127.0.0.1:9090/api/v1/status/flags |
   ' >/dev/null
 "$project_dir/scripts/runtime-stability-report.sh" |
   jq -e '
+    .windowSeconds == (((.elapsedMs | tonumber) + (.staleForMs | tonumber) + 999) / 1000 | floor) and
     .meshRuntimeMinimumUp == 1 and
     .maximumResidentMemoryBytes > 0 and
     .maximumMailboxDepth >= 0 and
