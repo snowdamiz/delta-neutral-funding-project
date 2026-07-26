@@ -4,7 +4,7 @@ BEGIN;
 INSERT INTO build_manifests (
   id, code_commit, mesh_commit, schema_version, config_hash
 ) VALUES (
-  'comparison-build', 'test', 'test', 15, repeat('0', 64)
+  'comparison-build', 'test', 'test', 16, repeat('0', 64)
 );
 INSERT INTO strategy_runs (
   id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version
@@ -44,6 +44,78 @@ INSERT INTO portfolio_runs (
     'comparison-synchronized-jito', 'comparison-run',
     'comparison-synchronized', 'jitosol_carry', 'paper', 1000000000
   );
+INSERT INTO normalized_events (
+  id, schema_version, event_type, source, observed_at_ms, source_slot,
+  source_sequence, idempotency_key, raw_payload_hash, canonical_payload
+) VALUES (
+  'comparison-entry-event', 1, 'MarketSnapshot', 'comparison-test', 1, 1,
+  '1', 'comparison-test:1', repeat('a', 64), '{}'::jsonb
+);
+
+SELECT apply_synchronized_paper_entries(
+  'comparison-synchronized',
+  'comparison-entry-event',
+  '{
+    "portfolioRunId":"comparison-synchronized-sol",
+    "expectedStateVersion":"0",
+    "plan":{
+      "variant":"sol_control",
+      "outcome":"hedged",
+      "reason":"paper_entry_hedged",
+      "nextState":"hedged",
+      "nextRandomState":"99",
+      "spotPlaced":true,
+      "spotStatus":"filled",
+      "spotAsset":"SOL",
+      "spotRequestedQuantityAtoms":"1000000000",
+      "spotFilledQuantityAtoms":"1000000000",
+      "spotPriceAtoms":"150100000",
+      "spotGrossUsdAtoms":"150100000",
+      "spotFeeUsdAtoms":"75050",
+      "perpPlaced":true,
+      "perpStatus":"filled",
+      "perpRequestedQuantityAtoms":"1000000000",
+      "perpFilledQuantityAtoms":"1000000000",
+      "perpPriceAtoms":"149900000",
+      "perpGrossUsdAtoms":"149900000",
+      "perpFeeUsdAtoms":"59960"
+    },
+    "spotIntent":{"leg":"SPOT"},
+    "spotIntentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "perpIntent":{"leg":"PERP"},
+    "perpIntentHash":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }'::jsonb,
+  '{
+    "portfolioRunId":"comparison-synchronized-jito",
+    "expectedStateVersion":"0",
+    "plan":{
+      "variant":"jitosol_carry",
+      "outcome":"hedged",
+      "reason":"paper_entry_hedged",
+      "nextState":"hedged",
+      "nextRandomState":"99",
+      "spotPlaced":true,
+      "spotStatus":"filled",
+      "spotAsset":"JitoSOL",
+      "spotRequestedQuantityAtoms":"800000000",
+      "spotFilledQuantityAtoms":"800000000",
+      "spotPriceAtoms":"187625000",
+      "spotGrossUsdAtoms":"150100000",
+      "spotFeeUsdAtoms":"75050",
+      "perpPlaced":true,
+      "perpStatus":"filled",
+      "perpRequestedQuantityAtoms":"1000000000",
+      "perpFilledQuantityAtoms":"1000000000",
+      "perpPriceAtoms":"149900000",
+      "perpGrossUsdAtoms":"149900000",
+      "perpFeeUsdAtoms":"59960"
+    },
+    "spotIntent":{"leg":"SPOT"},
+    "spotIntentHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "perpIntent":{"leg":"PERP"},
+    "perpIntentHash":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  }'::jsonb
+);
 
 DO $$
 BEGIN
@@ -51,6 +123,26 @@ BEGIN
       WHERE strategy_run_id = 'comparison-run') <> 4 THEN
     RAISE EXCEPTION 'comparison portfolios were not isolated';
   END IF;
+  IF (SELECT count(*) FROM portfolio_runs
+      WHERE comparison_group_id = 'comparison-synchronized'
+        AND state = 'hedged') <> 2 THEN
+    RAISE EXCEPTION 'synchronized entry did not commit both portfolios';
+  END IF;
+
+  BEGIN
+    PERFORM apply_synchronized_paper_entries(
+      'comparison-synchronized',
+      'comparison-entry-event',
+      '{"portfolioRunId":"comparison-synchronized-sol","plan":{"variant":"sol_control","perpRequestedQuantityAtoms":"1"}}'::jsonb,
+      '{"portfolioRunId":"comparison-synchronized-jito","plan":{"variant":"jitosol_carry","perpRequestedQuantityAtoms":"2"}}'::jsonb
+    );
+    RAISE EXCEPTION 'mismatched synchronized notional was accepted';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM <> 'synchronized entries must share positive SOL notional' THEN
+        RAISE;
+      END IF;
+  END;
 
   BEGIN
     INSERT INTO portfolio_runs (

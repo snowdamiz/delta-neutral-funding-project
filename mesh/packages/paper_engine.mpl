@@ -452,11 +452,13 @@ fn margin_input(snapshot :: MarketSnapshot, runtime :: PaperRuntime) -> MarginIn
   }
 end
 
-pub fn plan_entry(snapshot :: MarketSnapshot,
+fn plan_entry_for_schedule(snapshot :: MarketSnapshot,
 opportunity :: OpportunitySet,
 variant :: PaperVariant,
+schedule_variant :: PaperVariant,
 runtime :: PaperRuntime) -> PaperPlan ! String do
   let leg = spot_leg(snapshot, opportunity, variant)
+  let schedule = spot_leg(snapshot, opportunity, schedule_variant)
   if runtime.state != Idle do
     return Ok(skipped_plan(variant, "portfolio_not_idle", runtime.random_state))
   end
@@ -468,18 +470,42 @@ runtime :: PaperRuntime) -> PaperPlan ! String do
     oracle_valid : oracle_valid(snapshot.oracle_status),
     exit_depth : minimum_depth(leg.exit_depth, snapshot.perp_exit_depth_lamports),
     hedge : opportunity.hedge_lamports,
-    net_carry : leg.net_carry,
+    net_carry : schedule.net_carry,
     margin : margin_input(snapshot, runtime)
   })
   if decision.approved == false do
     return Ok(skipped_plan(variant, decision.code, runtime.random_state))
   end
-  if leg.eligible == false do
+  if schedule.eligible == false do
     return Ok(skipped_plan(variant, "opportunity_ineligible", runtime.random_state))
   end
   let candidate = transition(Idle, OpportunityFound) ?
   let opening_spot = transition(candidate, OpenApproved) ?
   plan_spot(snapshot, opportunity, variant, leg, opening_spot, runtime.random_state)
+end
+
+pub fn plan_entry(snapshot :: MarketSnapshot,
+opportunity :: OpportunitySet,
+variant :: PaperVariant,
+runtime :: PaperRuntime) -> PaperPlan ! String do
+  runtime |5> plan_entry_for_schedule(
+    snapshot,
+    opportunity,
+    variant,
+    variant
+  )
+end
+
+pub fn plan_controlled_entry(snapshot :: MarketSnapshot,
+opportunity :: OpportunitySet,
+variant :: PaperVariant,
+runtime :: PaperRuntime) -> PaperPlan ! String do
+  runtime |5> plan_entry_for_schedule(
+    snapshot,
+    opportunity,
+    variant,
+    JitoSolCarry
+  )
 end
 
 fn position_market_rate(snapshot :: MarketSnapshot, variant :: PaperVariant) -> Lamports ! String do

@@ -1,6 +1,6 @@
 from Packages.Finance import Lamports, PriceMicros, RatePpm, TokenAtoms, UsdMicros
 from Packages.Opportunity import evaluate_snapshot
-from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
+from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_controlled_entry, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
 from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
 from Packages.StateMachine import PortfolioState
 
@@ -108,6 +108,41 @@ describe("paper entry planner") do
         Err( error) -> assert(false)
       end
       Err( error) -> assert(false)
+    end
+  end
+
+  test("uses the JitoSOL schedule for both controlled portfolios") do
+    let controlled = %{snapshot(OracleValid, 1000000, 0) |
+      costs_usd_micros : UsdMicros { atoms : 200000 },
+      risk_haircut_usd_micros : UsdMicros { atoms : 50000 }
+    }
+    case evaluate_snapshot(controlled) do
+      Ok(opportunity) -> do
+        assert(opportunity.sol_eligible == false)
+        assert(opportunity.jitosol_eligible)
+        case plan_controlled_entry(
+          controlled,
+          opportunity,
+          SolControl,
+          runtime(Idle, 1785024001000)
+        ) do
+          Ok(sol_plan) -> case plan_controlled_entry(
+            controlled,
+            opportunity,
+            JitoSolCarry,
+            runtime(Idle, 1785024001000)
+          ) do
+            Ok(jito_plan) -> do
+              assert(sol_plan.outcome == EntryHedged)
+              assert(jito_plan.outcome == EntryHedged)
+              assert(sol_plan.perp_fill.filled_quantity.atoms == jito_plan.perp_fill.filled_quantity.atoms)
+            end
+            Err(error) -> assert(false)
+          end
+          Err(error) -> assert(false)
+        end
+      end
+      Err(error) -> assert(false)
     end
   end
 

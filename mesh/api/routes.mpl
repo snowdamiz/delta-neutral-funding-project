@@ -4,11 +4,11 @@ from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
-from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
+from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_controlled_entry, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
 from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, PendingPaperAction, list_opportunities, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan
+from Packages.Storage import FundingPersistence, PendingPaperAction, list_opportunities, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_synchronized_paper_entries
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -191,14 +191,63 @@ fn paper_runtime(pool :: PoolHandle, portfolio_id :: String, now_ms :: Int) -> P
   )
 end
 
+fn run_independent_pair(
+  pool :: PoolHandle,
+  snapshot :: MarketSnapshot,
+  result :: OpportunitySet,
+  now_ms :: Int
+) -> Int ! String do
+  run_portfolio_cycle(
+    pool,
+    snapshot,
+    result,
+    "local-sol-control",
+    SolControl,
+    ("local-sol-control" |2> paper_runtime(pool, now_ms)) ?
+  ) ?
+  run_portfolio_cycle(
+    pool,
+    snapshot,
+    result,
+    "local-jitosol-carry",
+    JitoSolCarry,
+    ("local-jitosol-carry" |2> paper_runtime(pool, now_ms)) ?
+  )
+end
+
+fn run_synchronized_pair(
+  pool :: PoolHandle,
+  snapshot :: MarketSnapshot,
+  result :: OpportunitySet,
+  now_ms :: Int
+) -> Int ! String do
+  let sol_runtime = ("local-sync-sol-control" |2> paper_runtime(pool, now_ms)) ?
+  let jito_runtime = ("local-sync-jitosol-carry" |2> paper_runtime(pool, now_ms)) ?
+  if sol_runtime.state != Idle || jito_runtime.state != Idle do
+    return Ok(0)
+  end
+  let sol_plan = (sol_runtime |4> plan_controlled_entry(snapshot, result, SolControl)) ?
+  let jito_plan = (jito_runtime |4> plan_controlled_entry(snapshot, result, JitoSolCarry)) ?
+  persist_synchronized_paper_entries(
+    pool,
+    "local-paper-run:synchronized",
+    snapshot,
+    result,
+    "local-sync-sol-control",
+    sol_runtime,
+    sol_plan,
+    "local-sync-jitosol-carry",
+    jito_runtime,
+    jito_plan
+  )
+end
+
 fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) -> Int ! String do
   let pool = get_pool()
   let inserted = (Env.get("CONFIG_HASH", "") |5> persist_opportunities(pool, body, snapshot, result)) ?
   let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
-  let sol_runtime = ("local-sol-control" |2> paper_runtime(pool, now_ms)) ?
-  let jitosol_runtime = ("local-jitosol-carry" |2> paper_runtime(pool, now_ms)) ?
-  run_portfolio_cycle(pool, snapshot, result, "local-sol-control", SolControl, sol_runtime) ?
-  run_portfolio_cycle(pool, snapshot, result, "local-jitosol-carry", JitoSolCarry, jitosol_runtime) ?
+  (now_ms |4> run_independent_pair(pool, snapshot, result)) ?
+  (now_ms |4> run_synchronized_pair(pool, snapshot, result)) ?
   Ok(inserted)
 end
 
@@ -461,7 +510,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 15
+    schemaVersion : 16
   })
 end
 
@@ -602,7 +651,7 @@ pub fn handle_config(_request :: Request) -> Response do
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 15,
+    databaseSchemaVersion : 16,
     liveEnabled : false
   })
 end

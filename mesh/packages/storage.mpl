@@ -175,6 +175,69 @@ fn paper_intent(
   }
 end
 
+fn synchronized_entry(
+  snapshot :: MarketSnapshot,
+  result :: OpportunitySet,
+  portfolio_id :: String,
+  runtime :: PaperRuntime,
+  plan :: PaperPlan
+) -> String do
+  let variant = plan.variant |> variant_name
+  let spot_requested = spot_requested_atoms(snapshot, result, plan.variant)
+  let spot_intent = paper_intent(
+    snapshot.event_id,
+    portfolio_id,
+    variant,
+    "OPEN",
+    "SPOT",
+    plan.spot_asset,
+    "BUY",
+    spot_requested,
+    spot_quote_atoms(snapshot, plan.variant)
+  )
+  let perp_intent = paper_intent(
+    snapshot.event_id,
+    portfolio_id,
+    variant,
+    "OPEN",
+    "PERP",
+    "PERP-SOL",
+    "SELL",
+    result.hedge_lamports.atoms,
+    snapshot.perp_bid_price_usd_micros.atoms
+  )
+  json {
+    portfolioRunId : portfolio_id,
+    expectedStateVersion : "${runtime.state_version}",
+    plan : json {
+      variant : variant,
+      outcome : outcome_name(plan.outcome),
+      reason : plan.reason,
+      nextState : state_name(plan.next_state),
+      nextRandomState : "${plan.next_random_state}",
+      spotPlaced : plan.spot_fill.placed,
+      spotStatus : fill_status_name(plan.spot_fill.status),
+      spotAsset : plan.spot_asset,
+      spotRequestedQuantityAtoms : "${spot_requested}",
+      spotFilledQuantityAtoms : "${plan.spot_fill.filled_quantity.atoms}",
+      spotPriceAtoms : "${plan.spot_fill.average_price.atoms}",
+      spotGrossUsdAtoms : "${plan.spot_fill.gross_usd.atoms}",
+      spotFeeUsdAtoms : "${plan.spot_fill.fee_usd.atoms}",
+      perpPlaced : plan.perp_fill.placed,
+      perpStatus : fill_status_name(plan.perp_fill.status),
+      perpRequestedQuantityAtoms : "${result.hedge_lamports.atoms}",
+      perpFilledQuantityAtoms : "${plan.perp_fill.filled_quantity.atoms}",
+      perpPriceAtoms : "${plan.perp_fill.average_price.atoms}",
+      perpGrossUsdAtoms : "${plan.perp_fill.gross_usd.atoms}",
+      perpFeeUsdAtoms : "${plan.perp_fill.fee_usd.atoms}"
+    },
+    spotIntent : spot_intent,
+    spotIntentHash : spot_intent |> Crypto.sha256,
+    perpIntent : perp_intent,
+    perpIntentHash : perp_intent |> Crypto.sha256
+  }
+end
+
 pub fn persist_paper_plan(
   pool :: PoolHandle,
   snapshot :: MarketSnapshot,
@@ -196,9 +259,8 @@ pub fn persist_paper_plan(
     return Ok(0)
   end
 
-  let variant = variant_name(plan.variant)
+  let variant = plan.variant |> variant_name
   let spot_requested = spot_requested_atoms(snapshot, result, plan.variant)
-  let perp_requested = result.hedge_lamports.atoms
   let spot_intent = paper_intent(
     snapshot.event_id,
     portfolio_id,
@@ -218,7 +280,7 @@ pub fn persist_paper_plan(
     "PERP",
     "PERP-SOL",
     "SELL",
-    perp_requested,
+    result.hedge_lamports.atoms,
     snapshot.perp_bid_price_usd_micros.atoms
   )
   let plan_json = json {
@@ -237,7 +299,7 @@ pub fn persist_paper_plan(
     spotFeeUsdAtoms : "${plan.spot_fill.fee_usd.atoms}",
     perpPlaced : plan.perp_fill.placed,
     perpStatus : fill_status_name(plan.perp_fill.status),
-    perpRequestedQuantityAtoms : "${perp_requested}",
+    perpRequestedQuantityAtoms : "${result.hedge_lamports.atoms}",
     perpFilledQuantityAtoms : "${plan.perp_fill.filled_quantity.atoms}",
     perpPriceAtoms : "${plan.perp_fill.average_price.atoms}",
     perpGrossUsdAtoms : "${plan.perp_fill.gross_usd.atoms}",
@@ -260,6 +322,68 @@ pub fn persist_paper_plan(
     Ok(1)
   else
     Err("paper portfolio state changed")
+  end
+end
+
+pub fn persist_synchronized_paper_entries(
+  pool :: PoolHandle,
+  comparison_group_id :: String,
+  snapshot :: MarketSnapshot,
+  result :: OpportunitySet,
+  sol_portfolio_id :: String,
+  sol_runtime :: PaperRuntime,
+  sol_plan :: PaperPlan,
+  jito_portfolio_id :: String,
+  jito_runtime :: PaperRuntime,
+  jito_plan :: PaperPlan
+) -> Int ! String do
+  persist_risk_decision(
+    pool,
+    snapshot,
+    sol_portfolio_id,
+    sol_runtime,
+    sol_plan.outcome != EntrySkipped,
+    sol_plan.reason,
+    if sol_plan.outcome == EntrySkipped do "skip" else "entry" end
+  ) ?
+  persist_risk_decision(
+    pool,
+    snapshot,
+    jito_portfolio_id,
+    jito_runtime,
+    jito_plan.outcome != EntrySkipped,
+    jito_plan.reason,
+    if jito_plan.outcome == EntrySkipped do "skip" else "entry" end
+  ) ?
+  if sol_plan.outcome == EntrySkipped || jito_plan.outcome == EntrySkipped do
+    return Ok(0)
+  end
+
+  let sol_entry = (sol_plan |5> synchronized_entry(
+    snapshot,
+    result,
+    sol_portfolio_id,
+    sol_runtime
+  ))
+  let jito_entry = (jito_plan |5> synchronized_entry(
+    snapshot,
+    result,
+    jito_portfolio_id,
+    jito_runtime
+  ))
+  let rows = Pool.query(pool, "SELECT apply_synchronized_paper_entries($1, $2, $3::jsonb, $4::jsonb)::text AS applied", [
+    comparison_group_id,
+    snapshot.event_id,
+    sol_entry,
+    jito_entry
+  ]) ?
+  if List.length(rows) != 1 do
+    return Err("database returned invalid synchronized entry result")
+  end
+  if Map.get(List.head(rows), "applied") == "true" do
+    Ok(2)
+  else
+    Err("synchronized comparison portfolio state changed")
   end
 end
 
@@ -523,7 +647,7 @@ pub fn list_opportunities(pool :: PoolHandle) -> String ! String do
 end
 
 pub fn bootstrap_paper_runs(pool :: PoolHandle, code_commit :: String, mesh_commit :: String, config_hash :: String) -> Int ! String do
-  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 15, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), comparison AS (INSERT INTO comparison_groups (id, strategy_run_id, mode, target_notional_usd_micros, entry_policy_version, exit_policy_version) VALUES ('local-paper-run:independent', 'local-paper-run', 'independent', 500000000, 'paper-entry-v1', 'paper-exit-v1') ON CONFLICT (id) DO NOTHING RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, comparison_group_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'local-paper-run:independent', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'local-paper-run:independent', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO UPDATE SET comparison_group_id = EXCLUDED.comparison_group_id RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios ON CONFLICT (id) DO NOTHING RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])) ?
+  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 16, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), comparison AS (INSERT INTO comparison_groups (id, strategy_run_id, mode, target_notional_usd_micros, entry_policy_version, exit_policy_version) VALUES ('local-paper-run:independent', 'local-paper-run', 'independent', 500000000, 'paper-entry-v1', 'paper-exit-v1'), ('local-paper-run:synchronized', 'local-paper-run', 'synchronized', 500000000, 'paper-entry-v1', 'paper-exit-v1') ON CONFLICT (id) DO UPDATE SET mode = EXCLUDED.mode, target_notional_usd_micros = EXCLUDED.target_notional_usd_micros, entry_policy_version = EXCLUDED.entry_policy_version, exit_policy_version = EXCLUDED.exit_policy_version RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, comparison_group_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'local-paper-run:independent', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'local-paper-run:independent', 'jitosol_carry', 'paper', 1000000000), ('local-sync-sol-control', 'local-paper-run', 'local-paper-run:synchronized', 'sol_control', 'paper', 1000000000), ('local-sync-jitosol-carry', 'local-paper-run', 'local-paper-run:synchronized', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO UPDATE SET comparison_group_id = EXCLUDED.comparison_group_id RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios ON CONFLICT (id) DO NOTHING RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])) ?
   let rows = Pool.query(pool, "SELECT (config_hash = $1)::text AS matches FROM strategy_runs WHERE id = 'local-paper-run'", [config_hash]) ?
   if List.length(rows) != 1 || Map.get(List.head(rows), "matches") != "true" do
     Err("running paper strategy config does not match CONFIG_HASH")
