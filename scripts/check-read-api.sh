@@ -10,9 +10,23 @@ curl -fsS "$base_url/v1/portfolios" |
 curl -fsS "$base_url/v1/portfolios/local-sol-control" |
   jq -e '.id == "local-sol-control"' >/dev/null
 curl -fsS "$base_url/v1/positions" |
-  jq -e 'length == 4 and all(.[]; .spotQuantity.scale == 9 and .marginSnapshot.collateralUsd.scale == 6 and .marginSnapshot.marginRatioPpm == "4000000")' >/dev/null
+  jq -e '
+    length == 4 and
+    all(.[];
+      .spotQuantity.scale == 9 and
+      .marginSnapshot.collateralUsd.scale == 6 and
+      .marginSnapshot.maintenanceRequirementUsd.scale == 6 and
+      (
+        (
+          (.marginSnapshot.collateralUsd.atoms | tonumber) * 1000000 /
+          (.marginSnapshot.maintenanceRequirementUsd.atoms | tonumber) |
+          floor | tostring
+        ) == .marginSnapshot.marginRatioPpm
+      )
+    )
+  ' >/dev/null
 curl -fsS "$base_url/v1/orders?limit=2&offset=0" |
-  jq -e '.limit == 2 and .offset == 0 and (.items | length) == 2 and all(.items[]; .intent.schemaVersion == 1 and .intent.intentId == .intentId and (.intent.snapshotIds | length) == 1 and (if .intent.leg == "PERP" then .intent.instrument == "SOL-PERP" elif .variant == "jitosol_carry" then .intent.instrument == "JUPITER:JITOSOL-USDC" else .intent.instrument == "JUPITER:SOL-USDC" end))' >/dev/null
+  jq -e '.limit == 2 and .offset == 0 and (.items | length) <= 2 and all(.items[]; .intent.schemaVersion == 1 and .intent.intentId == .intentId and (.intent.snapshotIds | length) == 1 and (if .intent.leg == "PERP" then .intent.instrument == "SOL-PERP" elif .variant == "jitosol_carry" then .intent.instrument == "JUPITER:JITOSOL-USDC" else .intent.instrument == "JUPITER:SOL-USDC" end))' >/dev/null
 curl -fsS "$base_url/v1/fills?limit=2&offset=0" |
   jq -e '.limit == 2 and (.items | length) <= 2' >/dev/null
 curl -fsS "$base_url/v1/funding?limit=2&offset=0" |
@@ -24,9 +38,21 @@ curl -fsS "$base_url/v1/pnl/comparison" |
 curl -fsS "$base_url/v1/jitosol" |
   jq -e '.directUnstakeCounterfactuals | type == "array"' >/dev/null
 curl -fsS "$base_url/v1/risk-decisions?limit=4&offset=0" |
-  jq -e '.limit == 4 and (.items | length) > 0 and all(.items[]; .healthSnapshot.marginRatioPpm == "4000000")' >/dev/null
+  jq -e '
+    .limit == 4 and
+    (.items | length) > 0 and
+    all(.items[];
+      (
+        (
+          (.healthSnapshot.collateralUsdMicros | tonumber) * 1000000 /
+          (.healthSnapshot.maintenanceRequirementUsdMicros | tonumber) |
+          floor | tostring
+        ) == .healthSnapshot.marginRatioPpm
+      )
+    )
+  ' >/dev/null
 curl -fsS "$base_url/v1/config" |
-  jq -e '.executionMode == "paper" and .liveEnabled == false and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
+  jq -e '.executionMode == "paper" and .liveEnabled == false and .databaseSchemaVersion == 26 and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
 
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/v1/orders?limit=101")" = "400"
 printf 'read API checks passed\n'

@@ -961,7 +961,7 @@ pub fn handle_config(_request :: Request) -> Response do
     directUnstakeCapitalDelayHaircutUsdMicros : Env.get_int("DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS", 1000000),
     directUnstakeFinalHedgeCloseCostUsdMicros : Env.get_int("DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS", 250000),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 25,
+    databaseSchemaVersion : 26,
     liveEnabled : false
   })
 end
