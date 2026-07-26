@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildSyntheticEvent, validateEvent } from "./contracts.js";
+import {
+  buildSyntheticEvent,
+  buildSyntheticFundingSettlement,
+  validateEvent,
+} from "./contracts.js";
 
 test("builds a session-scoped v1 event with integer strings", () => {
   const event = buildSyntheticEvent(7n, 1_785_024_000_000n, "session-a");
@@ -36,5 +40,39 @@ test("builds a session-scoped v1 event with integer strings", () => {
   assert.notEqual(
     buildSyntheticEvent(7n, 1_785_024_000_000n, "session-b").idempotencyKey,
     event.idempotencyKey,
+  );
+});
+
+test("builds a signed-rate funding settlement with a session-scoped payment identity", () => {
+  const event = buildSyntheticFundingSettlement(
+    12n,
+    1_785_024_000_000n,
+    "session-a",
+  );
+
+  assert.equal(event.eventType, "FundingSettlement");
+  assert.equal(event.eventId, "synthetic-funding-session-a-12");
+  assert.equal(event.idempotencyKey, "synthetic-local:session-a:funding:12");
+  assert.equal(event.payload.venuePaymentId, "synthetic-payment-session-a-12");
+  assert.equal(event.payload.effectiveAtMs, event.observedAtMs);
+  assert.equal(event.payload.realizedShortRatePpm, "250");
+  assert.equal(event.payload.solPriceUsdMicros, "150000000");
+  assert.equal(validateEvent(event), event);
+
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: { ...event.payload, realizedShortRatePpm: 250 },
+      }),
+    /realizedShortRatePpm/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: { ...event.payload, effectiveAtMs: "1785024000001" },
+      }),
+    /effectiveAtMs/,
   );
 });

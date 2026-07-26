@@ -3,6 +3,7 @@ export type AdapterConfig = {
   collectorUrl: string;
   hmacSecret: string;
   emitIntervalMs: number;
+  fundingIntervalEvents: number;
   requestTimeoutMs: number;
   healthPort: number;
 };
@@ -35,6 +36,7 @@ export function loadConfig(
     collectorUrl: env.COLLECTOR_URL ?? "http://collector:8080/v1/events",
     hmacSecret,
     emitIntervalMs: positiveInteger(env, "EMIT_INTERVAL_MS", 5000),
+    fundingIntervalEvents: positiveInteger(env, "FUNDING_INTERVAL_EVENTS", 12),
     requestTimeoutMs: positiveInteger(env, "REQUEST_TIMEOUT_MS", 3000),
     healthPort: positiveInteger(env, "HEALTH_PORT", 8090),
   };

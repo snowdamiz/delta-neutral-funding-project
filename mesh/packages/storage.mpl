@@ -28,6 +28,11 @@ fn required_int(value :: String, field :: String) -> Int ! String do
   end
 end
 
+pub struct FundingPersistence do
+  inserted_event :: Bool
+  payments :: Int
+end
+
 pub fn load_paper_runtime(pool :: PoolHandle, portfolio_id :: String, now_ms :: Int, max_age_ms :: Int) -> PaperRuntime ! String do
   let rows = Pool.query(pool, "SELECT p.state::text, p.state_version::text, p.random_state::text, (c.pause_entries OR c.pause_all)::text AS paused FROM portfolio_runs p CROSS JOIN control_state c WHERE p.id = $1", [portfolio_id]) ?
   if List.length(rows) != 1 do
@@ -328,6 +333,27 @@ pub fn persist_opportunities(pool :: PoolHandle, body :: String, snapshot :: Mar
   end
 end
 
+pub fn persist_funding_settlement(
+  pool :: PoolHandle,
+  body :: String,
+  sol_payment :: String,
+  jitosol_payment :: String
+) -> FundingPersistence ! String do
+  let rows = Pool.query(pool, "WITH applied AS (SELECT apply_funding_settlement($1::jsonb, $2::jsonb, $3::jsonb) AS result) SELECT result->>'insertedEvent' AS inserted_event, result->>'payments' AS payments FROM applied", [
+    body,
+    sol_payment,
+    jitosol_payment
+  ]) ?
+  if List.length(rows) != 1 do
+    return Err("database returned invalid funding settlement result")
+  end
+  let row = List.head(rows)
+  Ok(FundingPersistence {
+    inserted_event : Map.get(row, "inserted_event") == "true",
+    payments : required_int(Map.get(row, "payments"), "funding payment count") ?
+  })
+end
+
 fn rows_to_json(rows, index :: Int, acc :: List<String>) -> String do
   if index >= List.length(rows) do
     "[${String.join(acc, ",")}]"
@@ -356,5 +382,5 @@ pub fn list_opportunities(pool :: PoolHandle) -> String ! String do
 end
 
 pub fn bootstrap_paper_runs(pool :: PoolHandle, code_commit :: String, mesh_commit :: String, config_hash :: String) -> Int ! String do
-  "WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 5, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO NOTHING RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO NOTHING RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])
+  "WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 6, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO NOTHING RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO NOTHING RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash])
 end

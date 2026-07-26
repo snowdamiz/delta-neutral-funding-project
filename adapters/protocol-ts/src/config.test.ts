@@ -8,16 +8,22 @@ test("loads bounded synthetic adapter configuration", () => {
     ADAPTER_SESSION_ID: "test-session",
     COLLECTOR_URL: "http://collector:8080/v1/events",
     EMIT_INTERVAL_MS: "250",
+    FUNDING_INTERVAL_EVENTS: "12",
     REQUEST_TIMEOUT_MS: "1000",
     HEALTH_PORT: "8090",
   });
   assert.equal(config.emitIntervalMs, 250);
+  assert.equal(config.fundingIntervalEvents, 12);
   assert.equal(config.sessionId, "test-session");
   assert.equal(config.healthPort, 8090);
   assert.throws(() => loadConfig({}), /ADAPTER_HMAC_SECRET/);
   assert.throws(
     () => loadConfig({ ADAPTER_HMAC_SECRET: "secret", EMIT_INTERVAL_MS: "0" }),
     /EMIT_INTERVAL_MS/,
+  );
+  assert.throws(
+    () => loadConfig({ ADAPTER_HMAC_SECRET: "secret", FUNDING_INTERVAL_EVENTS: "0" }),
+    /FUNDING_INTERVAL_EVENTS/,
   );
   assert.throws(
     () => loadConfig({ ADAPTER_HMAC_SECRET: "secret", ADAPTER_SESSION_ID: "bad session" }),

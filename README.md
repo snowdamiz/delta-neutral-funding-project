@@ -16,6 +16,5 @@ The complete stack is started with Docker Compose:
 docker compose up --build
 ```
 
-Until that vertical slice lands, milestone status and open gates are tracked in
+Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).
-

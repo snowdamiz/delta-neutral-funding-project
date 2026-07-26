@@ -40,6 +40,20 @@ pub struct MarketSnapshot do
   unknown_rate_ppm :: RatePpm
 end deriving(Json)
 
+pub struct FundingSettlement do
+  event_id :: String
+  source :: String
+  observed_at_ms :: Int
+  source_slot :: Int
+  source_sequence :: String
+  idempotency_key :: String
+  raw_payload_hash :: String
+  venue_payment_id :: String
+  effective_at_ms :: Int
+  realized_short_rate_ppm :: RatePpm
+  sol_price_usd_micros :: UsdMicros
+end deriving(Json)
+
 fn required_int(raw :: String, field :: String, allow_negative :: Bool) -> Int ! String do
   let canonical = if allow_negative do
     Regex.is_match(~r/^-?(0|[1-9][0-9]*)$/, raw)
@@ -153,4 +167,39 @@ pub fn parse_market_snapshot(body :: String) -> MarketSnapshot ! String do
       })
     end
   end
+end
+
+pub fn parse_funding_settlement(body :: String) -> FundingSettlement ! String do
+  let _parsed = Json.parse(body) ?
+  let schema_version = required_int(Json.get(body, "schemaVersion"), "schemaVersion", false) ?
+  if schema_version != 1 do
+    return Err("unsupported schema version")
+  end
+  let event_type = (body |> required_string("eventType", "eventType")) ?
+  if event_type != "FundingSettlement" do
+    return Err("unsupported event type")
+  end
+  let payload = body |> Json.get("payload")
+  let observed_at_ms = (body |> required_int_field("observedAtMs", "observedAtMs", false)) ?
+  let effective_at_ms = (payload |> required_int_field("effectiveAtMs", "effectiveAtMs", false)) ?
+  if effective_at_ms > observed_at_ms do
+    return Err("funding effective time cannot be in the future")
+  end
+  let sol_price = (payload |> required_int_field("solPriceUsdMicros", "solPriceUsdMicros", false)) ?
+  if sol_price <= 0 do
+    return Err("solPriceUsdMicros must be positive")
+  end
+  Ok(FundingSettlement {
+    event_id : (body |> required_string("eventId", "eventId")) ?,
+    source : (body |> required_string("source", "source")) ?,
+    observed_at_ms : observed_at_ms,
+    source_slot : (body |> required_int_field("sourceSlot", "sourceSlot", false)) ?,
+    source_sequence : (body |> required_string("sourceSequence", "sourceSequence")) ?,
+    idempotency_key : (body |> required_string("idempotencyKey", "idempotencyKey")) ?,
+    raw_payload_hash : required_hash(body) ?,
+    venue_payment_id : (payload |> required_string("venuePaymentId", "venuePaymentId")) ?,
+    effective_at_ms : effective_at_ms,
+    realized_short_rate_ppm : (payload |> required_rate_field("realizedShortRatePpm", "realizedShortRatePpm", true)) ?,
+    sol_price_usd_micros : UsdMicros { atoms : sol_price }
+  })
 end

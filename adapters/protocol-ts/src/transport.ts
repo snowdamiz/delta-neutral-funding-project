@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { type MarketSnapshotEvent, validateEvent } from "./contracts.js";
+import { type ProtocolEvent, validateEvent } from "./contracts.js";
 
 export function signBody(secret: string, body: string): string {
   if (secret.length === 0) throw new Error("ADAPTER_HMAC_SECRET is required");
@@ -9,7 +9,7 @@ export function signBody(secret: string, body: string): string {
 export async function postEvent(
   url: string,
   secret: string,
-  event: MarketSnapshotEvent,
+  event: ProtocolEvent,
   timeoutMs: number,
 ): Promise<Response> {
   const body = JSON.stringify(validateEvent(event));

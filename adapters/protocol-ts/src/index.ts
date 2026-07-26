@@ -1,10 +1,14 @@
 import { createServer } from "node:http";
-import { buildSyntheticEvent } from "./contracts.js";
+import {
+  buildSyntheticEvent,
+  buildSyntheticFundingSettlement,
+} from "./contracts.js";
 import { loadConfig } from "./config.js";
 import { postEvent } from "./transport.js";
 
 const config = loadConfig();
 let sequence = 1n;
+let observedAtMs = BigInt(Date.now());
 let stopping = false;
 let lastDelivery = "not_started";
 
@@ -42,7 +46,7 @@ health.listen(config.healthPort, "0.0.0.0", () => {
 });
 
 while (!stopping) {
-  const event = buildSyntheticEvent(sequence, BigInt(Date.now()), config.sessionId);
+  const event = buildSyntheticEvent(sequence, observedAtMs, config.sessionId);
   try {
     const response = await postEvent(
       config.collectorUrl,
@@ -55,10 +59,33 @@ while (!stopping) {
     }
     lastDelivery = "accepted";
     log("info", "snapshot_delivered", { eventId: event.eventId, sequence: sequence.toString() });
+    if (sequence % BigInt(config.fundingIntervalEvents) === 0n) {
+      const funding = buildSyntheticFundingSettlement(
+        sequence,
+        observedAtMs,
+        config.sessionId,
+      );
+      const fundingResponse = await postEvent(
+        config.collectorUrl,
+        config.hmacSecret,
+        funding,
+        config.requestTimeoutMs,
+      );
+      if (!fundingResponse.ok) {
+        throw new Error(
+          `collector returned ${fundingResponse.status}: ${await fundingResponse.text()}`,
+        );
+      }
+      log("info", "funding_delivered", {
+        eventId: funding.eventId,
+        sequence: sequence.toString(),
+      });
+    }
     sequence += 1n;
+    observedAtMs = BigInt(Date.now());
   } catch (error) {
     lastDelivery = "error";
-    log("error", "snapshot_delivery_failed", {
+    log("error", "event_delivery_failed", {
       sequence: sequence.toString(),
       reason: error instanceof Error ? error.message : String(error),
     });

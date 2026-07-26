@@ -1,8 +1,22 @@
 from Packages.Finance import Lamports, RatePpm
-from Packages.ProtocolContracts import parse_market_snapshot
+from Packages.ProtocolContracts import parse_funding_settlement, parse_market_snapshot
 
 fn valid_snapshot() -> String do
   "{\"schemaVersion\":1,\"eventId\":\"event-1\",\"eventType\":\"MarketSnapshot\",\"source\":\"synthetic\",\"observedAtMs\":\"1785024000000\",\"sourceSlot\":\"320000001\",\"sourceSequence\":\"1\",\"idempotencyKey\":\"synthetic:1\",\"rawPayloadHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"payload\":{\"oracleStatus\":\"valid\",\"totalPoolLamports\":\"12345678900\",\"supplyAtoms\":\"10000000000\",\"jitosolAtoms\":\"2000000000\",\"notionalUsdMicros\":\"500000000\",\"shortReceiptPpm\":\"250\",\"solPriceUsdMicros\":\"150000000\",\"priorNavLamports\":\"1234000000\",\"costsUsdMicros\":\"200000\",\"riskHaircutUsdMicros\":\"50000\",\"solSpotBidPriceUsdMicros\":\"149950000\",\"solSpotAskPriceUsdMicros\":\"150050000\",\"jitosolSpotBidPriceUsdMicros\":\"185050000\",\"jitosolSpotAskPriceUsdMicros\":\"185250000\",\"perpBidPriceUsdMicros\":\"149980000\",\"perpAskPriceUsdMicros\":\"150020000\",\"solExitDepthLamports\":\"50000000000\",\"jitosolExitDepthLamports\":\"30000000000\",\"perpExitDepthLamports\":\"100000000000\",\"fillRatePpm\":\"1000000\",\"slippagePpm\":\"500\",\"spotFeePpm\":\"500\",\"perpFeePpm\":\"400\",\"rejectRatePpm\":\"0\",\"unknownRatePpm\":\"0\"}}"
+end
+
+describe("funding settlement event v1") do
+  test("preserves the signed realized rate and venue identity") do
+    let body = "{\"schemaVersion\":1,\"eventId\":\"funding-1\",\"eventType\":\"FundingSettlement\",\"source\":\"venue-test\",\"observedAtMs\":\"1785024000000\",\"sourceSlot\":\"320000001\",\"sourceSequence\":\"1\",\"idempotencyKey\":\"venue-test:funding:1\",\"rawPayloadHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"payload\":{\"venuePaymentId\":\"payment-1\",\"effectiveAtMs\":\"1785023999000\",\"realizedShortRatePpm\":\"-100\",\"solPriceUsdMicros\":\"150000000\"}}"
+    case parse_funding_settlement(body) do
+      Ok(settlement) -> do
+        assert(settlement.venue_payment_id == "payment-1")
+        assert(settlement.realized_short_rate_ppm.atoms == -100)
+        assert(settlement.sol_price_usd_micros.atoms == 150000000)
+      end
+      Err(error) -> assert(false)
+    end
+  end
 end
 
 describe("protocol event v1") do

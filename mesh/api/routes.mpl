@@ -1,11 +1,12 @@
+from Packages.Accounting import realized_funding_usd
 from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
 from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_position
-from Packages.ProtocolContracts import MarketSnapshot, parse_market_snapshot
+from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import list_opportunities, load_paper_position, load_paper_runtime, persist_opportunities, persist_paper_plan, persist_position_plan
+from Packages.Storage import FundingPersistence, list_opportunities, load_paper_position, load_paper_runtime, persist_funding_settlement, persist_opportunities, persist_paper_plan, persist_position_plan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -102,6 +103,116 @@ fn evaluate_response(body :: String, snapshot :: MarketSnapshot) do
   end
 end
 
+fn funding_payment(
+  pool :: PoolHandle,
+  portfolio_id :: String,
+  event :: FundingSettlement,
+  now_ms :: Int
+) -> String ! String do
+  let runtime = (portfolio_id |2> load_paper_runtime(
+    pool,
+    now_ms,
+    Env.get_int("MAX_SOURCE_AGE_MS", 5000)
+  )) ?
+  if runtime.state != Hedged do
+    Ok(json { enabled : false })
+  else
+    let position = (portfolio_id |2> load_paper_position(pool)) ?
+    let amount = (position.perp_short_quantity
+      |> realized_funding_usd(
+        event.sol_price_usd_micros,
+        event.realized_short_rate_ppm
+      )) ?
+    Ok(json {
+      enabled : true,
+      portfolioRunId : portfolio_id,
+      stateVersion : "${position.state_version}",
+      positionQuantityAtoms : "${position.perp_short_quantity.atoms}",
+      amountUsdMicros : "${amount.atoms}"
+    })
+  end
+end
+
+fn funding_accepted_response(event :: FundingSettlement, result :: FundingPersistence) do
+  HTTP.response(202, json {
+    status : if result.inserted_event do "accepted" else "duplicate" end,
+    eventId : event.event_id,
+    payments : result.payments
+  })
+end
+
+fn funding_response(body :: String, event :: FundingSettlement) do
+  let pool = get_pool()
+  let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
+  case funding_payment(pool, "local-sol-control", event, now_ms) do
+    Ok(sol_payment) -> do
+      case funding_payment(pool, "local-jitosol-carry", event, now_ms) do
+        Ok(jitosol_payment) -> do
+          case persist_funding_settlement(
+            pool,
+            body,
+            sol_payment,
+            jitosol_payment
+          ) do
+            Ok(result) -> do
+              record_accepted()
+              info("funding_event_accepted", "{\"eventId\":\"${event.event_id}\",\"payments\":\"${result.payments}\"}")
+              funding_accepted_response(event, result)
+            end
+            Err(reason) -> do
+              record_rejected()
+              error_response(500, "persistence_failed", reason)
+            end
+          end
+        end
+        Err(reason) -> do
+          record_rejected()
+          error_response(500, "funding_evaluation_failed", reason)
+        end
+      end
+    end
+    Err(reason) -> do
+      record_rejected()
+      error_response(500, "funding_evaluation_failed", reason)
+    end
+  end
+end
+
+fn authenticated_event_response(body :: String) do
+  case Json.parse(body) do
+    Ok(_parsed) -> do
+      case Json.get(body, "eventType") do
+        "MarketSnapshot" -> do
+          case parse_market_snapshot(body) do
+            Ok(snapshot) -> evaluate_response(body, snapshot)
+            Err(reason) -> do
+              record_rejected()
+              error_response(400, "invalid_event", reason)
+            end
+          end
+        end
+        "FundingSettlement" -> do
+          case parse_funding_settlement(body) do
+            Ok(event) -> funding_response(body, event)
+            Err(reason) -> do
+              record_rejected()
+              error_response(400, "invalid_event", reason)
+            end
+          end
+        end
+        _ -> do
+          record_rejected()
+          error_response(400, "invalid_event", "unsupported event type")
+        end
+      end
+    end
+    Err(reason) -> do
+      record_rejected()
+      error_response(400, "invalid_event", reason)
+    end
+  end
+end
+
 pub fn handle_event(request :: Request) -> Response do
   let body = Request.body(request)
   if authenticated(request, body) == false do
@@ -109,13 +220,7 @@ pub fn handle_event(request :: Request) -> Response do
     warn("protocol_event_rejected", "{\"reason\":\"authentication\"}")
     error_response(401, "unauthorized", "invalid adapter signature")
   else
-    case parse_market_snapshot(body) do
-      Ok(snapshot) -> evaluate_response(body, snapshot)
-      Err(reason) -> do
-        record_rejected()
-        error_response(400, "invalid_event", reason)
-      end
-    end
+    authenticated_event_response(body)
   end
 end
 
@@ -131,7 +236,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "dc36f28c549bc628b9106a6b90ce6a5b3c293a89"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 5
+    schemaVersion : 6
   })
 end
 

@@ -41,6 +41,28 @@ export type MarketSnapshotEvent = {
   payload: MarketSnapshotPayload;
 };
 
+export type FundingSettlementPayload = {
+  venuePaymentId: string;
+  effectiveAtMs: string;
+  realizedShortRatePpm: string;
+  solPriceUsdMicros: string;
+};
+
+export type FundingSettlementEvent = {
+  schemaVersion: 1;
+  eventId: string;
+  eventType: "FundingSettlement";
+  source: string;
+  observedAtMs: string;
+  sourceSlot: string;
+  sourceSequence: string;
+  idempotencyKey: string;
+  rawPayloadHash: string;
+  payload: FundingSettlementPayload;
+};
+
+export type ProtocolEvent = MarketSnapshotEvent | FundingSettlementEvent;
+
 const unsignedInteger = /^(0|[1-9][0-9]*)$/;
 const signedInteger = /^-?(0|[1-9][0-9]*)$/;
 const payloadFields = [
@@ -92,10 +114,9 @@ function string(value: unknown, field: string): string {
   return value;
 }
 
-export function validateEvent(value: unknown): MarketSnapshotEvent {
+export function validateEvent(value: unknown): ProtocolEvent {
   const event = record(value, "event");
   if (event.schemaVersion !== 1) throw new Error("unsupported schemaVersion");
-  if (event.eventType !== "MarketSnapshot") throw new Error("unsupported eventType");
 
   for (const field of [
     "eventId",
@@ -119,6 +140,35 @@ export function validateEvent(value: unknown): MarketSnapshotEvent {
   }
 
   const payload = record(event.payload, "payload");
+  if (event.eventType === "FundingSettlement") {
+    string(payload.venuePaymentId, "venuePaymentId");
+    const effectiveAtMs = string(payload.effectiveAtMs, "effectiveAtMs");
+    const realizedShortRatePpm = string(
+      payload.realizedShortRatePpm,
+      "realizedShortRatePpm",
+    );
+    const solPriceUsdMicros = string(payload.solPriceUsdMicros, "solPriceUsdMicros");
+    if (!unsignedInteger.test(effectiveAtMs)) {
+      throw new Error("effectiveAtMs must be an unsigned integer string");
+    }
+    if (BigInt(effectiveAtMs) > BigInt(event.observedAtMs as string)) {
+      throw new Error("effectiveAtMs cannot be in the future");
+    }
+    if (!signedInteger.test(realizedShortRatePpm)) {
+      throw new Error("realizedShortRatePpm must be a canonical integer string");
+    }
+    if (
+      BigInt(realizedShortRatePpm) < -1_000_000n ||
+      BigInt(realizedShortRatePpm) > 1_000_000n
+    ) {
+      throw new Error("realizedShortRatePpm must be between -1000000 and 1000000");
+    }
+    if (!unsignedInteger.test(solPriceUsdMicros) || BigInt(solPriceUsdMicros) === 0n) {
+      throw new Error("solPriceUsdMicros must be a positive integer string");
+    }
+    return value as FundingSettlementEvent;
+  }
+  if (event.eventType !== "MarketSnapshot") throw new Error("unsupported eventType");
   if (payload.oracleStatus !== "valid" && payload.oracleStatus !== "invalid") {
     throw new Error("oracleStatus must be valid or invalid");
   }
@@ -189,5 +239,31 @@ export function buildSyntheticEvent(
     idempotencyKey: `${source}:${sequence}`,
     rawPayloadHash,
     payload,
-  });
+  }) as MarketSnapshotEvent;
+}
+
+export function buildSyntheticFundingSettlement(
+  sequence: bigint,
+  observedAtMs: bigint,
+  sessionId: string,
+): FundingSettlementEvent {
+  const payload: FundingSettlementPayload = {
+    venuePaymentId: `synthetic-payment-${sessionId}-${sequence}`,
+    effectiveAtMs: observedAtMs.toString(),
+    realizedShortRatePpm: "250",
+    solPriceUsdMicros: "150000000",
+  };
+  const source = `synthetic-local:${sessionId}`;
+  return validateEvent({
+    schemaVersion: 1,
+    eventId: `synthetic-funding-${sessionId}-${sequence}`,
+    eventType: "FundingSettlement",
+    source,
+    observedAtMs: observedAtMs.toString(),
+    sourceSlot: (320_000_000n + sequence).toString(),
+    sourceSequence: sequence.toString(),
+    idempotencyKey: `${source}:funding:${sequence}`,
+    rawPayloadHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"),
+    payload,
+  }) as FundingSettlementEvent;
 }

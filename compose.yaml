@@ -69,6 +69,7 @@ services:
       <<: *paper-environment
       COLLECTOR_URL: http://collector:8080/v1/events
       EMIT_INTERVAL_MS: ${EMIT_INTERVAL_MS:-5000}
+      FUNDING_INTERVAL_EVENTS: ${FUNDING_INTERVAL_EVENTS:-12}
       REQUEST_TIMEOUT_MS: 3000
       HEALTH_PORT: 8090
     ports:
