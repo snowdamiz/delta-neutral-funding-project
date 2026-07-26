@@ -31,9 +31,43 @@ fn shadow_policy_approves_bounded_simulation() -> Result<(), Box<dyn Error>> {
         (
             "shadow",
             "PLANNED",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "c27cd9068bf3c54364ed4782cdd1ae0cf3ed7f98fb38ec769764bd7512a8e52d",
         )
     );
+    assert_eq!(report.simulated_quantity_atoms, "38271565");
+    assert_eq!(report.compute_units_consumed, "220000");
+    assert_eq!(report.account_deltas.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn shadow_policy_rejects_inconsistent_simulation() -> Result<(), Box<dyn Error>> {
+    let mut action = vector::<BuiltAction>("shadow-action-v1.json")?;
+    action.compute_units_consumed = "300001".to_owned();
+
+    let error = approve_shadow(
+        &vector::<ExecutionIntent>("shadow-intent-v1.json")?,
+        &action,
+        &vector::<ExecutorPolicy>("shadow-policy-v1.json")?,
+        1_785_024_000_000,
+    )
+    .expect_err("simulation consumption above the built limit must be rejected");
+
+    assert_eq!(
+        error.to_string(),
+        "simulation result is inconsistent with the built action"
+    );
+
+    action.compute_units_consumed = "220000".to_owned();
+    action.simulated_fee_atoms = "500001".to_owned();
+    let error = approve_shadow(
+        &vector::<ExecutionIntent>("shadow-intent-v1.json")?,
+        &action,
+        &vector::<ExecutorPolicy>("shadow-policy-v1.json")?,
+        1_785_024_000_000,
+    )
+    .expect_err("simulation fees above policy must be rejected");
+    assert_eq!(error.to_string(), "action exceeds intent or executor caps");
     Ok(())
 }
 

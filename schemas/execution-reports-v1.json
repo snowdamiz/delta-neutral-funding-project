@@ -26,10 +26,30 @@
     "averagePriceAtoms": { "$ref": "#/$defs/unsignedInteger" },
     "feeAtoms": { "$ref": "#/$defs/unsignedInteger" },
     "authoritativeReference": { "type": "string" },
+    "simulatedQuantityAtoms": { "$ref": "#/$defs/unsignedInteger" },
+    "simulatedAveragePriceAtoms": { "$ref": "#/$defs/unsignedInteger" },
+    "simulatedFeeAtoms": { "$ref": "#/$defs/unsignedInteger" },
+    "computeUnitsConsumed": { "$ref": "#/$defs/unsignedInteger" },
+    "accountDeltas": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/accountDelta" }
+    },
     "failureCode": { "type": "string" }
   },
   "additionalProperties": false,
   "$defs": {
-    "unsignedInteger": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" }
+    "unsignedInteger": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "signedInteger": { "type": "string", "pattern": "^(0|-?[1-9][0-9]*)$" },
+    "accountDelta": {
+      "type": "object",
+      "required": ["account", "asset", "deltaAtoms"],
+      "properties": {
+        "account": { "type": "string", "minLength": 1 },
+        "asset": { "type": "string", "minLength": 1 },
+        "deltaAtoms": { "$ref": "#/$defs/signedInteger" }
+      },
+      "additionalProperties": false
+    }
   }
 }

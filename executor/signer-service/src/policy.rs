@@ -25,6 +25,14 @@ pub struct ExecutionIntent {
     pub config_hash: String,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AccountDelta {
+    pub account: String,
+    pub asset: String,
+    pub delta_atoms: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BuiltAction {
@@ -43,6 +51,11 @@ pub struct BuiltAction {
     pub simulate_only: bool,
     pub submit: bool,
     pub message_hash: String,
+    pub simulated_quantity_atoms: String,
+    pub simulated_average_price_atoms: String,
+    pub simulated_fee_atoms: String,
+    pub compute_units_consumed: String,
+    pub account_deltas: Vec<AccountDelta>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +67,7 @@ pub struct ExecutorPolicy {
     pub config_hash: String,
     pub max_notional_usd_micros: String,
     pub max_priority_fee_lamports: String,
+    pub max_fee_atoms: String,
     pub max_compute_unit_limit: String,
     pub allowed_program_ids: Vec<String>,
     pub allowed_mints: Vec<String>,
@@ -77,6 +91,11 @@ pub struct ExecutionReport {
     pub average_price_atoms: String,
     pub fee_atoms: String,
     pub authoritative_reference: String,
+    pub simulated_quantity_atoms: String,
+    pub simulated_average_price_atoms: String,
+    pub simulated_fee_atoms: String,
+    pub compute_units_consumed: String,
+    pub account_deltas: Vec<AccountDelta>,
 }
 
 #[derive(Debug, Error)]
@@ -101,6 +120,8 @@ pub enum PolicyError {
     Instrument,
     #[error("action exceeds intent or executor caps")]
     Limit,
+    #[error("simulation result is inconsistent with the built action")]
+    Simulation,
     #[error(transparent)]
     Conformance(#[from] ConformanceError),
     #[error(transparent)]
@@ -118,7 +139,7 @@ fn unsigned(value: &str, field: &'static str) -> Result<u64, PolicyError> {
 }
 
 fn identity(value: &str, field: &'static str) -> Result<(), PolicyError> {
-    if value.trim().is_empty() {
+    if value.is_empty() || value.trim() != value {
         return Err(PolicyError::InvalidField(field));
     }
     Ok(())
@@ -180,7 +201,44 @@ fn validate_action(action: &BuiltAction) -> Result<(), PolicyError> {
     identity(&action.mint, "mint")?;
     identity(&action.destination, "destination")?;
     sha256(&action.intent_hash, "intentHash")?;
-    sha256(&action.message_hash, "messageHash")
+    sha256(&action.message_hash, "messageHash")?;
+    if action.program_ids.is_empty()
+        || action.accounts.is_empty()
+        || action.account_deltas.is_empty()
+        || action
+            .program_ids
+            .iter()
+            .any(|value| identity(value, "programIds").is_err())
+        || action
+            .accounts
+            .iter()
+            .any(|value| identity(value, "accounts").is_err())
+    {
+        return Err(PolicyError::InvalidField("actionBindings"));
+    }
+    unsigned(&action.quantity_atoms, "quantityAtoms")?;
+    unsigned(&action.limit_price_atoms, "limitPriceAtoms")?;
+    unsigned(&action.priority_fee_lamports, "priorityFeeLamports")?;
+    unsigned(&action.compute_unit_limit, "computeUnitLimit")?;
+    unsigned(&action.simulated_quantity_atoms, "simulatedQuantityAtoms")?;
+    unsigned(
+        &action.simulated_average_price_atoms,
+        "simulatedAveragePriceAtoms",
+    )?;
+    unsigned(&action.simulated_fee_atoms, "simulatedFeeAtoms")?;
+    unsigned(&action.compute_units_consumed, "computeUnitsConsumed")?;
+    for delta in &action.account_deltas {
+        identity(&delta.account, "accountDelta.account")?;
+        identity(&delta.asset, "accountDelta.asset")?;
+        let value = delta
+            .delta_atoms
+            .parse::<i128>()
+            .map_err(|_| PolicyError::InvalidField("accountDelta.deltaAtoms"))?;
+        if value.to_string() != delta.delta_atoms || !action.accounts.contains(&delta.account) {
+            return Err(PolicyError::InvalidField("accountDelta"));
+        }
+    }
+    Ok(())
 }
 
 fn validate_policy(policy: &ExecutorPolicy) -> Result<(), PolicyError> {
@@ -196,6 +254,7 @@ fn validate_policy(policy: &ExecutorPolicy) -> Result<(), PolicyError> {
         return Err(PolicyError::InvalidField("policyLimits"));
     }
     unsigned(&policy.max_priority_fee_lamports, "maxPriorityFeeLamports")?;
+    unsigned(&policy.max_fee_atoms, "maxFeeAtoms")?;
     Ok(())
 }
 
@@ -233,6 +292,9 @@ pub fn approve_shadow(
     if intent.policy_profile != policy.policy_profile || intent.config_hash != policy.config_hash {
         return Err(PolicyError::PolicyBinding);
     }
+    if action.command_id != format!("{}:shadow:1", intent.intent_id) {
+        return Err(PolicyError::InvalidField("commandId"));
+    }
     let intent_value = serde_json::to_value(intent)?;
     if execution_intent_hash(&intent_value)? != action.intent_hash {
         return Err(PolicyError::IntentHash);
@@ -256,6 +318,19 @@ pub fn approve_shadow(
     let price = unsigned(&action.limit_price_atoms, "limitPriceAtoms")?;
     let intent_quantity = unsigned(&intent.max_quantity_atoms, "maxQuantityAtoms")?;
     let intent_price = unsigned(&intent.limit_price_atoms, "limitPriceAtoms")?;
+    let simulated_quantity = unsigned(&action.simulated_quantity_atoms, "simulatedQuantityAtoms")?;
+    let simulated_price = unsigned(
+        &action.simulated_average_price_atoms,
+        "simulatedAveragePriceAtoms",
+    )?;
+    let compute_limit = unsigned(&action.compute_unit_limit, "computeUnitLimit")?;
+    let compute_consumed = unsigned(&action.compute_units_consumed, "computeUnitsConsumed")?;
+    if simulated_quantity != quantity
+        || simulated_price != price
+        || compute_consumed > compute_limit
+    {
+        return Err(PolicyError::Simulation);
+    }
     let price_within_intent = match intent.side.as_str() {
         "BUY" => price <= intent_price,
         "SELL" => price >= intent_price,
@@ -275,8 +350,9 @@ pub fn approve_shadow(
             )?)
         || unsigned(&action.priority_fee_lamports, "priorityFeeLamports")?
             > unsigned(&policy.max_priority_fee_lamports, "maxPriorityFeeLamports")?
-        || unsigned(&action.compute_unit_limit, "computeUnitLimit")?
-            > unsigned(&policy.max_compute_unit_limit, "maxComputeUnitLimit")?
+        || unsigned(&action.simulated_fee_atoms, "simulatedFeeAtoms")?
+            > unsigned(&policy.max_fee_atoms, "maxFeeAtoms")?
+        || compute_limit > unsigned(&policy.max_compute_unit_limit, "maxComputeUnitLimit")?
     {
         return Err(PolicyError::Limit);
     }
@@ -292,5 +368,10 @@ pub fn approve_shadow(
         average_price_atoms: "0".to_owned(),
         fee_atoms: "0".to_owned(),
         authoritative_reference: action.message_hash.clone(),
+        simulated_quantity_atoms: action.simulated_quantity_atoms.clone(),
+        simulated_average_price_atoms: action.simulated_average_price_atoms.clone(),
+        simulated_fee_atoms: action.simulated_fee_atoms.clone(),
+        compute_units_consumed: action.compute_units_consumed.clone(),
+        account_deltas: action.account_deltas.clone(),
     })
 }
