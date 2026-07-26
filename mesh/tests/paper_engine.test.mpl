@@ -1,6 +1,6 @@
 from Packages.Finance import Lamports, PriceMicros, RatePpm, TokenAtoms, UsdMicros
 from Packages.Opportunity import evaluate_snapshot
-from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position, position_risk_approved
+from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
 from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
 from Packages.StateMachine import PortfolioState
 
@@ -84,7 +84,7 @@ describe("paper entry planner") do
         runtime(Idle, 1785024001000)) do
           Ok( plan) -> do
             assert(plan.outcome == EntryPartial)
-            assert(plan.next_state == OpeningSpot)
+            assert(plan.next_state == EmergencyFlatten)
             assert(plan.perp_fill.placed == false)
           end
           Err( error) -> assert(false)
@@ -282,6 +282,35 @@ describe("paper entry planner") do
         Ok(plan) -> do
           assert(plan.action == ExitPosition)
           assert(plan.reason == "liquidation_distance_below_minimum")
+        end
+        Err(error) -> assert(false)
+      end
+      Err(error) -> assert(false)
+    end
+  end
+
+  test("recovers a partial entry by closing confirmed inventory") do
+    let current = snapshot(OracleValid, 1000000, 0)
+    case evaluate_snapshot(current) do
+      Ok(opportunity) -> case plan_recovery(
+        current,
+        opportunity,
+        PaperPosition {
+          variant : SolControl,
+          spot_quantity : TokenAtoms { atoms : 500000000 },
+          perp_short_quantity : Lamports { atoms : 0 },
+          prior_nav_lamports : Lamports { atoms : 1000000000 },
+          prior_market_rate_lamports : Lamports { atoms : 1000000000 },
+          state_version : 3,
+          random_state : Random.seed(42)
+        },
+        EmergencyFlatten
+      ) do
+        Ok(plan) -> do
+          assert(plan.action == RecoverPosition)
+          assert(plan.next_state == Idle)
+          assert(plan.spot_fill.filled_quantity.atoms == 500000000)
+          assert(plan.perp_fill.placed == false)
         end
         Err(error) -> assert(false)
       end

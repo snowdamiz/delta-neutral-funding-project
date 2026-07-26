@@ -89,6 +89,8 @@ pub type PaperAction do
   ExitPosition
 
   EmergencyPosition
+
+  RecoverPosition
 end deriving(Eq, Display, Json)
 
 pub fn action_name(action :: PaperAction) -> String do
@@ -97,6 +99,7 @@ pub fn action_name(action :: PaperAction) -> String do
     RebalancePerp -> "rebalance_perp"
     ExitPosition -> "exit"
     EmergencyPosition -> "emergency"
+    RecoverPosition -> "recover"
   end
 end
 
@@ -323,16 +326,19 @@ fn plan_perp(snapshot :: MarketSnapshot, entry :: PerpEntry, random_state :: Int
             perp_fill : placed_fill(fill)
           })
         end
-        Partial -> Ok(PaperPlan {
-          variant : entry.variant,
-          spot_asset : entry.leg.asset,
-          outcome : EntryPartial,
-          reason : "paper_perp_partial",
-          next_state : entry.opening_perp,
-          next_random_state : failure.random_state,
-          spot_fill : placed_fill(entry.spot_fill),
-          perp_fill : placed_fill(fill)
-        })
+        Partial -> do
+          let emergency = emergency_after(entry.opening_perp) ?
+          Ok(PaperPlan {
+            variant : entry.variant,
+            spot_asset : entry.leg.asset,
+            outcome : EntryPartial,
+            reason : "paper_perp_partial",
+            next_state : emergency,
+            next_random_state : failure.random_state,
+            spot_fill : placed_fill(entry.spot_fill),
+            perp_fill : placed_fill(fill)
+          })
+        end
         Rejected -> do
           let emergency = emergency_after(entry.opening_perp) ?
           Ok(PaperPlan {
@@ -405,16 +411,19 @@ random_state :: Int) -> PaperPlan ! String do
           },
           failure.random_state)
         end
-        Partial -> Ok(PaperPlan {
-          variant : variant,
-          spot_asset : leg.asset,
-          outcome : EntryPartial,
-          reason : "paper_spot_partial",
-          next_state : opening_spot,
-          next_random_state : failure.random_state,
-          spot_fill : placed_fill(fill),
-          perp_fill : no_fill()
-        })
+        Partial -> do
+          let emergency = emergency_after(opening_spot) ?
+          Ok(PaperPlan {
+            variant : variant,
+            spot_asset : leg.asset,
+            outcome : EntryPartial,
+            reason : "paper_spot_partial",
+            next_state : emergency,
+            next_random_state : failure.random_state,
+            spot_fill : placed_fill(fill),
+            perp_fill : no_fill()
+          })
+        end
         Rejected -> do
           let emergency = emergency_after(opening_spot) ?
           Ok(PaperPlan {
@@ -661,105 +670,227 @@ valuation :: PaperValuation) -> PositionPlan ! String do
   placed_fill(fill)))
 end
 
-fn plan_exit(snapshot :: MarketSnapshot,
-position :: PaperPosition,
-valuation :: PaperValuation,
-reason :: String) -> PositionPlan ! String do
-  let request = PositionRequest {
-    spot_quantity : position.spot_quantity,
-    perp_quantity : position.perp_short_quantity,
-    perp_side : "BUY"
-  }
-  let perp_sample = sample_failure(position.random_state, snapshot.reject_rate_ppm, snapshot.unknown_rate_ppm) ?
-  if perp_sample.outcome != Continue do
-    return emergency_position("paper_perp_close_unresolved",
-    position,
-    valuation,
-    request,
-    perp_sample.random_state,
-    position.spot_quantity,
-    position.perp_short_quantity,
-    no_fill(),
-    no_fill())
+struct CloseContext do
+  position :: PaperPosition
+  valuation :: PaperValuation
+  state :: PortfolioState
+  action :: PaperAction
+  reason :: String
+  request :: PositionRequest
+end
+
+fn close_state(state :: PortfolioState) -> PortfolioState ! String do
+  if state == Hedged do
+    (((state |> transition(ExitRequired)) ?
+      |> transition(PerpClosed)) ?
+      |> transition(SpotClosed))
+  else
+    let emergency = if state == EmergencyFlatten do
+      state
+    else
+      (state |> transition(Fault)) ?
+    end
+    ((emergency |> transition(ReconciledFlat)) ?
+      |> transition(ReconciledFlat))
   end
-  let perp_fill = simulate_fill(paper_order(Buy,
-  QuantityAtoms { atoms : position.perp_short_quantity.atoms },
-  snapshot.perp_ask_price_usd_micros,
-  snapshot,
-  (position.perp_short_quantity
-    |> fill_rate_for_depth(snapshot.perp_exit_depth_lamports, snapshot.fill_rate_ppm)) ?,
-  snapshot.perp_fee_ppm)) ?
-  if perp_fill.status != Filled do
-    let next_perp_atoms = (position.perp_short_quantity.atoms
-      |> Checked.sub(perp_fill.filled_quantity.atoms)) ?
-    return emergency_position("paper_perp_close_partial",
-    position,
-    valuation,
-    request,
-    perp_sample.random_state,
-    position.spot_quantity,
-    Lamports { atoms : next_perp_atoms },
-    no_fill(),
-    placed_fill(perp_fill))
+end
+
+fn unresolved_close(
+  context :: CloseContext,
+  reason :: String,
+  random_state :: Int,
+  next_spot :: TokenAtoms,
+  next_perp :: Lamports,
+  spot_fill :: LegFill,
+  perp_fill :: LegFill
+) -> PositionPlan ! String do
+  let emergency = if context.state == EmergencyFlatten do
+    context.state
+  else
+    (context.state |> transition(Fault)) ?
   end
-  let spot_sample = sample_failure(perp_sample.random_state, snapshot.reject_rate_ppm, snapshot.unknown_rate_ppm) ?
-  if spot_sample.outcome != Continue do
-    return emergency_position("paper_spot_close_unresolved",
-    position,
-    valuation,
-    request,
-    spot_sample.random_state,
-    position.spot_quantity,
+  Ok(position_plan(
+    if context.action == RecoverPosition do RecoverPosition else EmergencyPosition end,
+    reason,
+    if context.position.variant == SolControl do "SOL" else "JitoSOL" end,
+    context.request,
+    emergency,
+    random_state,
+    next_spot,
+    next_perp,
+    context.valuation,
+    spot_fill,
+    perp_fill
+  ))
+end
+
+fn completed_close(
+  context :: CloseContext,
+  random_state :: Int,
+  spot_fill :: LegFill,
+  perp_fill :: LegFill
+) -> PositionPlan ! String do
+  Ok(position_plan(
+    context.action,
+    context.reason,
+    if context.position.variant == SolControl do "SOL" else "JitoSOL" end,
+    context.request,
+    close_state(context.state) ?,
+    random_state,
+    TokenAtoms { atoms : 0 },
     Lamports { atoms : 0 },
-    no_fill(),
-    placed_fill(perp_fill))
+    context.valuation,
+    spot_fill,
+    perp_fill
+  ))
+end
+
+fn finish_spot_close(
+  snapshot :: MarketSnapshot,
+  context :: CloseContext,
+  random_state :: Int,
+  perp_fill :: LegFill
+) -> PositionPlan ! String do
+  if context.position.spot_quantity.atoms == 0 do
+    return completed_close(context, random_state, no_fill(), perp_fill)
   end
-  let spot_price = if position.variant == SolControl do
+  let sampled = sample_failure(random_state, snapshot.reject_rate_ppm, snapshot.unknown_rate_ppm) ?
+  if sampled.outcome != Continue do
+    return unresolved_close(
+      context,
+      "paper_spot_close_unresolved",
+      sampled.random_state,
+      context.position.spot_quantity,
+      Lamports { atoms : 0 },
+      no_fill(),
+      perp_fill
+    )
+  end
+  let spot_price = if context.position.variant == SolControl do
     snapshot.sol_spot_bid_price_usd_micros
   else
     snapshot.jitosol_spot_bid_price_usd_micros
   end
-  let spot_fill = simulate_fill(paper_order(Sell,
-  QuantityAtoms { atoms : position.spot_quantity.atoms },
-  spot_price,
-  snapshot,
-  (valuation.spot_equivalent_lamports
-    |> fill_rate_for_depth(
-      if position.variant == SolControl do
-        snapshot.sol_exit_depth_lamports
-      else
-        snapshot.jitosol_exit_depth_lamports
-      end,
-      snapshot.fill_rate_ppm
-    )) ?,
-  snapshot.spot_fee_ppm)) ?
-  if spot_fill.status != Filled do
-    let next_spot_atoms = (position.spot_quantity.atoms
-      |> Checked.sub(spot_fill.filled_quantity.atoms)) ?
-    return emergency_position("paper_spot_close_partial",
-    position,
-    valuation,
-    request,
-    spot_sample.random_state,
-    TokenAtoms { atoms : next_spot_atoms },
-    Lamports { atoms : 0 },
-    placed_fill(spot_fill),
-    placed_fill(perp_fill))
+  let exit_depth = if context.position.variant == SolControl do
+    snapshot.sol_exit_depth_lamports
+  else
+    snapshot.jitosol_exit_depth_lamports
   end
-  let exiting_perp = transition(Hedged, ExitRequired) ?
-  let exiting_spot = transition(exiting_perp, PerpClosed) ?
-  let idle = transition(exiting_spot, SpotClosed) ?
-  Ok(position_plan(ExitPosition,
-  reason,
-  if position.variant == SolControl do "SOL" else "JitoSOL" end,
-  request,
-  idle,
-  spot_sample.random_state,
-  TokenAtoms { atoms : 0 },
-  Lamports { atoms : 0 },
-  valuation,
-  placed_fill(spot_fill),
-  placed_fill(perp_fill)))
+  let fill = simulate_fill(paper_order(
+    Sell,
+    QuantityAtoms { atoms : context.position.spot_quantity.atoms },
+    spot_price,
+    snapshot,
+    (context.valuation.spot_equivalent_lamports
+      |> fill_rate_for_depth(exit_depth, snapshot.fill_rate_ppm)) ?,
+    snapshot.spot_fee_ppm
+  )) ?
+  if fill.status == Filled do
+    completed_close(context, sampled.random_state, placed_fill(fill), perp_fill)
+  else
+    unresolved_close(
+      context,
+      "paper_spot_close_partial",
+      sampled.random_state,
+      TokenAtoms {
+        atoms : (context.position.spot_quantity.atoms
+          |> Checked.sub(fill.filled_quantity.atoms)) ?
+      },
+      Lamports { atoms : 0 },
+      placed_fill(fill),
+      perp_fill
+    )
+  end
+end
+
+fn plan_close(
+  snapshot :: MarketSnapshot,
+  position :: PaperPosition,
+  valuation :: PaperValuation,
+  state :: PortfolioState,
+  action :: PaperAction,
+  reason :: String
+) -> PositionPlan ! String do
+  let context = CloseContext {
+    position : position,
+    valuation : valuation,
+    state : state,
+    action : action,
+    reason : reason,
+    request : PositionRequest {
+      spot_quantity : position.spot_quantity,
+      perp_quantity : position.perp_short_quantity,
+      perp_side : "BUY"
+    }
+  }
+  if position.perp_short_quantity.atoms == 0 do
+    return finish_spot_close(snapshot, context, position.random_state, no_fill())
+  end
+  let sampled = sample_failure(position.random_state, snapshot.reject_rate_ppm, snapshot.unknown_rate_ppm) ?
+  if sampled.outcome != Continue do
+    return unresolved_close(
+      context,
+      "paper_perp_close_unresolved",
+      sampled.random_state,
+      position.spot_quantity,
+      position.perp_short_quantity,
+      no_fill(),
+      no_fill()
+    )
+  end
+  let fill = simulate_fill(paper_order(
+    Buy,
+    QuantityAtoms { atoms : position.perp_short_quantity.atoms },
+    snapshot.perp_ask_price_usd_micros,
+    snapshot,
+    (position.perp_short_quantity
+      |> fill_rate_for_depth(snapshot.perp_exit_depth_lamports, snapshot.fill_rate_ppm)) ?,
+    snapshot.perp_fee_ppm
+  )) ?
+  if fill.status == Filled do
+    finish_spot_close(snapshot, context, sampled.random_state, placed_fill(fill))
+  else
+    unresolved_close(
+      context,
+      "paper_perp_close_partial",
+      sampled.random_state,
+      position.spot_quantity,
+      Lamports {
+        atoms : (position.perp_short_quantity.atoms
+          |> Checked.sub(fill.filled_quantity.atoms)) ?
+      },
+      no_fill(),
+      placed_fill(fill)
+    )
+  end
+end
+
+fn plan_exit(
+  snapshot :: MarketSnapshot,
+  position :: PaperPosition,
+  valuation :: PaperValuation,
+  reason :: String
+) -> PositionPlan ! String do
+  plan_close(snapshot, position, valuation, Hedged, ExitPosition, reason)
+end
+
+pub fn plan_recovery(
+  snapshot :: MarketSnapshot,
+  opportunity :: OpportunitySet,
+  position :: PaperPosition,
+  state :: PortfolioState
+) -> PositionPlan ! String do
+  if state != OpeningSpot && state != OpeningPerp && state != EmergencyFlatten do
+    return Err("paper recovery requires a transitional or emergency state")
+  end
+  plan_close(
+    snapshot,
+    position,
+    position_valuation(snapshot, opportunity, position) ?,
+    state,
+    RecoverPosition,
+    "paper_exposure_recovered"
+  )
 end
 
 pub fn plan_forced_exit(snapshot :: MarketSnapshot,

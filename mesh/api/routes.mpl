@@ -4,7 +4,7 @@ from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
-from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position, position_risk_approved
+from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
 from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events
 from Packages.StateMachine import PortfolioState
@@ -121,6 +121,22 @@ runtime :: PaperRuntime) -> Int ! String do
     end
     let plan = (runtime |4> plan_entry(snapshot, result, variant)) ?
     return plan |6> persist_paper_plan(pool, snapshot, result, portfolio_id, runtime)
+  end
+  if runtime.state == OpeningSpot || runtime.state == OpeningPerp || runtime.state == EmergencyFlatten do
+    let position = (portfolio_id |2> load_paper_position(pool)) ?
+    let plan = (runtime.state |4> plan_recovery(
+      snapshot,
+      result,
+      position
+    )) ?
+    return plan |7> persist_position_plan(
+      pool,
+      snapshot,
+      portfolio_id,
+      position,
+      runtime,
+      false
+    )
   end
   if runtime.state != Hedged do
     return Ok(0)
@@ -445,7 +461,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "105b55e1029ceba615161901c84d08a9a64885ea"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 11
+    schemaVersion : 12
   })
 end
 
@@ -586,7 +602,7 @@ pub fn handle_config(_request :: Request) -> Response do
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
     rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
     protocolSchemaVersion : 1,
-    databaseSchemaVersion : 11,
+    databaseSchemaVersion : 12,
     liveEnabled : false
   })
 end
