@@ -2,9 +2,10 @@ from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
-from Packages.PaperEngine import PaperVariant, plan_entry
+from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_position
 from Packages.ProtocolContracts import MarketSnapshot, parse_market_snapshot
-from Packages.Storage import list_opportunities, load_paper_runtime, persist_opportunities, persist_paper_plan
+from Packages.StateMachine import PortfolioState
+from Packages.Storage import list_opportunities, load_paper_position, load_paper_runtime, persist_opportunities, persist_paper_plan, persist_position_plan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -43,17 +44,37 @@ fn accepted_response(snapshot :: MarketSnapshot, result :: OpportunitySet, dupli
   })
 end
 
+fn run_portfolio_cycle(pool :: PoolHandle,
+snapshot :: MarketSnapshot,
+result :: OpportunitySet,
+portfolio_id :: String,
+variant :: PaperVariant,
+runtime :: PaperRuntime) -> Int ! String do
+  if runtime.state == Idle do
+    let plan = (runtime |4> plan_entry(snapshot, result, variant)) ?
+    plan |6> persist_paper_plan(pool, snapshot, result, portfolio_id, runtime)
+  else
+    if runtime.state == Hedged do
+      let position = (portfolio_id |2> load_paper_position(pool)) ?
+      let plan = (position |3> plan_position(snapshot,
+      result,
+      Env.get_int("REBALANCE_DELTA_BPS", 50))) ?
+      plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
+    else
+      Ok(0)
+    end
+  end
+end
+
 fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) -> Int ! String do
   let pool = get_pool()
+  let inserted = (Env.get("CONFIG_HASH", "") |5> persist_opportunities(pool, body, snapshot, result)) ?
   let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
   let max_age_ms = Env.get_int("MAX_SOURCE_AGE_MS", 5000)
   let sol_runtime = ("local-sol-control" |2> load_paper_runtime(pool, now_ms, max_age_ms)) ?
   let jitosol_runtime = ("local-jitosol-carry" |2> load_paper_runtime(pool, now_ms, max_age_ms)) ?
-  let sol_plan = plan_entry(snapshot, result, SolControl, sol_runtime) ?
-  let jitosol_plan = plan_entry(snapshot, result, JitoSolCarry, jitosol_runtime) ?
-  let inserted = (Env.get("CONFIG_HASH", "") |5> persist_opportunities(pool, body, snapshot, result)) ?
-  let _sol_applied = (sol_plan |6> persist_paper_plan(pool, snapshot, result, "local-sol-control", sol_runtime)) ?
-  let _jitosol_applied = (jitosol_plan |6> persist_paper_plan(pool, snapshot, result, "local-jitosol-carry", jitosol_runtime)) ?
+  let _sol_applied = run_portfolio_cycle(pool, snapshot, result, "local-sol-control", SolControl, sol_runtime) ?
+  let _jitosol_applied = run_portfolio_cycle(pool, snapshot, result, "local-jitosol-carry", JitoSolCarry, jitosol_runtime) ?
   Ok(inserted)
 end
 
@@ -110,7 +131,7 @@ pub fn handle_build(_request :: Request) -> Response do
     codeCommit : Env.get("CODE_COMMIT", "development"),
     meshCommit : Env.get("MESH_COMMIT", "dc36f28c549bc628b9106a6b90ce6a5b3c293a89"),
     configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 4
+    schemaVersion : 5
   })
 end
 
