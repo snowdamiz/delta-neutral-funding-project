@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "commandId": "shadow-command-1",
+  "intentHash": "7c88cd7bd82785f67ef4b232b287ef33c18500060b321f0f0883de0abe408f03",
+  "programIds": ["qualified-perp-program"],
+  "accounts": ["paper-perp-account", "paper-margin-account"],
+  "market": "SOL-PERP",
+  "mint": "So11111111111111111111111111111111111111112",
+  "destination": "paper-margin-account",
+  "quantityAtoms": "38271565",
+  "limitPriceAtoms": "149980000",
+  "priorityFeeLamports": "500000",
+  "computeUnitLimit": "300000",
+  "simulateOnly": true,
+  "submit": false,
+  "messageHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

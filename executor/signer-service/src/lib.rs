@@ -3,6 +3,12 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+mod policy;
+
+pub use policy::{
+    BuiltAction, ExecutionIntent, ExecutionReport, ExecutorPolicy, PolicyError, approve_shadow,
+};
+
 #[derive(Debug, Error)]
 pub enum ConformanceError {
     #[error("invalid conformance field: {0}")]
@@ -112,6 +118,19 @@ pub fn canonical_execution_intent(input: &Value) -> Result<String, ConformanceEr
     let reduce_only = input["reduceOnly"]
         .as_bool()
         .ok_or(ConformanceError::InvalidField("reduceOnly"))?;
+    let snapshot_ids = match input["snapshotIds"].as_array() {
+        Some(values) if !values.is_empty() => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|item| !item.is_empty())
+                    .ok_or(ConformanceError::InvalidField("snapshotIds"))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => return Err(ConformanceError::InvalidField("snapshotIds")),
+        None => vec![text(input, "snapshotId")?],
+    };
     let intent = json!({
         "configHash": text(input, "configHash")?,
         "expiresAtMs": unsigned_text(input, "expiresAtMs")?,
@@ -126,7 +145,7 @@ pub fn canonical_execution_intent(input: &Value) -> Result<String, ConformanceEr
         "reduceOnly": reduce_only,
         "schemaVersion": 1,
         "side": text(input, "side")?,
-        "snapshotIds": [text(input, "snapshotId")?],
+        "snapshotIds": snapshot_ids,
         "stateVersion": unsigned_text(input, "stateVersion")?,
         "strategyRunId": text(input, "strategyRunId")?,
         "variant": text(input, "variant")?,

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "environment": "shadow",
+  "policyProfile": "shadow-v1",
+  "configHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "maxNotionalUsdMicros": "100000000",
+  "maxPriorityFeeLamports": "500000",
+  "maxComputeUnitLimit": "400000",
+  "allowedProgramIds": ["qualified-perp-program"],
+  "allowedMints": ["So11111111111111111111111111111111111111112"],
+  "allowedMarkets": ["SOL-PERP"],
+  "allowedAccounts": ["paper-perp-account", "paper-margin-account"],
+  "signerEnabled": false,
+  "submissionEnabled": false,
+  "killSwitch": false
+}
