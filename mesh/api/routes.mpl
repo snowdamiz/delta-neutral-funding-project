@@ -770,7 +770,7 @@ end
 pub fn handle_build(_request :: Request) -> Response do
   HTTP.response(200, json {
     codeCommit : Env.get("CODE_COMMIT", "development"),
-    meshCommit : Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840"),
+    meshCommit : Env.get("MESH_COMMIT", "6fdb83afe68703f9459a4e7035b1b84d96316e6b"),
     configHash : Env.get("CONFIG_HASH", ""),
     schemaVersion : 24
   })
@@ -786,7 +786,7 @@ pub fn handle_status(_request :: Request) -> Response do
       let row = List.head(rows)
       HTTP.response(200, json {
         executionMode : "paper",
-        deploymentEnvironment : "local",
+        deploymentEnvironment : Env.get("DEPLOYMENT_ENVIRONMENT", "local"),
         paused : Map.get(row, "pause_entries") == "true" || Map.get(row, "pause_all") == "true",
         pauseEntries : Map.get(row, "pause_entries") == "true",
         pauseAll : Map.get(row, "pause_all") == "true",
@@ -797,7 +797,7 @@ pub fn handle_status(_request :: Request) -> Response do
         activePortfolios : Map.get(row, "active_portfolios"),
         liveNotional : json { atoms : "0", scale : 6 },
         codeCommit : Env.get("CODE_COMMIT", "development"),
-        meshCommit : Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840"),
+        meshCommit : Env.get("MESH_COMMIT", "6fdb83afe68703f9459a4e7035b1b84d96316e6b"),
         signerReachable : false,
         shutdownRequested : Process.shutdown_requested()
       })

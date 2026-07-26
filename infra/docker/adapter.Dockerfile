@@ -6,16 +6,14 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY adapters/protocol-ts/tsconfig.json ./
 COPY adapters/protocol-ts/src ./src
 COPY tests/vectors /tests/vectors
-RUN CONFORMANCE_VECTOR_DIR=/tests/vectors npm test && npm prune --omit=dev
+RUN CONFORMANCE_VECTOR_DIR=/tests/vectors npm test
 
-FROM node:24-alpine AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:af85d11ce7ef10172855a6e3649e3e8125b1b9e3ca41849ec2918036f05cb212 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
-COPY --from=builder --chown=node:node /app/package.json /app/package-lock.json ./
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/dist ./dist
-USER node
+COPY --from=builder --chown=65532:65532 /app/dist ./dist
+USER 65532:65532
 EXPOSE 8090
 HEALTHCHECK --interval=5s --timeout=2s --retries=12 \
-  CMD wget -q -O /dev/null http://127.0.0.1:8090/ || exit 1
-ENTRYPOINT ["node", "dist/index.js"]
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:8090/').then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+CMD ["dist/index.js"]

@@ -28,10 +28,10 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - database
 
   migrate:
     image: postgres:17-alpine
@@ -48,6 +48,13 @@ services:
     volumes:
       - ./db/migrate.sh:/migrate.sh:ro
       - ./db/migrations:/migrations:ro
+    networks:
+      - database
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   collector:
     image: delta-neutral-funding-collector:latest
@@ -56,6 +63,8 @@ services:
       dockerfile: infra/docker/collector.Dockerfile
       additional_contexts:
         mesh_lang: ../mesh-lang
+      sbom: true
+      provenance: mode=max
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -63,21 +72,36 @@ services:
       <<: *paper-environment
       DATABASE_URL: postgresql://funding:${POSTGRES_PASSWORD:-paper}@postgres:5432/funding
       OPERATOR_HMAC_SECRET: ${OPERATOR_HMAC_SECRET:-local-operator-only-change-me}
+      DEPLOYMENT_ENVIRONMENT: local
       INSTANCE_ID: ${INSTANCE_ID:-collector-local-1}
       LEADER_LEASE_MS: ${LEADER_LEASE_MS:-10000}
       LEADER_RENEW_MS: ${LEADER_RENEW_MS:-3000}
       PORT: 8080
       CODE_COMMIT: ${CODE_COMMIT:-development}
-      MESH_COMMIT: 9cf951c6ef6961b3a1a4f1ee40289c1413018840
+      MESH_COMMIT: 6fdb83afe68703f9459a4e7035b1b84d96316e6b
     init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks:
+      - database
+      - ingest
+      - observability
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
 
   adapter:
+    image: delta-neutral-funding-adapter:latest
     build:
       context: .
       dockerfile: infra/docker/adapter.Dockerfile
+      sbom: true
+      provenance: mode=max
     depends_on:
       collector:
         condition: service_healthy
@@ -104,6 +128,15 @@ services:
       PAPER_SLIPPAGE_BPS: ${PAPER_SLIPPAGE_BPS:-50}
     ports:
       - "127.0.0.1:8090:8090"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks:
+      - ingest
     restart: unless-stopped
 
   prometheus:
@@ -119,6 +152,9 @@ services:
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+    networks:
+      - observability
+      - monitoring_ui
 
   grafana:
     image: grafana/grafana:12.1.0
@@ -134,8 +170,18 @@ services:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
+    networks:
+      - monitoring_ui
 
 volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+
+networks:
+  database:
+    internal: true
+  ingest:
+  observability:
+    internal: true
+  monitoring_ui:

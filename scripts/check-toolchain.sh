@@ -3,7 +3,7 @@ set -eu
 
 project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 mesh_dir="$project_dir/../mesh-lang"
-expected_mesh=9cf951c6ef6961b3a1a4f1ee40289c1413018840
+expected_mesh=6fdb83afe68703f9459a4e7035b1b84d96316e6b
 
 test "$(git -C "$mesh_dir" rev-parse HEAD)" = "$expected_mesh" || {
   printf 'Mesh checkout does not match the project pin\n' >&2
@@ -19,6 +19,8 @@ docker compose \
   --file "$project_dir/compose.yaml" \
   build collector adapter
 docker build \
+  --sbom=true \
+  --provenance=mode=max \
   --file "$project_dir/infra/docker/executor.Dockerfile" \
   --tag delta-neutral-funding-executor:latest \
   "$project_dir"

@@ -106,3 +106,25 @@ fn shadow_policy_rejects_rehashed_malformed_intent() -> Result<(), Box<dyn Error
     assert_eq!(error.to_string(), "invalid executor field: variant");
     Ok(())
 }
+
+#[test]
+fn shadow_policy_honors_kill_switch_and_isolation() -> Result<(), Box<dyn Error>> {
+    let intent = vector::<ExecutionIntent>("shadow-intent-v1.json")?;
+    let action = vector::<BuiltAction>("shadow-action-v1.json")?;
+    let mut policy = vector::<ExecutorPolicy>("shadow-policy-v1.json")?;
+    policy.kill_switch = true;
+
+    let error = approve_shadow(&intent, &action, &policy, 1_785_024_000_000)
+        .expect_err("the kill switch must reject an otherwise valid action");
+    assert_eq!(error.to_string(), "shadow executor kill switch is active");
+
+    policy.kill_switch = false;
+    policy.signer_enabled = true;
+    let error = approve_shadow(&intent, &action, &policy, 1_785_024_000_000)
+        .expect_err("shadow mode must remain isolated from signing");
+    assert_eq!(
+        error.to_string(),
+        "shadow mode cannot reach a signer or submit"
+    );
+    Ok(())
+}

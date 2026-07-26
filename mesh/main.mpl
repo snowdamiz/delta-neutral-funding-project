@@ -5,16 +5,31 @@ from Packages.ReplayCli import run_replay_command
 from Packages.Storage import bootstrap_paper_runs, reconcile_paper_state
 from Runtime.Registry import start_registry
 
+fn fail_startup(event :: String, fields :: String) do
+  error(event, fields)
+  Process.exit(1)
+end
+
+fn valid_secret(name :: String, local_default :: String, local :: Bool) -> Bool do
+  let value = Env.get(name, "")
+  String.length(value) > 0 && (
+    local || (String.length(value) >= 32 && value != local_default)
+  )
+end
+
 fn serve(pool :: PoolHandle, port :: Int) do
   case acquire_startup(pool) do
-    Ok(0) -> error("leader_lease_unavailable", "{\"reason\":\"held_by_another_instance\"}")
+    Ok(0) -> fail_startup(
+      "leader_lease_unavailable",
+      json { reason : "held_by_another_instance" }
+    )
     Ok(generation) -> do
       case (
         Env.get("CONFIG_HASH", "")
         |4> bootstrap_paper_runs(
           pool,
           Env.get("CODE_COMMIT", "development"),
-          Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840")
+          Env.get("MESH_COMMIT", "6fdb83afe68703f9459a4e7035b1b84d96316e6b")
         )
       ) do
         Ok(rows) -> do
@@ -36,32 +51,69 @@ fn serve(pool :: PoolHandle, port :: Int) do
               build_router() |> HTTP.serve(port)
             end
             Ok(result) -> do
-              error("startup_reconciliation_failed", "{\"result\":\"${result}\"}")
-              Process.exit(1)
+              fail_startup(
+                "startup_reconciliation_failed",
+                json { result : result }
+              )
             end
             Err(reason) -> do
-              error("startup_reconciliation_failed", "{\"reason\":\"${reason}\"}")
-              Process.exit(1)
+              fail_startup(
+                "startup_reconciliation_failed",
+                json { reason : reason }
+              )
             end
           end
         end
-        Err(reason) -> error("bootstrap_failed", "{\"reason\":\"${reason}\"}")
+        Err(reason) -> fail_startup(
+          "bootstrap_failed",
+          json { reason : reason }
+        )
       end
     end
-    Err(reason) -> error("leader_lease_unavailable", "{\"reason\":\"${reason}\"}")
+    Err(reason) -> fail_startup(
+      "leader_lease_unavailable",
+      json { reason : reason }
+    )
   end
 end
 
 fn serve_collector() do
   Process.install_shutdown_signals()
+  let local = Env.get("DEPLOYMENT_ENVIRONMENT", "local") == "local"
+  if Env.get("EXECUTION_MODE", "") != "paper" do
+    return fail_startup(
+      "config_invalid",
+      json { field : "EXECUTION_MODE", reason : "only paper mode is available" }
+    )
+  end
+  if valid_secret(
+    "ADAPTER_HMAC_SECRET",
+    "local-paper-only-change-me",
+    local
+  ) == false || valid_secret(
+    "OPERATOR_HMAC_SECRET",
+    "local-operator-only-change-me",
+    local
+  ) == false do
+    return fail_startup(
+      "config_invalid",
+      json {
+        field : "HMAC_SECRET",
+        reason : "non-local secrets must contain at least 32 characters and differ from local defaults"
+      }
+    )
+  end
   let database_url = Env.get("DATABASE_URL", "")
   let port = Env.get_int("PORT", 8080)
   if String.length(database_url) == 0 do
-    error("config_invalid", "{\"field\":\"DATABASE_URL\"}")
+    fail_startup("config_invalid", json { field : "DATABASE_URL" })
   else
     case (database_url |> Pool.open(1, 4, 5000)) do
       Ok(pool) -> serve(pool, port)
-      Err(reason) -> error("database_connect_failed", "{\"reason\":\"${reason}\"}")
+      Err(reason) -> fail_startup(
+        "database_connect_failed",
+        json { reason : reason }
+      )
     end
   end
 end
@@ -69,7 +121,7 @@ end
 fn replay(args :: List<String>) do
   case run_replay_command(
     args,
-    Env.get("MESH_COMMIT", "9cf951c6ef6961b3a1a4f1ee40289c1413018840")
+    Env.get("MESH_COMMIT", "6fdb83afe68703f9459a4e7035b1b84d96316e6b")
   ) do
     Ok(output) -> println(output)
     Err(reason) -> do

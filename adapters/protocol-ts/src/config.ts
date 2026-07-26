@@ -61,12 +61,15 @@ function urls(
   }
   for (const value of values) {
     const parsed = new URL(value);
+    const loopbackHttp =
+      parsed.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
     if (
-      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      (parsed.protocol !== "https:" && !loopbackHttp) ||
       parsed.username.length > 0 ||
       parsed.password.length > 0
     ) {
-      throw new Error(`${name} contains an invalid source URL`);
+      throw new Error(`${name} must use HTTPS except for loopback tests`);
     }
   }
   return values;

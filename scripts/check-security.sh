@@ -1,0 +1,78 @@
+#!/bin/sh
+set -eu
+
+project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
+mesh_dir="$project_dir/../mesh-lang"
+expected_mesh=6fdb83afe68703f9459a4e7035b1b84d96316e6b
+collector=delta-neutral-funding-collector:latest
+adapter=delta-neutral-funding-adapter:latest
+executor=delta-neutral-funding-executor:latest
+trivy=aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+work_dir=$(mktemp -d)
+trivy_cache=dnf-trivy-cache-$$
+docker volume create "$trivy_cache" >/dev/null
+trap 'docker volume rm "$trivy_cache" >/dev/null 2>&1 || true; rm -rf "$work_dir"' EXIT HUP INT TERM
+
+test "$(git -C "$mesh_dir" rev-parse HEAD)" = "$expected_mesh"
+test -z "$(git -C "$mesh_dir" status --porcelain)"
+
+docker compose --project-directory "$project_dir" --file "$project_dir/compose.yaml" \
+  config --format json >"$work_dir/compose.json"
+jq -e '
+  (.services.postgres.ports == null) and
+  (.services.postgres.networks | keys == ["database"]) and
+  (.services.adapter.networks | keys == ["ingest"]) and
+  (.services.collector.environment.EXECUTION_MODE == "paper") and
+  (.services.collector.environment.DEPLOYMENT_ENVIRONMENT == "local") and
+  (.services | has("executor") | not) and
+  all(.services.collector, .services.adapter;
+    .read_only and
+    (.cap_drop | index("ALL") != null) and
+    (.security_opt | index("no-new-privileges:true") != null)
+  )
+' "$work_dir/compose.json" >/dev/null
+
+test "$(docker image inspect --format '{{.Config.User}}' "$collector")" = "collector:collector"
+test "$(docker image inspect --format '{{.Config.User}}' "$adapter")" = "65532:65532"
+test "$(docker image inspect --format '{{.Config.User}}' "$executor")" = "65532:65532"
+
+for image in "$collector" "$adapter" "$executor"; do
+  name=${image%%:*}
+  docker scout sbom "local://$image" --format cyclonedx --output "$work_dir/$name.cdx.json"
+  jq -e '.bomFormat == "CycloneDX" and (.components | length > 0)' \
+    "$work_dir/$name.cdx.json" >/dev/null
+  docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "$trivy_cache:/root/.cache/" \
+    "$trivy" image --quiet --scanners vuln --severity HIGH,CRITICAL \
+    --ignore-unfixed --exit-code 1 "$image"
+done
+
+if docker run --rm --network none \
+  -e EXECUTION_MODE=live \
+  -e DATABASE_URL=postgresql://unused \
+  "$collector"; then
+  printf 'collector accepted live execution mode\n' >&2
+  exit 1
+fi
+if docker run --rm --network none \
+  -e EXECUTION_MODE=paper \
+  -e DEPLOYMENT_ENVIRONMENT=paper \
+  -e ADAPTER_HMAC_SECRET=local-paper-only-change-me \
+  -e OPERATOR_HMAC_SECRET=local-operator-only-change-me \
+  -e DATABASE_URL=postgresql://unused \
+  "$collector"; then
+  printf 'collector accepted local secrets outside local deployment\n' >&2
+  exit 1
+fi
+if docker run --rm --network none \
+  -e EXECUTION_MODE=paper \
+  -e DEPLOYMENT_ENVIRONMENT=local \
+  -e ADAPTER_HMAC_SECRET=local-paper-only-change-me \
+  -e OPERATOR_HMAC_SECRET=local-operator-only-change-me \
+  "$collector"; then
+  printf 'collector accepted an empty database URL\n' >&2
+  exit 1
+fi
+
+printf 'security checks passed\n'

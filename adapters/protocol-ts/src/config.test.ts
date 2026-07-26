@@ -38,4 +38,14 @@ test("loads bounded adapter configuration", () => {
       }),
     /JUPITER_API_KEY/,
   );
+  assert.throws(
+    () =>
+      loadConfig({
+        ADAPTER_HMAC_SECRET: "secret",
+        ADAPTER_MODE: "authoritative",
+        JUPITER_API_KEY: "key",
+        PHOENIX_URLS: "http://example.com",
+      }),
+    /HTTPS/,
+  );
 });
