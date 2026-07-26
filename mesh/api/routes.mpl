@@ -5,12 +5,55 @@ from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
 from Packages.PaperEngine import PaperRuntime, PaperVariant, plan_entry, plan_position
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot
+from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_events
 from Packages.StateMachine import PortfolioState
 from Packages.Storage import FundingPersistence, list_opportunities, load_paper_position, load_paper_runtime, persist_funding_settlement, persist_opportunities, persist_paper_plan, persist_position_plan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
   HTTP.response(status, json { error : code, message : message })
+end
+
+pub struct Page do
+  limit :: Int
+  offset :: Int
+end
+
+fn query_integer(
+  request :: Request,
+  name :: String,
+  fallback :: Int,
+  maximum :: Int
+) -> Int ! String do
+  case Request.query(request, name) do
+    None -> Ok(fallback)
+    Some(raw) -> do
+      case String.to_int(raw) do
+        Some(value) -> do
+          if value < 0 || value > maximum do
+            Err("${name} must be between zero and ${maximum}")
+          else
+            Ok(value)
+          end
+        end
+        None -> Err("${name} must be an integer")
+      end
+    end
+  end
+end
+
+fn page(request :: Request) -> Page ! String do
+  Ok(Page {
+    limit : query_integer(request, "limit", 50, 100) ?,
+    offset : query_integer(request, "offset", 0, 1000000) ?
+  })
+end
+
+fn read_response(result) do
+  case result do
+    Ok(body) -> HTTP.response(200, body)
+    Err(reason) -> error_response(500, "query_failed", reason)
+  end
 end
 
 fn request_signature(request :: Request) -> String do
@@ -245,14 +288,29 @@ pub fn handle_capabilities(_request :: Request) -> Response do
 end
 
 pub fn handle_status(_request :: Request) -> Response do
-  HTTP.response(200, json {
-    executionMode : "paper",
-    deploymentEnvironment : "local",
-    paused : false,
-    liveNotionalAtoms : "0",
-    signerReachable : false,
-    shutdownRequested : Process.shutdown_requested()
-  })
+  case Pool.query(get_pool(), "SELECT c.pause_entries::text, c.pause_all::text, c.reason, c.version::text, COALESCE((SELECT holder_instance_id FROM leader_leases WHERE lease_name = 'collector'), '') AS leader_holder, COALESCE((SELECT generation::text FROM leader_leases WHERE lease_name = 'collector'), '0') AS leader_generation, (SELECT count(*)::text FROM portfolio_runs WHERE strategy_run_id = 'local-paper-run' AND state NOT IN ('idle', 'paused')) AS active_portfolios FROM control_state c", []) do
+    Ok(rows) -> do
+      let row = List.head(rows)
+      HTTP.response(200, json {
+        executionMode : "paper",
+        deploymentEnvironment : "local",
+        paused : Map.get(row, "pause_entries") == "true" || Map.get(row, "pause_all") == "true",
+        pauseEntries : Map.get(row, "pause_entries") == "true",
+        pauseAll : Map.get(row, "pause_all") == "true",
+        pauseReason : Map.get(row, "reason"),
+        controlVersion : Map.get(row, "version"),
+        leaderLeaseHolder : Map.get(row, "leader_holder"),
+        leaderLeaseGeneration : Map.get(row, "leader_generation"),
+        activePortfolios : Map.get(row, "active_portfolios"),
+        liveNotional : json { atoms : "0", scale : 6 },
+        codeCommit : Env.get("CODE_COMMIT", "development"),
+        meshCommit : Env.get("MESH_COMMIT", "dc36f28c549bc628b9106a6b90ce6a5b3c293a89"),
+        signerReachable : false,
+        shutdownRequested : Process.shutdown_requested()
+      })
+    end
+    Err(reason) -> error_response(500, "query_failed", reason)
+  end
 end
 
 pub fn handle_opportunities(_request :: Request) -> Response do
@@ -260,6 +318,102 @@ pub fn handle_opportunities(_request :: Request) -> Response do
     Ok(body) -> HTTP.response(200, body)
     Err(reason) -> error_response(500, "query_failed", reason)
   end
+end
+
+pub fn handle_adapter_status(_request :: Request) -> Response do
+  read_response(adapter_status(
+    get_pool(),
+    DateTime.utc_now() |> DateTime.to_unix_ms,
+    Env.get_int("MAX_SOURCE_AGE_MS", 5000)
+  ))
+end
+
+pub fn handle_executor_status(_request :: Request) -> Response do
+  HTTP.response(200, json {
+    enabled : false,
+    executionMode : "paper",
+    reachable : false,
+    signerReachable : false,
+    policyVersion : "not_installed"
+  })
+end
+
+pub fn handle_portfolios(_request :: Request) -> Response do
+  read_response(get_pool() |> portfolios)
+end
+
+pub fn handle_portfolio(request :: Request) -> Response do
+  case Request.param(request, "portfolio") do
+    Some(portfolio_id) -> do
+      case portfolio(get_pool(), portfolio_id) do
+        Ok("null") -> error_response(404, "not_found", "paper portfolio not found")
+        Ok(body) -> HTTP.response(200, body)
+        Err(reason) -> error_response(500, "query_failed", reason)
+      end
+    end
+    None -> error_response(400, "invalid_request", "missing portfolio")
+  end
+end
+
+pub fn handle_positions(_request :: Request) -> Response do
+  read_response(get_pool() |> positions)
+end
+
+pub fn handle_orders(request :: Request) -> Response do
+  case page(request) do
+    Ok(value) -> read_response(orders(get_pool(), value.limit, value.offset))
+    Err(reason) -> error_response(400, "invalid_pagination", reason)
+  end
+end
+
+pub fn handle_fills(request :: Request) -> Response do
+  case page(request) do
+    Ok(value) -> read_response(fills(get_pool(), value.limit, value.offset))
+    Err(reason) -> error_response(400, "invalid_pagination", reason)
+  end
+end
+
+pub fn handle_funding(request :: Request) -> Response do
+  case page(request) do
+    Ok(value) -> read_response(funding(get_pool(), value.limit, value.offset))
+    Err(reason) -> error_response(400, "invalid_pagination", reason)
+  end
+end
+
+pub fn handle_jitosol(_request :: Request) -> Response do
+  read_response(get_pool() |> jitosol)
+end
+
+pub fn handle_pnl(_request :: Request) -> Response do
+  read_response(get_pool() |> pnl)
+end
+
+pub fn handle_pnl_comparison(_request :: Request) -> Response do
+  read_response(get_pool() |> pnl_comparison)
+end
+
+pub fn handle_risk_events(request :: Request) -> Response do
+  case page(request) do
+    Ok(value) -> read_response(risk_events(get_pool(), value.limit, value.offset))
+    Err(reason) -> error_response(400, "invalid_pagination", reason)
+  end
+end
+
+pub fn handle_latest_reconciliation(_request :: Request) -> Response do
+  read_response(get_pool() |> latest_reconciliation)
+end
+
+pub fn handle_config(_request :: Request) -> Response do
+  HTTP.response(200, json {
+    configHash : Env.get("CONFIG_HASH", ""),
+    executionMode : "paper",
+    deploymentEnvironment : "local",
+    maxSourceAgeMs : Env.get_int("MAX_SOURCE_AGE_MS", 5000),
+    rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
+    protocolSchemaVersion : 1,
+    databaseSchemaVersion : 6,
+    liveEnabled : false
+  })
 end
 
 pub fn handle_metrics(_request :: Request) -> Response do

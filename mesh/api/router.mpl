@@ -1,4 +1,4 @@
-from Api.Routes import handle_build, handle_capabilities, handle_event, handle_health, handle_metrics, handle_opportunities, handle_status
+from Api.Routes import handle_adapter_status, handle_build, handle_capabilities, handle_config, handle_event, handle_executor_status, handle_fills, handle_funding, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolios, handle_positions, handle_risk_events, handle_status
 
 pub fn build_router() do
   HTTP.router()
@@ -6,8 +6,21 @@ pub fn build_router() do
     |> HTTP.on_get("/v1/build", handle_build)
     |> HTTP.on_get("/v1/capabilities", handle_capabilities)
     |> HTTP.on_get("/v1/status", handle_status)
+    |> HTTP.on_get("/v1/adapter/status", handle_adapter_status)
+    |> HTTP.on_get("/v1/executor/status", handle_executor_status)
+    |> HTTP.on_get("/v1/portfolios", handle_portfolios)
+    |> HTTP.on_get("/v1/portfolios/:portfolio", handle_portfolio)
+    |> HTTP.on_get("/v1/positions", handle_positions)
+    |> HTTP.on_get("/v1/orders", handle_orders)
+    |> HTTP.on_get("/v1/fills", handle_fills)
+    |> HTTP.on_get("/v1/funding", handle_funding)
+    |> HTTP.on_get("/v1/jitosol", handle_jitosol)
+    |> HTTP.on_get("/v1/pnl", handle_pnl)
+    |> HTTP.on_get("/v1/pnl/comparison", handle_pnl_comparison)
     |> HTTP.on_get("/v1/opportunities", handle_opportunities)
+    |> HTTP.on_get("/v1/risk-events", handle_risk_events)
+    |> HTTP.on_get("/v1/reconciliations/latest", handle_latest_reconciliation)
+    |> HTTP.on_get("/v1/config", handle_config)
     |> HTTP.on_get("/metrics", handle_metrics)
     |> HTTP.on_post("/v1/events", handle_event)
 end
-
