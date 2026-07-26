@@ -89,10 +89,10 @@ export function loadConfig(
   if (
     mode === "authoritative" &&
     jupiterApiKey.length === 0 &&
-    emitIntervalMs < 10_000
+    emitIntervalMs < 15_000
   ) {
     throw new Error(
-      "EMIT_INTERVAL_MS must be at least 10000 for keyless Jupiter access",
+      "EMIT_INTERVAL_MS must be at least 15000 for keyless Jupiter access",
     );
   }
   const sessionId = env.ADAPTER_SESSION_ID ?? `local-${Date.now()}`;

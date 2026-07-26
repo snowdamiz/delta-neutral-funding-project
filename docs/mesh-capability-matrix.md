@@ -18,7 +18,7 @@ The pin is a source commit, not an untracked application patch.
 | MESH-PROTO-001 | Project-local | JSON Schema v1 plus shared fixtures |
 | MESH-BYTES/CODEC/NUM | Bridged | TypeScript adapter transports base64 and decimal strings |
 | MESH-WS/HTTP/SOL-READ | Bridged | read-only TypeScript adapter |
-| MESH-SOL-TX | Bridged | TypeScript action builder plus independently constrained Rust dry-run; no signer/submission |
+| MESH-SOL-TX | Bridged | Strict TypeScript simulation-artifact validator plus independently constrained Rust dry-run; exact current transaction construction and RPC/venue simulation remain a Milestone 8 gate |
 | MESH-SECRET/CRYPTO/SIGNER | Deferred | absent from paper and shadow deployments |
 
 ## Runtime verification

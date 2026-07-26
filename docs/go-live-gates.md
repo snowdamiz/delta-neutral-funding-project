@@ -11,7 +11,7 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| 30 days continuous dual-paper operation | COLLECTING | `scripts/soak-report.sh`; PostgreSQL schema 26 |
+| 30 days continuous dual-paper operation | COLLECTING | `scripts/soak-report.sh`; PostgreSQL schema 27 |
 | 100 funding intervals | COLLECTING | `funding_interval_count` in the durable soak report |
 | Several epoch/reward transitions | COLLECTING | `epoch_transition_count` and JitoSOL valuation events |
 | Acceptable cost-complete JitoSOL P&L | COLLECTING | `/v1/pnl`, `/v1/pnl-comparison`, soak acceptance |
@@ -19,7 +19,7 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 | Reward/basis/cost/rehedge decomposition | COLLECTING | Balanced ledger/read models are implemented; sample is still accruing |
 | No dependence on one extreme period | COLLECTING | Requires the full observation window |
 | Doubled cost and liquidity-loss stress | PARTIAL | Deterministic doubled-fee/slippage and liquidity-loss golden replays pass; canary calibration still requires the authoritative sample and approved size |
-| 1× and 2× canary instant-exit depth | COLLECTING | Exact-size quotes exist; canary size is not approved |
+| 1× and 2× canary instant-exit depth | COLLECTING | Independent 1×/2× paper quote ladders exist; canary size is not approved |
 | Manual delayed-unstake/hedge runbook | PASS | `docs/runbooks/operations.md` |
 
 ## Venue and protocol
@@ -58,7 +58,7 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 | Schema/sequence recovery | PASS | Adapter contract tests and full-resnapshot path |
 | Database restore/reconciliation | PASS | `scripts/check-recovery.sh` |
 | Emergency flatten drill | PASS for paper | Authenticated operator/API/CLI and recovery tests |
-| Paper-shadow error tolerance | COLLECTING | Durable comparison exists; authoritative sample remains |
+| Paper-shadow error tolerance | PARTIAL | Durable fixture comparison exists; exact current transaction/order construction, RPC/venue simulation, and authoritative calibration require a qualified shadow identity |
 
 ## Security
 

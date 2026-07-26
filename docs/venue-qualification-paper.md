@@ -46,22 +46,24 @@ Official sources:
 ## Paper normalization
 
 The adapter combines a slotted Phoenix SOL book and funding record, slotted
-JitoSOL stake-pool state from Solana RPC, and exact Jupiter spot quotes. It
-converts decimal source fields to checked integer atoms at the boundary.
-Jupiter's official keyless tier is used at no more than 24 quote requests per
-minute at the default interval; a key is optional and never grants mutation
-authority. Swap V1 remains necessary for exact-output paper quotes while Swap
-V2 supports only exact-input orders, and must be reconsidered if that contract
-changes.
+JitoSOL stake-pool state from Solana RPC, and a Jupiter quote ladder. Each
+snapshot captures exact 1× buy/sell quotes plus independent 2× exact-input SOL
+and JitoSOL exit quotes. The 2× outputs, including their adverse size impact,
+become the reported executable exit depths. Decimal source fields are converted
+to checked integer atoms at the boundary. The official keyless tier is used at
+no more than 24 quote requests per minute: six quotes every 15 seconds. A key is
+optional and never grants mutation authority. Swap V1 remains necessary for
+exact-output paper quotes while Swap V2 supports only exact-input orders, and
+must be reconsidered if that contract changes.
 Opportunity estimates may use the latest completed hourly rate, but the ledger
 settles only from a unique authoritative funding record or reconciled account
 delta.
 
 Source timeout, non-2xx responses, invalid account owners, stale stake-pool
 epochs, mint-supply mismatches, crossed or empty books, incoherent slots,
-missing exact quotes, and invalid decimal fields all fail closed. Paper prices
-use exact-size spot quotes and executable L2 with an adverse haircut; they never
-use oracle, mark, or midpoint fills.
+missing 1× or 2× quotes, and invalid decimal fields all fail closed. Paper
+prices use exact-size spot quotes and executable L2 with an adverse haircut;
+they never use oracle, mark, or midpoint fills.
 
 ## Eligibility and operational risk
 

@@ -48,6 +48,8 @@ type JupiterCapture = {
   solAskPrice: bigint;
   jitoBidPrice: bigint;
   jitoAskPrice: bigint;
+  solExitDepthLamports: bigint;
+  jitoExitDepthLamports: bigint;
   slots: bigint[];
   raw: string;
   endpoint: string;
@@ -502,6 +504,8 @@ async function jupiter(
       [usdcMint, solMint, solQuantityAtoms, "ExactOut"],
       [jitoMint, usdcMint, jitoQuantityAtoms, "ExactIn"],
       [usdcMint, jitoMint, jitoQuantityAtoms, "ExactOut"],
+      [solMint, usdcMint, solQuantityAtoms * 2n, "ExactIn"],
+      [jitoMint, usdcMint, jitoQuantityAtoms * 2n, "ExactIn"],
     ] as const;
     const responses = await Promise.all(specs.map(([input, output, amount, mode]) =>
       fetchJson(
@@ -521,7 +525,9 @@ async function jupiter(
         config.paperSlippageBps,
       );
     });
-    const [solBid, solAsk, jitoBid, jitoAsk] = quotes as [
+    const [solBid, solAsk, jitoBid, jitoAsk, solExit, jitoExit] = quotes as [
+      { input: bigint; output: bigint; slot: bigint },
+      { input: bigint; output: bigint; slot: bigint },
       { input: bigint; output: bigint; slot: bigint },
       { input: bigint; output: bigint; slot: bigint },
       { input: bigint; output: bigint; slot: bigint },
@@ -532,6 +538,9 @@ async function jupiter(
       solAskPrice: ceilDiv(solAsk.input * billion, solAsk.output),
       jitoBidPrice: jitoBid.output * billion / jitoBid.input,
       jitoAskPrice: ceilDiv(jitoAsk.input * billion, jitoAsk.output),
+      solExitDepthLamports: solExit.input,
+      jitoExitDepthLamports:
+        jitoExit.output * solExit.input / solExit.output,
       slots: quotes.map(({ slot }) => slot),
       raw: responses.map(({ raw }) => raw).join("\n"),
       endpoint,
@@ -625,8 +634,8 @@ export async function buildAuthoritativeEvents(
     jitosolSpotAskPriceUsdMicros: spot.jitoAskPrice.toString(),
     perpBidPriceUsdMicros: perp.bidPrice.toString(),
     perpAskPriceUsdMicros: perp.askPrice.toString(),
-    solExitDepthLamports: solQuoteAtoms.toString(),
-    jitosolExitDepthLamports: hedgeLamports.toString(),
+    solExitDepthLamports: spot.solExitDepthLamports.toString(),
+    jitosolExitDepthLamports: spot.jitoExitDepthLamports.toString(),
     perpExitDepthLamports: perp.depthLamports.toString(),
     fillRatePpm: "1000000",
     slippagePpm: (config.paperSlippageBps * 100n).toString(),

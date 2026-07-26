@@ -44,7 +44,7 @@ AS $$
       ('MESH-BORSH-001', 'bridged', 'adapter decodes stake-pool account bytes'),
       ('MESH-ANCHOR-001', 'bridged', 'venue adapter owns protocol-specific account decoding'),
       ('MESH-SOL-READ-001', 'bridged', 'adapter normalizes Solana RPC state for Mesh'),
-      ('MESH-SOL-TX-001', 'bridged', 'adapter builds simulate-only actions checked by Rust policy'),
+      ('MESH-SOL-TX-001', 'partial', 'adapter validates simulation-only artifacts checked by Rust policy; exact transaction construction and RPC simulation remain gated'),
       ('MESH-SECRET-001', 'deferred', 'paper and shadow deployments contain no signing secret'),
       ('MESH-CRYPTO-001', 'deferred', 'signing remains outside Mesh'),
       ('MESH-SIGNER-001', 'deferred', 'isolated signer is gated until after soak and approval')

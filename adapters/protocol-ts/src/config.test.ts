@@ -42,7 +42,7 @@ test("loads bounded adapter configuration", () => {
   const keyless = loadConfig({
     ADAPTER_HMAC_SECRET: "secret",
     ADAPTER_MODE: "authoritative",
-    EMIT_INTERVAL_MS: "10000",
+    EMIT_INTERVAL_MS: "15000",
   });
   assert.equal(keyless.jupiterApiKey, "");
   assert.throws(
@@ -50,7 +50,7 @@ test("loads bounded adapter configuration", () => {
       loadConfig({
         ADAPTER_HMAC_SECRET: "secret",
         ADAPTER_MODE: "authoritative",
-        EMIT_INTERVAL_MS: "9999",
+        EMIT_INTERVAL_MS: "14999",
       }),
     /keyless Jupiter/,
   );

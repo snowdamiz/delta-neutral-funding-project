@@ -40,7 +40,9 @@ async function listen(
 test("normalizes a slotted source bundle, fails over, and rejects corrupt pool state", async () => {
   let primaryRequests = 0;
   let mismatchMintSupply = false;
+  let rejectDoubledQuotes = false;
   let expectedJupiterKey: string | undefined = "test-jupiter-key";
+  const jupiterRequests = new Set<string>();
   const primary = await listen((_request, response) => {
     primaryRequests += 1;
     json(response, { error: "primary unavailable" }, 503);
@@ -147,11 +149,25 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         const output = url.searchParams.get("outputMint");
         const swapMode = url.searchParams.get("swapMode");
         const amount = BigInt(url.searchParams.get("amount") ?? "0");
+        jupiterRequests.add(`${input}:${output}:${amount}:${swapMode}`);
+        const solExitRate =
+          amount === expectedSolQuoteAtoms * 2n ? 149_000_000n : 149_950_000n;
+        const jitoExitRate =
+          amount === expectedJitoQuoteAtoms * 2n ? 180_000_000n : 185_050_000n;
+        if (
+          rejectDoubledQuotes &&
+          swapMode === "ExactIn" &&
+          (amount === expectedSolQuoteAtoms * 2n ||
+            amount === expectedJitoQuoteAtoms * 2n)
+        ) {
+          json(response, { error: "2x route unavailable" }, 503);
+          return;
+        }
         const quote =
           input === solMint && output === usdcMint
             ? [
                 amount.toString(),
-                (amount * 149_950_000n / billion).toString(),
+                (amount * solExitRate / billion).toString(),
                 "ExactIn",
               ]
             : input === usdcMint && output === solMint
@@ -163,7 +179,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
               : input === jitoMint && output === usdcMint
                 ? [
                     amount.toString(),
-                    (amount * 185_050_000n / billion).toString(),
+                    (amount * jitoExitRate / billion).toString(),
                     "ExactIn",
                   ]
                 : input === usdcMint && output === jitoMint
@@ -176,11 +192,13 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
                   : null;
         assert(quote);
         assert.equal(swapMode, quote[2]);
-        assert.equal(
-          amount,
+        const target =
           input === solMint || output === solMint
             ? expectedSolQuoteAtoms
-            : expectedJitoQuoteAtoms,
+            : expectedJitoQuoteAtoms;
+        assert(
+          amount === target ||
+            (swapMode === "ExactIn" && amount === target * 2n),
         );
         json(response, {
           inputMint: input,
@@ -252,6 +270,12 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
       expectedJitoQuoteAtoms;
     const expectedHedge =
       expectedJitoQuoteAtoms * expectedJitoBid / expectedSolBid;
+    const doubledSolAtoms = expectedSolQuoteAtoms * 2n;
+    const doubledJitoAtoms = expectedJitoQuoteAtoms * 2n;
+    const doubledSolOutput = doubledSolAtoms * 149_000_000n / billion;
+    const doubledJitoOutput = doubledJitoAtoms * 180_000_000n / billion;
+    const expectedJitoExitDepth =
+      doubledJitoOutput * doubledSolAtoms / doubledSolOutput;
     const expectedNotional = expectedHedge * expectedSolBid / billion;
     const expectedMaintenance = (expectedNotional * 5_000n + 9_999n) / 10_000n;
     assert.equal(
@@ -279,11 +303,11 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert.equal(captured.snapshot.payload.perpExitDepthLamports, "80000000000");
     assert.equal(
       captured.snapshot.payload.solExitDepthLamports,
-      expectedSolQuoteAtoms.toString(),
+      doubledSolAtoms.toString(),
     );
     assert.equal(
       captured.snapshot.payload.jitosolExitDepthLamports,
-      expectedHedge.toString(),
+      expectedJitoExitDepth.toString(),
     );
     assert.equal(
       captured.snapshot.payload.notionalUsdMicros,
@@ -303,9 +327,25 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert.equal(captured.funding.payload.venuePaymentId, "phoenix:SOL:1785020400");
     assert.equal(captured.funding.payload.realizedShortRatePpm, "250");
     assert.equal(captured.funding.payload.solPriceUsdMicros, "149940000");
+    assert(
+      jupiterRequests.has(
+        `${solMint}:${usdcMint}:${doubledSolAtoms}:ExactIn`,
+      ),
+    );
+    assert(
+      jupiterRequests.has(
+        `${jitoMint}:${usdcMint}:${doubledJitoAtoms}:ExactIn`,
+      ),
+    );
     assert.match(captured.snapshot.rawPayloadHash, /^[0-9a-f]{64}$/);
     assert(primaryRequests >= 3);
 
+    rejectDoubledQuotes = true;
+    await assert.rejects(
+      buildAuthoritativeEvents(config, 8n, 1_785_024_001_000n),
+      /Jupiter sources failed/,
+    );
+    rejectDoubledQuotes = false;
     expectedJupiterKey = undefined;
     expectedJitoQuoteAtoms = 2_000_000_000n;
     expectedSolQuoteAtoms =
@@ -314,7 +354,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
       ADAPTER_HMAC_SECRET: "secret",
       ADAPTER_MODE: "authoritative",
       ADAPTER_SESSION_ID: "source-test-keyless",
-      EMIT_INTERVAL_MS: "10000",
+      EMIT_INTERVAL_MS: "15000",
       PHOENIX_URLS: `${backup.url}/phoenix`,
       SOLANA_RPC_URLS: `${backup.url}/rpc`,
       JUPITER_URLS: `${backup.url}/jupiter`,
