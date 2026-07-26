@@ -14,6 +14,14 @@ pub struct RatePpm do
   atoms :: Int
 end deriving(Eq, Json)
 
+pub struct QuantityAtoms do
+  atoms :: Int
+end deriving(Eq, Json)
+
+pub struct PriceMicros do
+  atoms :: Int
+end deriving(Eq, Json)
+
 pub fn lamports_ratio(total :: Lamports, supply :: TokenAtoms, rounding :: Atom) -> Lamports ! String do
   case Checked.mul_div(total.atoms, 1000000000, supply.atoms, rounding) do
     Ok(atoms) -> Ok(Lamports { atoms : atoms })
