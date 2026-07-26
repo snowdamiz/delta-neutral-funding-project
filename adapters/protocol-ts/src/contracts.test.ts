@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildSyntheticEvent, validateEvent } from "./contracts.js";
 
-test("builds a signed-boundary-safe v1 event with integer strings", () => {
-  const event = buildSyntheticEvent(7n, 1_785_024_000_000n);
+test("builds a session-scoped v1 event with integer strings", () => {
+  const event = buildSyntheticEvent(7n, 1_785_024_000_000n, "session-a");
 
   assert.equal(event.schemaVersion, 1);
+  assert.equal(event.source, "synthetic-local:session-a");
   assert.equal(event.sourceSequence, "7");
   assert.equal(event.sourceSlot, "320000007");
+  assert.equal(event.idempotencyKey, "synthetic-local:session-a:7");
   assert.equal(event.payload.oracleStatus, "valid");
   assert.equal(event.payload.perpExitDepthLamports, "100000000000");
   assert.equal(event.payload.shortReceiptPpm, "250");
@@ -29,5 +31,10 @@ test("builds a signed-boundary-safe v1 event with integer strings", () => {
         payload: { ...event.payload, rejectRatePpm: "600000", unknownRatePpm: "500000" },
       }),
     /failure rates/,
+  );
+
+  assert.notEqual(
+    buildSyntheticEvent(7n, 1_785_024_000_000n, "session-b").idempotencyKey,
+    event.idempotencyKey,
   );
 });

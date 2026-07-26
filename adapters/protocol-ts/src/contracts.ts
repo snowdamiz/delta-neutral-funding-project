@@ -144,6 +144,7 @@ export function validateEvent(value: unknown): MarketSnapshotEvent {
 export function buildSyntheticEvent(
   sequence: bigint,
   observedAtMs: bigint,
+  sessionId: string,
 ): MarketSnapshotEvent {
   const payload: MarketSnapshotPayload = {
     oracleStatus: "valid",
@@ -175,16 +176,17 @@ export function buildSyntheticEvent(
   const rawPayloadHash = createHash("sha256")
     .update(JSON.stringify(payload))
     .digest("hex");
-  const id = `synthetic-${sequence}`;
+  const source = `synthetic-local:${sessionId}`;
+  const id = `synthetic-${sessionId}-${sequence}`;
   return validateEvent({
     schemaVersion: 1,
     eventId: id,
     eventType: "MarketSnapshot",
-    source: "synthetic-local",
+    source,
     observedAtMs: observedAtMs.toString(),
     sourceSlot: (320_000_000n + sequence).toString(),
     sourceSequence: sequence.toString(),
-    idempotencyKey: `synthetic-local:${sequence}`,
+    idempotencyKey: `${source}:${sequence}`,
     rawPayloadHash,
     payload,
   });

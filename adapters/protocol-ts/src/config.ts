@@ -1,4 +1,5 @@
 export type AdapterConfig = {
+  sessionId: string;
   collectorUrl: string;
   hmacSecret: string;
   emitIntervalMs: number;
@@ -24,8 +25,13 @@ export function loadConfig(
 ): AdapterConfig {
   const hmacSecret = env.ADAPTER_HMAC_SECRET ?? "";
   if (hmacSecret.length === 0) throw new Error("ADAPTER_HMAC_SECRET is required");
+  const sessionId = env.ADAPTER_SESSION_ID ?? `local-${Date.now()}`;
+  if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
+    throw new Error("ADAPTER_SESSION_ID must contain only letters, digits, underscores, or hyphens");
+  }
 
   return {
+    sessionId,
     collectorUrl: env.COLLECTOR_URL ?? "http://collector:8080/v1/events",
     hmacSecret,
     emitIntervalMs: positiveInteger(env, "EMIT_INTERVAL_MS", 5000),

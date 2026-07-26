@@ -5,7 +5,7 @@ import { buildSyntheticEvent } from "./contracts.js";
 import { postEvent, signBody } from "./transport.js";
 
 test("authenticates and posts the canonical body unchanged", async () => {
-  const event = buildSyntheticEvent(9n, 1_785_024_000_000n);
+  const event = buildSyntheticEvent(9n, 1_785_024_000_000n, "transport-test");
   const expectedBody = JSON.stringify(event);
   let receivedBody = "";
   let receivedSignature = "";

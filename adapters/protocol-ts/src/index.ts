@@ -42,7 +42,7 @@ health.listen(config.healthPort, "0.0.0.0", () => {
 });
 
 while (!stopping) {
-  const event = buildSyntheticEvent(sequence, BigInt(Date.now()));
+  const event = buildSyntheticEvent(sequence, BigInt(Date.now()), config.sessionId);
   try {
     const response = await postEvent(
       config.collectorUrl,
