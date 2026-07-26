@@ -5,7 +5,7 @@ from Runtime.Registry import start_registry
 
 fn serve(pool :: PoolHandle, port :: Int) do
   let code_commit = Env.get("CODE_COMMIT", "development")
-  let mesh_commit = Env.get("MESH_COMMIT", "2bcf36699508bd3b35eb9c1cfb83b785b1e88a72")
+  let mesh_commit = Env.get("MESH_COMMIT", "0dcb8989c5aa9fac539322054cd47c7db6799765")
   let config_hash = Env.get("CONFIG_HASH", "")
   case (config_hash |4> bootstrap_paper_runs(pool, code_commit, mesh_commit)) do
     Ok(rows) -> do
