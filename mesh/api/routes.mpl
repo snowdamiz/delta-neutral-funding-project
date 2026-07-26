@@ -1,3 +1,4 @@
+from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 from Packages.Log import info, warn
 from Packages.Metrics import render
 from Packages.Opportunity import OpportunitySet, evaluate_snapshot
@@ -30,12 +31,12 @@ fn accepted_response(snapshot :: MarketSnapshot, result :: OpportunitySet, dupli
   HTTP.response(202, json {
     status : if duplicate do "duplicate" else "accepted" end,
     eventId : snapshot.event_id,
-    navLamports : "${result.nav_lamports}",
-    hedgeLamports : "${result.hedge_lamports}",
-    expectedFundingUsdMicros : "${result.expected_funding_usd_micros}",
-    navRewardUsdMicros : "${result.nav_reward_usd_micros}",
-    solNetCarryUsdMicros : "${result.sol_net_carry_usd_micros}",
-    jitosolNetCarryUsdMicros : "${result.jitosol_net_carry_usd_micros}",
+    navLamports : "${result.nav_lamports.atoms}",
+    hedgeLamports : "${result.hedge_lamports.atoms}",
+    expectedFundingUsdMicros : "${result.expected_funding_usd_micros.atoms}",
+    navRewardUsdMicros : "${result.nav_reward_usd_micros.atoms}",
+    solNetCarryUsdMicros : "${result.sol_net_carry_usd_micros.atoms}",
+    jitosolNetCarryUsdMicros : "${result.jitosol_net_carry_usd_micros.atoms}",
     solEligible : result.sol_eligible,
     jitosolEligible : result.jitosol_eligible
   })

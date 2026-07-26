@@ -1,3 +1,4 @@
+from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 from Packages.Opportunity import OpportunitySet
 from Packages.ProtocolContracts import MarketSnapshot
 
@@ -25,14 +26,14 @@ pub fn persist_opportunities(pool :: PoolHandle, body :: String, snapshot :: Mar
     snapshot.idempotency_key,
     snapshot.raw_payload_hash,
     body,
-    "${result.nav_lamports}",
-    "${result.hedge_lamports}",
-    "${result.expected_funding_usd_micros}",
-    "${result.sol_net_carry_usd_micros}",
+    "${result.nav_lamports.atoms}",
+    "${result.hedge_lamports.atoms}",
+    "${result.expected_funding_usd_micros.atoms}",
+    "${result.sol_net_carry_usd_micros.atoms}",
     bool_string(result.sol_eligible),
     reason(result.sol_eligible),
-    "${result.nav_reward_usd_micros}",
-    "${result.jitosol_net_carry_usd_micros}",
+    "${result.nav_reward_usd_micros.atoms}",
+    "${result.jitosol_net_carry_usd_micros.atoms}",
     bool_string(result.jitosol_eligible),
     reason(result.jitosol_eligible),
     config_hash

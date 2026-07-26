@@ -1,3 +1,4 @@
+from Packages.Finance import Lamports, UsdMicros
 from Packages.Opportunity import evaluate_snapshot
 from Packages.ProtocolContracts import parse_market_snapshot
 
@@ -11,12 +12,12 @@ describe("dual opportunity evaluation") do
       Ok(snapshot) -> do
         case evaluate_snapshot(snapshot) do
           Ok(result) -> do
-            assert(result.nav_lamports == 1234567890)
-            assert(result.hedge_lamports == 2469135780)
-            assert(result.expected_funding_usd_micros == 125000)
-            assert(result.nav_reward_usd_micros == 170367)
-            assert(result.sol_net_carry_usd_micros == -125000)
-            assert(result.jitosol_net_carry_usd_micros == 45367)
+            assert(result.nav_lamports.atoms == 1234567890)
+            assert(result.hedge_lamports.atoms == 2469135780)
+            assert(result.expected_funding_usd_micros.atoms == 125000)
+            assert(result.nav_reward_usd_micros.atoms == 170367)
+            assert(result.sol_net_carry_usd_micros.atoms == -125000)
+            assert(result.jitosol_net_carry_usd_micros.atoms == 45367)
             assert(result.sol_eligible == false)
             assert(result.jitosol_eligible)
           end

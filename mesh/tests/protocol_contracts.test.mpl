@@ -1,3 +1,4 @@
+from Packages.Finance import Lamports, RatePpm
 from Packages.ProtocolContracts import parse_market_snapshot
 
 fn valid_snapshot() -> String do
@@ -9,8 +10,8 @@ describe("protocol event v1") do
     case parse_market_snapshot(valid_snapshot()) do
       Ok(snapshot) -> do
         assert(snapshot.event_id == "event-1")
-        assert(snapshot.total_pool_lamports == 12345678900)
-        assert(snapshot.short_receipt_ppm == 250)
+        assert(snapshot.total_pool_lamports.atoms == 12345678900)
+        assert(snapshot.short_receipt_ppm.atoms == 250)
       end
       Err(error) -> assert(false)
     end
