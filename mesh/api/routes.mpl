@@ -1,0 +1,125 @@
+from Packages.Log import info, warn
+from Packages.Metrics import render
+from Packages.Opportunity import OpportunitySet, evaluate_snapshot
+from Packages.ProtocolContracts import MarketSnapshot, parse_market_snapshot
+from Packages.Storage import list_opportunities, persist_opportunities
+from Runtime.Registry import get_pool, record_accepted, record_rejected
+
+fn error_response(status :: Int, code :: String, message :: String) do
+  HTTP.response(status, json { error : code, message : message })
+end
+
+fn request_signature(request :: Request) -> String do
+  case Request.header(request, "x-adapter-signature") do
+    Some(signature) -> signature
+    None -> ""
+  end
+end
+
+fn authenticated(request :: Request, body :: String) -> Bool do
+  let secret = Env.get("ADAPTER_HMAC_SECRET", "")
+  if String.length(secret) == 0 do
+    false
+  else
+    Crypto.secure_compare(request_signature(request), Crypto.hmac_sha256(secret, body))
+  end
+end
+
+fn accepted_response(snapshot :: MarketSnapshot, result :: OpportunitySet, duplicate :: Bool) do
+  HTTP.response(202, json {
+    status : if duplicate do "duplicate" else "accepted" end,
+    eventId : snapshot.event_id,
+    navLamports : "${result.nav_lamports}",
+    hedgeLamports : "${result.hedge_lamports}",
+    expectedFundingUsdMicros : "${result.expected_funding_usd_micros}",
+    navRewardUsdMicros : "${result.nav_reward_usd_micros}",
+    solNetCarryUsdMicros : "${result.sol_net_carry_usd_micros}",
+    jitosolNetCarryUsdMicros : "${result.jitosol_net_carry_usd_micros}",
+    solEligible : result.sol_eligible,
+    jitosolEligible : result.jitosol_eligible
+  })
+end
+
+fn persist_response(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) do
+  let config_hash = Env.get("CONFIG_HASH", "")
+  case persist_opportunities(get_pool(), body, snapshot, result, config_hash) do
+    Ok(inserted) -> do
+      record_accepted()
+      info("protocol_event_accepted", "{\"eventId\":\"${snapshot.event_id}\",\"inserted\":\"${inserted}\"}")
+      accepted_response(snapshot, result, inserted == 0)
+    end
+    Err(reason) -> do
+      record_rejected()
+      error_response(500, "persistence_failed", reason)
+    end
+  end
+end
+
+fn evaluate_response(body :: String, snapshot :: MarketSnapshot) do
+  case evaluate_snapshot(snapshot) do
+    Ok(result) -> persist_response(body, snapshot, result)
+    Err(reason) -> do
+      record_rejected()
+      error_response(422, "evaluation_failed", reason)
+    end
+  end
+end
+
+pub fn handle_event(request :: Request) -> Response do
+  let body = Request.body(request)
+  if authenticated(request, body) == false do
+    record_rejected()
+    warn("protocol_event_rejected", "{\"reason\":\"authentication\"}")
+    error_response(401, "unauthorized", "invalid adapter signature")
+  else
+    case parse_market_snapshot(body) do
+      Ok(snapshot) -> evaluate_response(body, snapshot)
+      Err(reason) -> do
+        record_rejected()
+        error_response(400, "invalid_event", reason)
+      end
+    end
+  end
+end
+
+pub fn handle_health(_request :: Request) -> Response do
+  case Pool.query(get_pool(), "SELECT 1 AS ok", []) do
+    Ok(rows) -> HTTP.response(200, json { status : "ok", database : "ok", mode : "paper" })
+    Err(reason) -> error_response(503, "database_unavailable", reason)
+  end
+end
+
+pub fn handle_build(_request :: Request) -> Response do
+  HTTP.response(200, json {
+    codeCommit : Env.get("CODE_COMMIT", "development"),
+    meshCommit : Env.get("MESH_COMMIT", "aeddc93c493475be0ee843e93c67612dd12346b6"),
+    configHash : Env.get("CONFIG_HASH", ""),
+    schemaVersion : 1
+  })
+end
+
+pub fn handle_capabilities(_request :: Request) -> Response do
+  HTTP.response(200, "{\"schemaVersion\":1,\"implemented\":[\"MESH-FIN-001\",\"MESH-FIN-002\",\"MESH-TIME-001\",\"MESH-TEST-001\",\"MESH-TEST-002\",\"MESH-ACTOR-001-item-bound\",\"MESH-PROC-001\",\"MESH-OBS-001\",\"MESH-METRICS-001\",\"MESH-PROTO-001\"],\"bridged\":[\"MESH-BYTES-001\",\"MESH-CODEC-001\",\"MESH-NUM-001\",\"MESH-WS-001\",\"MESH-SOL-READ-001\"],\"deferred\":[\"MESH-SOL-TX-001\",\"MESH-SECRET-001\",\"MESH-CRYPTO-001\",\"MESH-SIGNER-001\"]}")
+end
+
+pub fn handle_status(_request :: Request) -> Response do
+  HTTP.response(200, json {
+    executionMode : "paper",
+    deploymentEnvironment : "local",
+    paused : false,
+    liveNotionalAtoms : "0",
+    signerReachable : false,
+    shutdownRequested : Process.shutdown_requested()
+  })
+end
+
+pub fn handle_opportunities(_request :: Request) -> Response do
+  case list_opportunities(get_pool()) do
+    Ok(body) -> HTTP.response(200, body)
+    Err(reason) -> error_response(500, "query_failed", reason)
+  end
+end
+
+pub fn handle_metrics(_request :: Request) -> Response do
+  HTTP.response(200, render())
+end
