@@ -2,6 +2,7 @@ from Api.Router import build_router
 from Packages.LeaderLease import acquire_startup, release, start_leader_lease_supervisor
 from Packages.Log import error, info
 from Packages.ReplayCli import run_replay_command
+from Packages.RuntimeConfig import RuntimeConfig, load_runtime_config, runtime_config_hash
 from Packages.Storage import bootstrap_paper_runs, reconcile_paper_state
 from Runtime.Registry import start_registry
 
@@ -38,14 +39,7 @@ fn valid_secret(name :: String, local_default :: String, local :: Bool) -> Bool 
   )
 end
 
-fn serve(pool :: PoolHandle, port :: Int) do
-  let target_notional = Env.get_int("PAPER_NOTIONAL_USD_MICROS", 500000000)
-  if target_notional <= 0 do
-    return fail_startup(
-      "config_invalid",
-      json { field : "PAPER_NOTIONAL_USD_MICROS", reason : "must be positive" }
-    )
-  end
+fn serve(pool :: PoolHandle, port :: Int, config :: RuntimeConfig) do
   case acquire_startup(pool) do
     Ok(0) -> fail_startup(
       "leader_lease_unavailable",
@@ -53,12 +47,13 @@ fn serve(pool :: PoolHandle, port :: Int) do
     )
     Ok(generation) -> do
       case (
-        Env.get("CONFIG_HASH", "")
+        config
+        |> runtime_config_hash
         |4> bootstrap_paper_runs(
           pool,
           Env.get("CODE_COMMIT", "development"),
           Env.get("MESH_COMMIT", "b07d37d07c6442590be24e656c6f1bd5f48c5500"),
-          target_notional
+          config.target_notional_usd_micros
         )
       ) do
         Ok(rows) -> do
@@ -122,41 +117,43 @@ end
 
 fn serve_collector() do
   Process.install_shutdown_signals()
-  let local = Env.get("DEPLOYMENT_ENVIRONMENT", "local") == "local"
-  if Env.get("EXECUTION_MODE", "") != "paper" do
-    return fail_startup(
+  case load_runtime_config() do
+    Err(reason) -> fail_startup(
       "config_invalid",
-      json { field : "EXECUTION_MODE", reason : "only paper mode is available" }
+      json { field : "RUNTIME_CONFIG", reason : reason }
     )
-  end
-  if valid_secret(
-    "ADAPTER_HMAC_SECRET",
-    "local-paper-only-change-me",
-    local
-  ) == false || valid_secret(
-    "OPERATOR_HMAC_SECRET",
-    "local-operator-only-change-me",
-    local
-  ) == false do
-    return fail_startup(
-      "config_invalid",
-      json {
-        field : "HMAC_SECRET",
-        reason : "non-local secrets must contain at least 32 characters and differ from local defaults"
-      }
-    )
-  end
-  let database_url = Env.get("DATABASE_URL", "")
-  let port = Env.get_int("PORT", 8080)
-  if String.length(database_url) == 0 do
-    fail_startup("config_invalid", json { field : "DATABASE_URL" })
-  else
-    case (database_url |> Pool.open(1, 4, 5000)) do
-      Ok(pool) -> serve(pool, port)
-      Err(reason) -> fail_startup(
-        "database_connect_failed",
-        json { reason : reason }
-      )
+    Ok(config) -> do
+      let local = Env.get("DEPLOYMENT_ENVIRONMENT", "local") == "local"
+      if valid_secret(
+        "ADAPTER_HMAC_SECRET",
+        "local-paper-only-change-me",
+        local
+      ) == false || valid_secret(
+        "OPERATOR_HMAC_SECRET",
+        "local-operator-only-change-me",
+        local
+      ) == false do
+        return fail_startup(
+          "config_invalid",
+          json {
+            field : "HMAC_SECRET",
+            reason : "non-local secrets must contain at least 32 characters and differ from local defaults"
+          }
+        )
+      end
+      let database_url = Env.get("DATABASE_URL", "")
+      let port = Env.get_int("PORT", 8080)
+      if String.length(database_url) == 0 do
+        fail_startup("config_invalid", json { field : "DATABASE_URL" })
+      else
+        case (database_url |> Pool.open(1, 4, 5000)) do
+          Ok(pool) -> serve(pool, port, config)
+          Err(reason) -> fail_startup(
+            "database_connect_failed",
+            json { reason : reason }
+          )
+        end
+      end
     end
   end
 end

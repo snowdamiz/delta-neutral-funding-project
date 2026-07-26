@@ -2,6 +2,13 @@
 set -eu
 
 base_url=${1:-http://127.0.0.1:8080}
+build=$(curl -fsS "$base_url/v1/build")
+config=$(curl -fsS "$base_url/v1/config")
+
+test "$(printf '%s' "$build" | jq -r .configHash)" = \
+  "$(printf '%s' "$config" | jq -r .configHash)"
+printf '%s' "$config" |
+  jq -e '.configHash == "48ca469701c04f90a2114f2f6284d2a955013c11300d0d568e5785ea827f8830"' >/dev/null
 
 curl -fsS "$base_url/v1/status" |
   jq -e '.executionMode == "paper" and .signerReachable == false' >/dev/null
@@ -59,7 +66,7 @@ curl -fsS "$base_url/v1/risk-decisions?limit=4&offset=0" |
       )
     )
   ' >/dev/null
-curl -fsS "$base_url/v1/config" |
+printf '%s' "$config" |
   jq -e '.executionMode == "paper" and .liveEnabled == false and .databaseSchemaVersion == 27 and .targetNotionalUsdMicros == "500000000" and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
 
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/v1/orders?limit=101")" = "400"

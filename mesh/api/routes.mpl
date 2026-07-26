@@ -7,6 +7,7 @@ from Packages.Opportunity import OpportunitySet, evaluate_snapshot
 from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, plan_controlled_entry, plan_controlled_position, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
 from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot, parse_shadow_result
 from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events, shadow_results
+from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
 from Packages.StateMachine import PortfolioState
 from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans
 from Runtime.Registry import get_pool, record_accepted, record_rejected
@@ -181,13 +182,14 @@ runtime :: PaperRuntime) -> Int ! String do
 end
 
 fn paper_runtime(pool :: PoolHandle, portfolio_id :: String, now_ms :: Int) -> PaperRuntime ! String do
+  let config = load_runtime_config() ?
   portfolio_id |2> load_paper_runtime(
     pool,
     now_ms,
-    Env.get_int("MAX_SOURCE_AGE_MS", 5000),
-    Env.get_int("MIN_MARGIN_RATIO_PPM", 1500000),
-    Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
-    Env.get_int("REBALANCE_DELTA_BPS", 50)
+    config.max_source_age_ms,
+    config.minimum_margin_ratio_ppm,
+    config.minimum_liquidation_distance_bps,
+    config.rebalance_delta_bps
   )
 end
 
@@ -463,11 +465,14 @@ end
 
 fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) -> Int ! String do
   let pool = get_pool()
-  let inserted = (Env.get("CONFIG_HASH", "") |5> persist_opportunities(pool, body, snapshot, result)) ?
+  let config = load_runtime_config() ?
+  let inserted = (config
+    |> runtime_config_hash
+    |5> persist_opportunities(pool, body, snapshot, result)) ?
   (snapshot.event_id |2> advance_direct_unstakes(
     pool,
     snapshot.epoch,
-    Env.get("DIRECT_UNSTAKE_SCENARIO", "withdraw")
+    config.direct_unstake_scenario
   )) ?
   let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
   (now_ms |4> run_independent_pair(pool, snapshot, result)) ?
@@ -768,12 +773,15 @@ pub fn handle_health(_request :: Request) -> Response do
 end
 
 pub fn handle_build(_request :: Request) -> Response do
-  HTTP.response(200, json {
-    codeCommit : Env.get("CODE_COMMIT", "development"),
-    meshCommit : Env.get("MESH_COMMIT", "b07d37d07c6442590be24e656c6f1bd5f48c5500"),
-    configHash : Env.get("CONFIG_HASH", ""),
-    schemaVersion : 27
-  })
+  case load_runtime_config() do
+    Ok(config) -> HTTP.response(200, json {
+      codeCommit : Env.get("CODE_COMMIT", "development"),
+      meshCommit : Env.get("MESH_COMMIT", "b07d37d07c6442590be24e656c6f1bd5f48c5500"),
+      configHash : config |> runtime_config_hash,
+      schemaVersion : 27
+    })
+    Err(reason) -> error_response(503, "config_unavailable", reason)
+  end
 end
 
 pub fn handle_capabilities(_request :: Request) -> Response do
@@ -823,11 +831,14 @@ pub fn handle_opportunities(_request :: Request) -> Response do
 end
 
 pub fn handle_adapter_status(_request :: Request) -> Response do
-  read_response(adapter_status(
-    get_pool(),
-    DateTime.utc_now() |> DateTime.to_unix_ms,
-    Env.get_int("MAX_SOURCE_AGE_MS", 5000)
-  ))
+  case load_runtime_config() do
+    Ok(config) -> read_response(adapter_status(
+      get_pool(),
+      DateTime.utc_now() |> DateTime.to_unix_ms,
+      config.max_source_age_ms
+    ))
+    Err(reason) -> error_response(503, "config_unavailable", reason)
+  end
 end
 
 pub fn handle_executor_status(_request :: Request) -> Response do
@@ -952,42 +963,45 @@ pub fn handle_latest_reconciliation(_request :: Request) -> Response do
 end
 
 pub fn handle_config(_request :: Request) -> Response do
-  HTTP.response(200, json {
-    configHash : Env.get("CONFIG_HASH", ""),
-    executionMode : "paper",
-    deploymentEnvironment : "local",
-    targetNotionalUsdMicros : Env.get("PAPER_NOTIONAL_USD_MICROS", "500000000"),
-    maxSourceAgeMs : Env.get_int("MAX_SOURCE_AGE_MS", 5000),
-    minimumMarginRatioPpm : Env.get_int("MIN_MARGIN_RATIO_PPM", 1500000),
-    minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
-    rebalanceDeltaBps : Env.get_int("REBALANCE_DELTA_BPS", 50),
-    executionPolicyProfile : Env.get("EXECUTION_POLICY_PROFILE", "shadow-v1"),
-    executionIntentTtlMs : Env.get_int("EXECUTION_INTENT_TTL_MS", 5000),
-    maximumExecutionSlippageBps : Env.get_int("MAX_EXECUTION_SLIPPAGE_BPS", 50),
-    directUnstakeScenario : Env.get("DIRECT_UNSTAKE_SCENARIO", "withdraw"),
-    directUnstakeFeePpm : Env.get_int("DIRECT_UNSTAKE_FEE_PPM", 1000),
-    directUnstakeChainFeesUsdMicros : Env.get_int("DIRECT_UNSTAKE_CHAIN_FEES_USD_MICROS", 20000),
-    directUnstakeHedgeCostUsdMicros : Env.get_int("DIRECT_UNSTAKE_HEDGE_COST_USD_MICROS", 0),
-    directUnstakeCapitalDelayHaircutUsdMicros : Env.get_int("DIRECT_UNSTAKE_CAPITAL_DELAY_HAIRCUT_USD_MICROS", 1000000),
-    directUnstakeFinalHedgeCloseCostUsdMicros : Env.get_int("DIRECT_UNSTAKE_FINAL_HEDGE_CLOSE_COST_USD_MICROS", 250000),
-    protocolSchemaVersion : 1,
-    databaseSchemaVersion : 27,
-    liveEnabled : false
-  })
+  case load_runtime_config() do
+    Ok(config) -> HTTP.response(200, json {
+      configHash : config |> runtime_config_hash,
+      executionMode : config.execution_mode,
+      deploymentEnvironment : "local",
+      targetNotionalUsdMicros : "${config.target_notional_usd_micros}",
+      maxSourceAgeMs : config.max_source_age_ms,
+      minimumMarginRatioPpm : config.minimum_margin_ratio_ppm,
+      minimumLiquidationDistanceBps : config.minimum_liquidation_distance_bps,
+      rebalanceDeltaBps : config.rebalance_delta_bps,
+      executionPolicyProfile : config.execution_policy_profile,
+      executionIntentTtlMs : config.execution_intent_ttl_ms,
+      maximumExecutionSlippageBps : config.maximum_execution_slippage_bps,
+      directUnstakeScenario : config.direct_unstake_scenario,
+      directUnstakeFeePpm : config.direct_unstake_fee_ppm,
+      directUnstakeChainFeesUsdMicros : config.direct_unstake_chain_fees_usd_micros,
+      directUnstakeHedgeCostUsdMicros : config.direct_unstake_hedge_cost_usd_micros,
+      directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
+      directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
+      protocolSchemaVersion : 1,
+      databaseSchemaVersion : 27,
+      liveEnabled : false
+    })
+    Err(reason) -> error_response(503, "config_unavailable", reason)
+  end
 end
 
 pub fn handle_metrics(_request :: Request) -> Response do
   let headers = Map.new()
     |> Map.put("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-  case (
-    DateTime.utc_now()
-    |> DateTime.to_unix_ms
-    |2> render(
-      get_pool(),
-      Env.get_int("MAX_SOURCE_AGE_MS", 5000)
-    )
-  ) do
-    Ok(body) -> body |2> HTTP.response_with_headers(200, headers)
-    Err(reason) -> error_response(503, "metrics_unavailable", reason)
+  case load_runtime_config() do
+    Ok(config) -> case (
+      DateTime.utc_now()
+      |> DateTime.to_unix_ms
+      |2> render(get_pool(), config.max_source_age_ms)
+    ) do
+      Ok(body) -> body |2> HTTP.response_with_headers(200, headers)
+      Err(reason) -> error_response(503, "metrics_unavailable", reason)
+    end
+    Err(reason) -> error_response(503, "config_unavailable", reason)
   end
 end
