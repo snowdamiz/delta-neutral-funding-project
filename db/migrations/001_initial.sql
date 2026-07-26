@@ -7,8 +7,9 @@ INSERT INTO schema_meta(version) VALUES (1);
 CREATE TYPE execution_mode AS ENUM ('paper', 'shadow', 'live');
 CREATE TYPE strategy_variant AS ENUM ('sol_control', 'jitosol_carry');
 CREATE TYPE portfolio_state AS ENUM (
-  'idle', 'entering_spot', 'entering_perp', 'hedged', 'rebalancing',
-  'exiting', 'paused', 'reconciling', 'error'
+  'bootstrapping', 'reconciling', 'idle', 'candidate', 'opening_spot',
+  'opening_perp', 'hedged', 'rebalancing', 'exiting_perp', 'exiting_spot',
+  'emergency_flatten', 'paused'
 );
 
 CREATE TABLE build_manifests (
