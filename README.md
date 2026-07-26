@@ -54,6 +54,7 @@ scripts/check-shutdown.sh
 scripts/check-shadow-persistence.sh
 scripts/check-recovery.sh
 scripts/check-security.sh
+scripts/check-observability.sh
 ```
 
 The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
@@ -74,6 +75,10 @@ Docker storage.
 The security check verifies the paper-only network topology and non-root users,
 extracts each image's attested CycloneDX SBOM, scans fixed high/critical
 vulnerabilities with digest-pinned Trivy, and proves startup fails closed.
+The observability check validates the live bounded-cardinality Prometheus
+exposition, build identity, alert rules, and all twelve Grafana panels. Alert
+delivery remains intentionally unconfigured until an operator destination is
+provided.
 
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).

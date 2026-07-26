@@ -969,5 +969,15 @@ end
 pub fn handle_metrics(_request :: Request) -> Response do
   let headers = Map.new()
     |> Map.put("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-  render() |2> HTTP.response_with_headers(200, headers)
+  case (
+    DateTime.utc_now()
+    |> DateTime.to_unix_ms
+    |2> render(
+      get_pool(),
+      Env.get_int("MAX_SOURCE_AGE_MS", 5000)
+    )
+  ) do
+    Ok(body) -> body |2> HTTP.response_with_headers(200, headers)
+    Err(reason) -> error_response(503, "metrics_unavailable", reason)
+  end
 end

@@ -1,0 +1,25 @@
+rule_files:
+  - rules.yml
+
+evaluation_interval: 10s
+
+tests:
+  - interval: 10s
+    input_series:
+      - series: leader_lease_held
+        values: 0x4
+      - series: margin_ratio_ppm
+        values: 1400000x4
+    alert_rule_test:
+      - eval_time: 20s
+        alertname: WriterLeaseLost
+        exp_alerts:
+          - exp_labels: { alertname: WriterLeaseLost, severity: critical }
+            exp_annotations:
+              summary: Collector writer lease is not held
+      - eval_time: 20s
+        alertname: CriticalMargin
+        exp_alerts:
+          - exp_labels: { alertname: CriticalMargin, severity: critical }
+            exp_annotations:
+              summary: Margin ratio is below the configured minimum
