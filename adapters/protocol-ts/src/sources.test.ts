@@ -74,7 +74,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         json(response, {
           marketId: 1,
           symbol: "SOL",
-          rates: [{ timestamp: 1785020400, fundingRatePercentage: "0.025000" }],
+          rates: [{ timestamp: 1785020401, fundingRatePercentage: "0.025000" }],
         });
         return;
       }
@@ -328,7 +328,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         .toString(),
     );
     assert.equal(captured.navLamports, 1_234_567_890n);
-    assert.equal(captured.funding.payload.venuePaymentId, "phoenix:SOL:1785020400");
+    assert.equal(captured.funding.payload.venuePaymentId, "phoenix:SOL:1785020401");
     assert.equal(captured.funding.payload.realizedShortRatePpm, "250");
     assert.equal(captured.funding.payload.solPriceUsdMicros, "149940000");
     assert(

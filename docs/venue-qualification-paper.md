@@ -60,7 +60,9 @@ necessary for exact-output paper quotes while Swap V2 supports only exact-input
 orders, and must be reconsidered if that contract changes.
 Opportunity estimates may use the latest completed hourly rate, but the ledger
 settles only from a unique authoritative funding record or reconciled account
-delta.
+delta. Phoenix settlement timestamps can arrive seconds after the hour, so the
+adapter retains that exact settlement identity while aligning its preceding
+mark-candle lookup to the closed hourly boundary.
 
 Source timeout, non-2xx responses, invalid account owners, stale stake-pool
 epochs, mint-supply mismatches, crossed or empty books, incoherent slots,

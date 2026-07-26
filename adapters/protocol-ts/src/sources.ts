@@ -306,11 +306,12 @@ async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
       throw new Error("funding timestamp has no preceding hourly candle");
     }
     const fundingAtMs = fundingTimestamp * 1000n;
-    const candleAtMs = fundingAtMs - 3_600_000n;
+    const fundingBoundaryMs = fundingAtMs - fundingAtMs % 3_600_000n;
+    const candleAtMs = fundingBoundaryMs - 3_600_000n;
     const candleResponse = await fetchJson(
       join(
         endpoint,
-        `candles?symbol=SOL&timeframe=1h&startTime=${candleAtMs}&endTime=${fundingAtMs}`,
+        `candles?symbol=SOL&timeframe=1h&startTime=${candleAtMs}&endTime=${fundingBoundaryMs}`,
       ),
       config.requestTimeoutMs,
       { headers },
