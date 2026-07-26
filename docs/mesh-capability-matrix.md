@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Pinned runtime commit: `b07d37d07c6442590be24e656c6f1bd5f48c5500`
+Pinned runtime commit: `ac039696c3c60e2fba15e45184590212cb785c64`
 
 The pin is a source commit, not an untracked application patch.
 
@@ -11,7 +11,7 @@ The pin is a source commit, not an untracked application patch.
 | MESH-TIME-001 | Implemented | monotonic nanoseconds and checked duration helpers |
 | MESH-TEST-001 | Project-local | system/replay/test clock values are passed explicitly |
 | MESH-TEST-002 | Implemented | stable explicit-state xorshift64* generator |
-| MESH-ACTOR-001 | Partial | item-bounded reject/drop/latest channels; project overload and native concurrent-delivery probes pass; byte bounds and scheduler-aware blocking deferred |
+| MESH-ACTOR-001 | Implemented | item/byte-bounded reject/drop/latest channels; saturation and coalescing are observable; producers return an explicit contention/full result without waiting |
 | MESH-PROC-001 | Implemented | async-signal-safe SIGINT/SIGTERM flag, accepted-request drain, and native `Process.exit(Int)` |
 | MESH-OBS-001 | Project-local | JSON-line logger; secret fields excluded |
 | MESH-METRICS-001 | Implemented | pure Mesh fixed-name Prometheus rendering over bounded runtime telemetry plus one database snapshot |

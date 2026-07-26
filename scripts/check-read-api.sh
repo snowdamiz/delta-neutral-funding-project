@@ -17,7 +17,7 @@ curl -fsS "$base_url/v1/capabilities" |
     .buildManifestId == "local-paper-build" and
     (.results | length) == 23 and
     any(.results[]; .id == "MESH-FIN-001" and .status == "implemented") and
-    any(.results[]; .id == "MESH-ACTOR-001" and .status == "partial") and
+    any(.results[]; .id == "MESH-ACTOR-001" and .status == "implemented") and
     any(.results[]; .id == "MESH-SIGNER-001" and .status == "deferred")
   ' >/dev/null
 curl -fsS "$base_url/v1/portfolios" |

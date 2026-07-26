@@ -30,7 +30,7 @@ AS $$
       ('MESH-TIME-001', 'implemented', 'monotonic clock and checked duration runtime probes'),
       ('MESH-TEST-001', 'project_local', 'explicit system, replay, and test clocks'),
       ('MESH-TEST-002', 'implemented', 'versioned deterministic xorshift64star runtime probe'),
-      ('MESH-ACTOR-001', 'partial', 'item-bounded reject, drop-oldest, and latest-only channels; byte bounds deferred'),
+      ('MESH-ACTOR-001', 'implemented', 'item/byte-bounded reject, drop-oldest, and latest-only channels with nonblocking producers'),
       ('MESH-PROC-001', 'implemented', 'signal hook, accepted-request drain, lease release, and exit probes'),
       ('MESH-OBS-001', 'project_local', 'structured JSON logger with secret-bearing fields excluded'),
       ('MESH-METRICS-001', 'implemented', 'bounded runtime telemetry and pure-Mesh Prometheus renderer'),

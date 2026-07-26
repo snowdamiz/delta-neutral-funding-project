@@ -38,9 +38,9 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| Pinned compiler/runtime build manifest | PASS | Mesh `b07d37d`; build manifest and immutable Docker labels |
+| Pinned compiler/runtime build manifest | PASS | Mesh `ac03969`; build manifest and immutable Docker labels |
 | Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; schema 27 |
-| Required P0 capability acceptance | PARTIAL | All project probes pass; `MESH-ACTOR-001` byte bounds/scheduler blocking remain explicitly deferred |
+| Required P0 capability acceptance | PASS | `MESH-ACTOR-001` enforces item/byte bounds and nonblocking producer contention; all project probes pass |
 | Exact cross-language vectors | PASS | Mesh, TypeScript, and Rust conformance suites |
 | Golden replay suite | PASS | `scripts/check-replay.sh` |
 | Bounded mailbox/concurrency/memory soak | COLLECTING | Native/GC/overload probes pass; elapsed deployment evidence remains |

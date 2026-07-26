@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/workspace/target,sharing=locked \
 
 FROM ubuntu:24.04 AS runtime
 ARG CODE_COMMIT=development
-ARG MESH_COMMIT=b07d37d07c6442590be24e656c6f1bd5f48c5500
+ARG MESH_COMMIT=ac039696c3c60e2fba15e45184590212cb785c64
 ENV CODE_COMMIT=$CODE_COMMIT
 ENV MESH_COMMIT=$MESH_COMMIT
 LABEL org.opencontainers.image.revision=$CODE_COMMIT
