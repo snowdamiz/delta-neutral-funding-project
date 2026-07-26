@@ -62,7 +62,7 @@ pub fn load_runtime_config() -> RuntimeConfig ! String do
     paper_slippage_bps : ("PAPER_SLIPPAGE_BPS"
       |> unsigned_env(50)) ?,
     max_source_age_ms : ("MAX_SOURCE_AGE_MS"
-      |> unsigned_env(5000)) ?,
+      |> unsigned_env(60000)) ?,
     minimum_margin_ratio_ppm : ("MIN_MARGIN_RATIO_PPM"
       |> unsigned_env(1500000)) ?,
     minimum_liquidation_distance_bps : ("MIN_LIQUIDATION_DISTANCE_BPS"

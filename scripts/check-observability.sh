@@ -86,5 +86,19 @@ curl -fsS http://127.0.0.1:9090/api/v1/status/flags |
     .data["storage.tsdb.retention.time"] == "5w" and
     .data["storage.tsdb.retention.size"] == "2GiB"
   ' >/dev/null
+"$project_dir/scripts/runtime-stability-report.sh" |
+  jq -e '
+    .meshRuntimeMinimumUp == 1 and
+    .maximumResidentMemoryBytes > 0 and
+    .maximumMailboxDepth >= 0 and
+    .maximumMailboxMessages >= 0 and
+    .maximumRunQueueMessages >= 0 and
+    .maximumOutboxPending >= 0 and
+    .schedulerCounterResets >= 0 and
+    .httpRejectedRequests >= 0 and
+    .postgresDatabaseBytes > 0 and
+    .prometheusStorageBytes > 0 and
+    .collectorRestartCount >= 0
+  ' >/dev/null
 
 printf 'observability checks passed\n'

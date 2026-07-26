@@ -26,10 +26,11 @@ docker compose up --build
 
 That mode combines the Phoenix SOL orderbook and hourly funding record, JitoSOL
 stake-pool and mint accounts from Solana RPC, and exact-size Jupiter spot
-quotes. Jupiter's bounded keyless access is sufficient for the default ten-second
-capture interval; `JUPITER_API_KEY` enables a separately managed higher-rate
-quota. Comma-separated `PHOENIX_URLS`, `SOLANA_RPC_URLS`, and `JUPITER_URLS`
-provide ordered failover.
+quotes. Jupiter's bounded keyless access is sufficient for the default
+fifteen-second post-capture interval; the 60-second source-age limit covers a
+complete six-request capture cycle. `JUPITER_API_KEY` enables a separately
+managed higher-rate quota. Comma-separated `PHOENIX_URLS`, `SOLANA_RPC_URLS`,
+and `JUPITER_URLS` provide ordered failover.
 
 Read-only operator commands use `bin/collector` directly. Mutations require the
 separate operator secret, and paper exits/flattening also require the explicit
@@ -57,6 +58,7 @@ scripts/check-recovery.sh
 scripts/check-security.sh
 scripts/check-observability.sh
 scripts/soak-report.sh
+scripts/runtime-stability-report.sh
 ```
 
 The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
@@ -87,7 +89,8 @@ funding-interval, epoch-transition, and unresolved-safety evidence from
 PostgreSQL. Collector startup rejects an application, Mesh, or configuration
 identity that differs from the release already pinned to the paper run.
 Prometheus retains 35 days within a 2 GB cap for the matching runtime-stability
-review.
+report, which records memory, mailbox, run-queue, restart, rejection, outbox,
+PostgreSQL, and Prometheus-storage evidence over the exact soak window.
 
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md). Every

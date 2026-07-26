@@ -43,7 +43,7 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 | Required P0 capability acceptance | PASS | `MESH-ACTOR-001` enforces item/byte bounds and nonblocking producer contention; all project probes pass |
 | Exact cross-language vectors | PASS | Mesh, TypeScript, and Rust conformance suites |
 | Golden replay suite | PASS | `scripts/check-replay.sh` |
-| Bounded mailbox/concurrency/memory soak | COLLECTING | Native/GC/overload probes pass; elapsed deployment evidence remains |
+| Bounded mailbox/concurrency/memory soak | COLLECTING | `scripts/runtime-stability-report.sh`; native/GC/overload probes pass; elapsed deployment evidence remains |
 | Compiler/runtime rollback image | PASS | Commit-qualified image produced by `scripts/check-toolchain.sh` |
 
 ## Engineering

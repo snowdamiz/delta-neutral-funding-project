@@ -55,6 +55,8 @@ to checked integer atoms at the boundary. Jupiter documents keyless access at
 0.5 requests per second. The six requests in a ladder are therefore issued
 sequentially at least 2.1 seconds apart, followed by the configured 15-second
 capture interval; healthy steady-state use stays below 30 requests per minute.
+The local paper deployment uses a 60-second source-age limit so this bounded
+six-request capture remains healthy through one complete capture cycle.
 An API key is optional and never grants mutation authority. Swap V1 remains
 necessary for exact-output paper quotes while Swap V2 supports only exact-input
 orders, and must be reconsidered if that contract changes.
