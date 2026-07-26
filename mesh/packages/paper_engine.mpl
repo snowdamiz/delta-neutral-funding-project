@@ -2,7 +2,7 @@ from Packages.BrokerPaper import FailureOutcome, FillStatus, OrderSide, PaperFil
 from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, UsdMicros, position_delta
 from Packages.Opportunity import OpportunitySet
 from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
-from Packages.RiskEngine import RiskInput, approve_entry
+from Packages.RiskEngine import RiskInput, approve_entry, source_health
 from Packages.StateMachine import PortfolioSignal, PortfolioState, transition
 
 pub type PaperVariant do
@@ -554,9 +554,13 @@ perp_fill :: LegFill) -> PositionPlan ! String do
   perp_fill))
 end
 
-fn hold_position(position :: PaperPosition, valuation :: PaperValuation) -> PositionPlan do
+fn hold_position(
+  position :: PaperPosition,
+  valuation :: PaperValuation,
+  reason :: String
+) -> PositionPlan do
   position_plan(HoldPosition,
-  "within_delta_band",
+  reason,
   if position.variant == SolControl do "SOL" else "JitoSOL" end,
   PositionRequest {
     spot_quantity : TokenAtoms { atoms : 0 },
@@ -753,11 +757,18 @@ end
 pub fn plan_position(snapshot :: MarketSnapshot,
 opportunity :: OpportunitySet,
 position :: PaperPosition,
+now_ms :: Int,
+max_age_ms :: Int,
 rebalance_delta_bps :: Int) -> PositionPlan ! String do
   if rebalance_delta_bps < 0 do
     return Err("rebalance delta threshold must be non-negative")
   end
   let valuation = position_valuation(snapshot, opportunity, position) ?
+  let source = snapshot.observed_at_ms
+    |> source_health(now_ms, max_age_ms)
+  if source.approved == false do
+    return Ok(hold_position(position, valuation, source.code))
+  end
   let net_carry = if position.variant == SolControl do
     opportunity.sol_net_carry_usd_micros
   else
@@ -780,6 +791,6 @@ rebalance_delta_bps :: Int) -> PositionPlan ! String do
   if valuation.delta_bps >= rebalance_delta_bps && valuation.delta_lamports.atoms != 0 do
     plan_rebalance(snapshot, position, valuation)
   else
-    Ok(hold_position(position, valuation))
+    Ok(hold_position(position, valuation, "within_delta_band"))
   end
 end

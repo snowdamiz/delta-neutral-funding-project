@@ -183,6 +183,8 @@ describe("paper entry planner") do
           state_version : 4,
           random_state : Random.seed(42)
         },
+        1785024001000,
+        5000,
         50) do
           Ok(plan) -> do
             assert(plan.action == RebalancePerp)
@@ -206,6 +208,8 @@ describe("paper entry planner") do
           state_version : 4,
           random_state : Random.seed(42)
         },
+        1785024001000,
+        5000,
         50) do
           Ok(plan) -> do
             assert(plan.action == ExitPosition)
@@ -237,6 +241,8 @@ describe("paper entry planner") do
           state_version : 4,
           random_state : Random.seed(42)
         },
+        1785024001000,
+        5000,
         50
       ) do
         Ok(plan) -> do
@@ -244,6 +250,38 @@ describe("paper entry planner") do
           assert(plan.reason == "paper_spot_close_partial")
           assert(plan.next_perp_short_quantity.atoms == 0)
           assert(plan.next_spot_quantity.atoms == 2000000000)
+        end
+        Err(error) -> assert(false)
+      end
+      Err(error) -> assert(false)
+    end
+  end
+
+  test("does not act on a stale position snapshot") do
+    let stale = %{snapshot(OracleValid, 1000000, 0) |
+      observed_at_ms : 1785024000000
+    }
+    case evaluate_snapshot(stale) do
+      Ok(opportunity) -> case plan_position(
+        stale,
+        opportunity,
+        PaperPosition {
+          variant : SolControl,
+          spot_quantity : TokenAtoms { atoms : 1000000000 },
+          perp_short_quantity : Lamports { atoms : 900000000 },
+          prior_nav_lamports : Lamports { atoms : 1000000000 },
+          prior_market_rate_lamports : Lamports { atoms : 1000000000 },
+          state_version : 4,
+          random_state : Random.seed(42)
+        },
+        1785024010000,
+        5000,
+        50
+      ) do
+        Ok(plan) -> do
+          assert(plan.action == HoldPosition)
+          assert(plan.reason == "source_stale")
+          assert(plan.perp_fill.placed == false)
         end
         Err(error) -> assert(false)
       end

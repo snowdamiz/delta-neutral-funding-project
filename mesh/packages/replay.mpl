@@ -349,7 +349,13 @@ fn step_open(
   config :: ReplayConfig,
   position :: PaperPosition
 ) -> PortfolioStep ! String do
-  let plan = (position |3> plan_position(snapshot, opportunity, config.rebalance_delta_bps)) ?
+  let plan = (position |3> plan_position(
+    snapshot,
+    opportunity,
+    snapshot.observed_at_ms,
+    config.max_source_age_ms,
+    config.rebalance_delta_bps
+  )) ?
   let trace = position_trace(snapshot, position, plan)
   case plan.action do
     ExitPosition -> Ok(PortfolioStep {

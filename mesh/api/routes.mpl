@@ -143,6 +143,8 @@ runtime :: PaperRuntime) -> Int ! String do
       let plan = (position |3> plan_position(
         snapshot,
         result,
+        runtime.now_ms,
+        runtime.max_age_ms,
         Env.get_int("REBALANCE_DELTA_BPS", 50)
       )) ?
       plan |5> persist_position_plan(pool, snapshot, portfolio_id, position)
