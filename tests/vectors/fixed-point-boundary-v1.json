@@ -1,0 +1,18 @@
+{
+  "totalPoolLamports": "9223372036854775000",
+  "supplyAtoms": "9000000000",
+  "expectedNavLamports": "1024819115206086111",
+  "notionalUsdMicros": "9223372036854775000",
+  "expectedFundingRatePpm": "999999",
+  "expectedFundingUsdMicros": "9223362813482738145",
+  "spotQuantityAtoms": "4000000001",
+  "marketRateLamports": "1234567891",
+  "perpShortLamports": "4900000000",
+  "expectedSpotEquivalentLamports": "4938271565",
+  "expectedDeltaLamports": "38271565",
+  "expectedDeltaBps": "78",
+  "realizedShortQuantityLamports": "4000000001",
+  "solPriceUsdMicros": "987654321",
+  "realizedShortRatePpm": "777777",
+  "expectedRealizedFundingUsdMicros": "3072699260"
+}

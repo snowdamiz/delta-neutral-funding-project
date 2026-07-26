@@ -1,5 +1,5 @@
 from Packages.BrokerPaper import FailureOutcome, FillStatus, OrderSide, PaperFill, PaperOrder, sample_failure, simulate_fill
-from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, UsdMicros
+from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, UsdMicros, position_delta
 from Packages.Opportunity import OpportunitySet
 from Packages.ProtocolContracts import MarketSnapshot, OracleStatus
 from Packages.RiskEngine import RiskInput, approve_entry
@@ -478,17 +478,8 @@ opportunity :: OpportunitySet,
 position :: PaperPosition) -> PaperValuation ! String do
   let nav = position_nav(snapshot, opportunity, position.variant)
   let market_rate = position_market_rate(snapshot, position.variant) ?
-  let spot_equivalent_atoms = (position.spot_quantity.atoms
-    |> Checked.mul_div(market_rate.atoms, 1000000000, :floor)) ?
-  let delta_atoms = (spot_equivalent_atoms
-    |> Checked.sub(position.perp_short_quantity.atoms)) ?
-  let absolute_delta = Checked.abs(delta_atoms) ?
-  let delta_bps = if spot_equivalent_atoms == 0 do
-    0
-  else
-    (absolute_delta
-      |> Checked.mul_div(10000, spot_equivalent_atoms, :ceil)) ?
-  end
+  let exposure = (position.spot_quantity
+    |> position_delta(market_rate, position.perp_short_quantity)) ?
   let nav_change = (nav.atoms
     |> Checked.sub(position.prior_nav_lamports.atoms)) ?
   let reward_atoms = (position.spot_quantity.atoms
@@ -504,9 +495,9 @@ position :: PaperPosition) -> PaperValuation ! String do
   Ok(PaperValuation {
     protocol_nav_lamports : nav,
     market_rate_lamports : market_rate,
-    spot_equivalent_lamports : Lamports { atoms : spot_equivalent_atoms },
-    delta_lamports : Lamports { atoms : delta_atoms },
-    delta_bps : delta_bps,
+    spot_equivalent_lamports : exposure.spot_equivalent_lamports,
+    delta_lamports : exposure.delta_lamports,
+    delta_bps : exposure.delta_bps,
     reward_sol_lamports : Lamports { atoms : reward_atoms },
     basis_sol_lamports : Lamports { atoms : basis_atoms }
   })
