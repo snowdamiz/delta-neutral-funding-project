@@ -39,6 +39,13 @@ fn valid_secret(name :: String, local_default :: String, local :: Bool) -> Bool 
 end
 
 fn serve(pool :: PoolHandle, port :: Int) do
+  let target_notional = Env.get_int("PAPER_NOTIONAL_USD_MICROS", 500000000)
+  if target_notional <= 0 do
+    return fail_startup(
+      "config_invalid",
+      json { field : "PAPER_NOTIONAL_USD_MICROS", reason : "must be positive" }
+    )
+  end
   case acquire_startup(pool) do
     Ok(0) -> fail_startup(
       "leader_lease_unavailable",
@@ -50,7 +57,8 @@ fn serve(pool :: PoolHandle, port :: Int) do
         |4> bootstrap_paper_runs(
           pool,
           Env.get("CODE_COMMIT", "development"),
-          Env.get("MESH_COMMIT", "b07d37d07c6442590be24e656c6f1bd5f48c5500")
+          Env.get("MESH_COMMIT", "b07d37d07c6442590be24e656c6f1bd5f48c5500"),
+          target_notional
         )
       ) do
         Ok(rows) -> do

@@ -52,7 +52,7 @@ curl -fsS "$base_url/v1/risk-decisions?limit=4&offset=0" |
     )
   ' >/dev/null
 curl -fsS "$base_url/v1/config" |
-  jq -e '.executionMode == "paper" and .liveEnabled == false and .databaseSchemaVersion == 26 and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
+  jq -e '.executionMode == "paper" and .liveEnabled == false and .databaseSchemaVersion == 26 and .targetNotionalUsdMicros == "500000000" and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
 
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/v1/orders?limit=101")" = "400"
 printf 'read API checks passed\n'

@@ -947,6 +947,7 @@ pub fn handle_config(_request :: Request) -> Response do
     configHash : Env.get("CONFIG_HASH", ""),
     executionMode : "paper",
     deploymentEnvironment : "local",
+    targetNotionalUsdMicros : Env.get("PAPER_NOTIONAL_USD_MICROS", "500000000"),
     maxSourceAgeMs : Env.get_int("MAX_SOURCE_AGE_MS", 5000),
     minimumMarginRatioPpm : Env.get_int("MIN_MARGIN_RATIO_PPM", 1500000),
     minimumLiquidationDistanceBps : Env.get_int("MIN_LIQUIDATION_DISTANCE_BPS", 1000),
