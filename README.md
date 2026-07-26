@@ -51,6 +51,7 @@ scripts/check-replay.sh
 scripts/check-toolchain.sh
 scripts/check-shadow-persistence.sh
 scripts/check-recovery.sh
+scripts/check-security.sh
 ```
 
 The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
@@ -62,6 +63,9 @@ access, dry-runs the independent Rust policy, and records paper/simulation
 deltas through the authenticated Mesh API.
 The recovery check restarts the collector and proves a PostgreSQL backup can be
 restored and reconciled in isolated temporary Docker storage.
+The security check verifies the paper-only network topology and non-root users,
+extracts each image's attested CycloneDX SBOM, scans fixed high/critical
+vulnerabilities with digest-pinned Trivy, and proves startup fails closed.
 
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).

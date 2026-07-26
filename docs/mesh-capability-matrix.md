@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Pinned runtime commit: `9cf951c6ef6961b3a1a4f1ee40289c1413018840`
+Pinned runtime commit: `6fdb83afe68703f9459a4e7035b1b84d96316e6b`
 
 The pin is a source commit, not an untracked application patch.
 
@@ -32,6 +32,7 @@ cargo test -p meshc --test e2e e2e_checked_mul_div
 cargo test -p meshc --test e2e e2e_monotonic_duration
 cargo test -p meshc --test e2e e2e_bounded_channel
 cargo test -p mesh-rt actor::mailbox::tests::test_mailbox_concurrent_push
+cargo test -p mesh-rt http::server::tests::request_parser_rejects_unbounded_or_ambiguous_input
 cargo test -p meshc --test e2e_actors gc_bounded_memory
 cargo test -p meshc --test e2e_supervisors supervisor_restarts_crashed_permanent_child
 cargo test -p meshc --test e2e e2e_deterministic_random
