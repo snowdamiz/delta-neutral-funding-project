@@ -6,7 +6,7 @@ base_url=${1:-http://127.0.0.1:8080}
 curl -fsS "$base_url/v1/status" |
   jq -e '.executionMode == "paper" and .signerReachable == false' >/dev/null
 curl -fsS "$base_url/v1/portfolios" |
-  jq -e 'length == 2 and all(.[]; .initialCapitalUsd.scale == 6)' >/dev/null
+  jq -e 'length == 2 and all(.[]; .comparisonMode == "independent" and .initialCapitalUsd.scale == 6)' >/dev/null
 curl -fsS "$base_url/v1/portfolios/local-sol-control" |
   jq -e '.id == "local-sol-control"' >/dev/null
 curl -fsS "$base_url/v1/positions" |
@@ -20,7 +20,7 @@ curl -fsS "$base_url/v1/funding?limit=2&offset=0" |
 curl -fsS "$base_url/v1/pnl" |
   jq -e 'length == 2 and all(.[]; .scope == "recorded_attribution_v1")' >/dev/null
 curl -fsS "$base_url/v1/pnl/comparison" |
-  jq -e '.jitosolIncrementalNetRecordedUsd.scale == 6' >/dev/null
+  jq -e 'length == 1 and .[0].mode == "independent" and .[0].jitosolIncrementalNetRecordedUsd.scale == 6' >/dev/null
 curl -fsS "$base_url/v1/risk-decisions?limit=4&offset=0" |
   jq -e '.limit == 4 and (.items | length) > 0 and all(.items[]; .healthSnapshot.marginRatioPpm == "4000000")' >/dev/null
 curl -fsS "$base_url/v1/config" |
