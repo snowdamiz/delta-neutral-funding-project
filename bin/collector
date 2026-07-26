@@ -2,6 +2,7 @@
 set -euo pipefail
 
 base_url=${COLLECTOR_URL:-http://127.0.0.1:8080}
+project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 
 usage() {
   printf '%s\n' \
@@ -9,6 +10,7 @@ usage() {
     'read: status | capabilities | adapter-status | portfolios | opportunities | pnl | compare' \
     'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
     'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper' \
+    'replay: replay --bundle <path> --config <path>' \
     'test: alerts-test <reason>'
 }
 
@@ -43,6 +45,17 @@ require_reason() {
     usage >&2
     exit 2
   }
+}
+
+absolute_file() {
+  local path=$1
+  test -f "$path" || {
+    printf 'file not found: %s\n' "$path" >&2
+    exit 2
+  }
+  printf '%s/%s\n' \
+    "$(CDPATH='' cd -- "$(dirname "$path")" && pwd)" \
+    "$(basename "$path")"
 }
 
 command=${1:-}
@@ -86,6 +99,34 @@ case "$command" in
   alerts-test)
     require_reason "${2:-}"
     mutate alerts-test /v1/alerts/test "$2"
+    ;;
+  replay)
+    test "${2:-}" = '--bundle' && test "${4:-}" = '--config' && test -z "${6:-}" || {
+      usage >&2
+      exit 2
+    }
+    bundle_path=$(absolute_file "${3:-}")
+    config_path=$(absolute_file "${5:-}")
+    image=$(docker compose \
+      --project-directory "$project_dir" \
+      --file "$project_dir/compose.yaml" \
+      config --format json |
+      jq -er '.services.collector.image')
+    docker image inspect "$image" >/dev/null 2>&1 || {
+      printf 'collector image is missing; run docker compose build collector\n' >&2
+      exit 2
+    }
+    docker run --rm \
+      --network none \
+      --read-only \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --volume "$bundle_path:/replay/bundle.jsonl:ro" \
+      --volume "$config_path:/replay/config.json:ro" \
+      "$image" replay \
+      --bundle /replay/bundle.jsonl \
+      --config /replay/config.json |
+      jq .
     ;;
   *)
     usage >&2

@@ -39,6 +39,7 @@ services:
       - ./db/migrations:/migrations:ro
 
   collector:
+    image: delta-neutral-funding-collector:latest
     build:
       context: .
       dockerfile: infra/docker/collector.Dockerfile
@@ -56,7 +57,7 @@ services:
       LEADER_RENEW_MS: ${LEADER_RENEW_MS:-3000}
       PORT: 8080
       CODE_COMMIT: ${CODE_COMMIT:-development}
-      MESH_COMMIT: 7cc1cfadcc7c270d0a82bb0dfa955ffb5ea12279
+      MESH_COMMIT: 105b55e1029ceba615161901c84d08a9a64885ea
     init: true
     ports:
       - "127.0.0.1:8080:8080"

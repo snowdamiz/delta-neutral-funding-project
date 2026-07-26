@@ -25,5 +25,14 @@ OPERATOR_HMAC_SECRET=local-operator-only-change-me \
   bin/collector exit jitosol-carry "manual paper exit" --approve-paper
 ```
 
+Deterministic replay uses the same collector image without a network or writable
+root filesystem:
+
+```sh
+bin/collector replay \
+  --bundle replay/bundles/calm-v1.jsonl \
+  --config replay/configs/baseline-v1.json
+```
+
 Milestone status and open gates are tracked in
 [`docs/implementation-status.md`](docs/implementation-status.md).
