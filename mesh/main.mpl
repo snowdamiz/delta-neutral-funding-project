@@ -13,7 +13,7 @@ fn serve(pool :: PoolHandle, port :: Int) do
         |4> bootstrap_paper_runs(
           pool,
           Env.get("CODE_COMMIT", "development"),
-          Env.get("MESH_COMMIT", "7256eba370b78fb16661fad298b6538e9bdb61c0")
+          Env.get("MESH_COMMIT", "7cc1cfadcc7c270d0a82bb0dfa955ffb5ea12279")
         )
       ) do
         Ok(rows) -> do

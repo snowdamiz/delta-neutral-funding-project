@@ -56,7 +56,7 @@ services:
       LEADER_RENEW_MS: ${LEADER_RENEW_MS:-3000}
       PORT: 8080
       CODE_COMMIT: ${CODE_COMMIT:-development}
-      MESH_COMMIT: 7256eba370b78fb16661fad298b6538e9bdb61c0
+      MESH_COMMIT: 7cc1cfadcc7c270d0a82bb0dfa955ffb5ea12279
     init: true
     ports:
       - "127.0.0.1:8080:8080"

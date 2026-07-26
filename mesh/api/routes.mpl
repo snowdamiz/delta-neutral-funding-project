@@ -419,7 +419,7 @@ end
 pub fn handle_build(_request :: Request) -> Response do
   HTTP.response(200, json {
     codeCommit : Env.get("CODE_COMMIT", "development"),
-    meshCommit : Env.get("MESH_COMMIT", "7256eba370b78fb16661fad298b6538e9bdb61c0"),
+    meshCommit : Env.get("MESH_COMMIT", "7cc1cfadcc7c270d0a82bb0dfa955ffb5ea12279"),
     configHash : Env.get("CONFIG_HASH", ""),
     schemaVersion : 9
   })
@@ -446,7 +446,7 @@ pub fn handle_status(_request :: Request) -> Response do
         activePortfolios : Map.get(row, "active_portfolios"),
         liveNotional : json { atoms : "0", scale : 6 },
         codeCommit : Env.get("CODE_COMMIT", "development"),
-        meshCommit : Env.get("MESH_COMMIT", "7256eba370b78fb16661fad298b6538e9bdb61c0"),
+        meshCommit : Env.get("MESH_COMMIT", "7cc1cfadcc7c270d0a82bb0dfa955ffb5ea12279"),
         signerReachable : false,
         shutdownRequested : Process.shutdown_requested()
       })
