@@ -13,6 +13,7 @@ pub struct MarketSnapshot do
   source_sequence :: String
   idempotency_key :: String
   raw_payload_hash :: String
+  epoch :: Int
   oracle_status :: OracleStatus
   total_pool_lamports :: Lamports
   supply_atoms :: TokenAtoms
@@ -146,6 +147,7 @@ pub fn parse_market_snapshot(body :: String) -> MarketSnapshot ! String do
         source_sequence : (body |> required_string("sourceSequence", "sourceSequence")) ?,
         idempotency_key : (body |> required_string("idempotencyKey", "idempotencyKey")) ?,
         raw_payload_hash : required_hash(body) ?,
+        epoch : (payload |> required_int_field("epoch", "epoch", false)) ?,
         oracle_status : required_oracle_status(payload) ?,
         total_pool_lamports : Lamports { atoms : (payload |> required_int_field("totalPoolLamports", "totalPoolLamports", false)) ? },
         supply_atoms : TokenAtoms { atoms : (payload |> required_int_field("supplyAtoms", "supplyAtoms", false)) ? },

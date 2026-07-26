@@ -13,6 +13,7 @@ fn snapshot(oracle_status :: OracleStatus, fill_rate :: Int, reject_rate :: Int)
     source_sequence : "1",
     idempotency_key : "test:1",
     raw_payload_hash : "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    epoch : 900,
     oracle_status : oracle_status,
     total_pool_lamports : Lamports { atoms : 12345678900 },
     supply_atoms : TokenAtoms { atoms : 10000000000 },

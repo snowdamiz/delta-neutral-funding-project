@@ -556,6 +556,7 @@ export async function buildAuthoritativeEvents(
       : (config.paperCollateralUsdMicros - maintenance) * 10_000n /
         config.paperCollateralUsdMicros;
   const payload: MarketSnapshotPayload = {
+    epoch: pool.epoch.toString(),
     oracleStatus: "valid",
     totalPoolLamports: pool.totalPoolLamports.toString(),
     supplyAtoms: pool.supplyAtoms.toString(),

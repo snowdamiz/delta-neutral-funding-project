@@ -14,6 +14,7 @@ test("builds a session-scoped v1 event with integer strings", () => {
   assert.equal(event.sourceSequence, "7");
   assert.equal(event.sourceSlot, "320000007");
   assert.equal(event.idempotencyKey, "synthetic-local:session-a:7");
+  assert.equal(event.payload.epoch, "900");
   assert.equal(event.payload.oracleStatus, "valid");
   assert.equal(event.payload.perpExitDepthLamports, "100000000000");
   assert.equal(event.payload.shortReceiptPpm, "250");

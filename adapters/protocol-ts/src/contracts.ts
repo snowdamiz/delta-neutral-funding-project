@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 export type MarketSnapshotPayload = {
+  epoch: string;
   oracleStatus: "valid" | "invalid";
   totalPoolLamports: string;
   supplyAtoms: string;
@@ -69,6 +70,7 @@ export type ProtocolEvent = MarketSnapshotEvent | FundingSettlementEvent;
 const unsignedInteger = /^(0|[1-9][0-9]*)$/;
 const signedInteger = /^-?(0|[1-9][0-9]*)$/;
 const payloadFields = [
+  "epoch",
   "totalPoolLamports",
   "supplyAtoms",
   "jitosolAtoms",
@@ -206,6 +208,7 @@ export function buildSyntheticEvent(
   sessionId: string,
 ): MarketSnapshotEvent {
   const payload: MarketSnapshotPayload = {
+    epoch: "900",
     oracleStatus: "valid",
     totalPoolLamports: "12345678900",
     supplyAtoms: "10000000000",

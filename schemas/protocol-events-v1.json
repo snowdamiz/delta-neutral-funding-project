@@ -62,6 +62,7 @@
     "marketSnapshotPayload": {
       "type": "object",
       "required": [
+        "epoch",
         "oracleStatus",
         "totalPoolLamports",
         "supplyAtoms",
@@ -92,6 +93,7 @@
         "unknownRatePpm"
       ],
       "properties": {
+        "epoch": { "$ref": "#/$defs/unsignedInteger" },
         "oracleStatus": { "enum": ["valid", "invalid"] },
         "totalPoolLamports": { "$ref": "#/$defs/unsignedInteger" },
         "supplyAtoms": { "$ref": "#/$defs/unsignedInteger" },

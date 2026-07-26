@@ -187,6 +187,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
 
     assert.equal(captured.snapshot.source, "authoritative:source-test");
     assert.equal(captured.snapshot.sourceSlot, "320000006");
+    assert.equal(captured.snapshot.payload.epoch, "777");
     assert.equal(captured.snapshot.payload.totalPoolLamports, "12345678900");
     assert.equal(captured.snapshot.payload.supplyAtoms, "10000000000");
     assert.equal(captured.snapshot.payload.priorNavLamports, "1234000000");
