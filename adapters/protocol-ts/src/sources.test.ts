@@ -7,6 +7,8 @@ import { buildAuthoritativeEvents } from "./sources.js";
 const solMint = "So11111111111111111111111111111111111111112";
 const jitoMint = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
 const usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const billion = 1_000_000_000n;
+const expectedSolQuoteAtoms = 2_469_135_780n;
 
 function json(response: ServerResponse, value: unknown, status = 200): void {
   response.writeHead(status, { "content-type": "application/json" });
@@ -141,11 +143,20 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         const input = url.searchParams.get("inputMint");
         const output = url.searchParams.get("outputMint");
         const swapMode = url.searchParams.get("swapMode");
+        const amount = BigInt(url.searchParams.get("amount") ?? "0");
         const quote =
           input === solMint && output === usdcMint
-            ? ["2000000000", "299900000", "ExactIn"]
+            ? [
+                amount.toString(),
+                (amount * 149_950_000n / billion).toString(),
+                "ExactIn",
+              ]
             : input === usdcMint && output === solMint
-              ? ["300100000", "2000000000", "ExactOut"]
+              ? [
+                  ((amount * 150_050_000n + billion - 1n) / billion).toString(),
+                  amount.toString(),
+                  "ExactOut",
+                ]
               : input === jitoMint && output === usdcMint
                 ? ["2000000000", "370100000", "ExactIn"]
                 : input === usdcMint && output === jitoMint
@@ -153,6 +164,12 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
                   : null;
         assert(quote);
         assert.equal(swapMode, quote[2]);
+        assert.equal(
+          amount,
+          input === solMint || output === solMint
+            ? expectedSolQuoteAtoms
+            : 2_000_000_000n,
+        );
         json(response, {
           inputMint: input,
           inAmount: quote[0],
@@ -205,17 +222,51 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert.equal(captured.snapshot.payload.supplyAtoms, "10000000000");
     assert.equal(captured.snapshot.payload.priorNavLamports, "1234000000");
     assert.equal(captured.snapshot.payload.shortReceiptPpm, "250");
-    assert.equal(captured.snapshot.payload.solSpotBidPriceUsdMicros, "149950000");
-    assert.equal(captured.snapshot.payload.solSpotAskPriceUsdMicros, "150050000");
+    const solBidOutput = expectedSolQuoteAtoms * 149_950_000n / billion;
+    const solAskInput =
+      (expectedSolQuoteAtoms * 150_050_000n + billion - 1n) / billion;
+    const expectedSolBid = solBidOutput * billion / expectedSolQuoteAtoms;
+    const expectedSolAsk =
+      (solAskInput * billion + expectedSolQuoteAtoms - 1n) /
+      expectedSolQuoteAtoms;
+    const expectedHedge = 2_000_000_000n * 185_050_000n / expectedSolBid;
+    const expectedNotional = expectedHedge * expectedSolBid / billion;
+    const expectedMaintenance = (expectedNotional * 5_000n + 9_999n) / 10_000n;
+    assert.equal(
+      captured.snapshot.payload.solSpotBidPriceUsdMicros,
+      expectedSolBid.toString(),
+    );
+    assert.equal(
+      captured.snapshot.payload.solSpotAskPriceUsdMicros,
+      expectedSolAsk.toString(),
+    );
     assert.equal(captured.snapshot.payload.jitosolSpotBidPriceUsdMicros, "185050000");
     assert.equal(captured.snapshot.payload.jitosolSpotAskPriceUsdMicros, "185250000");
     assert.equal(captured.snapshot.payload.perpBidPriceUsdMicros, "149980000");
     assert.equal(captured.snapshot.payload.perpAskPriceUsdMicros, "150020000");
     assert.equal(captured.snapshot.payload.perpExitDepthLamports, "80000000000");
-    assert.equal(captured.snapshot.payload.jitosolExitDepthLamports, "2469135780");
+    assert.equal(
+      captured.snapshot.payload.solExitDepthLamports,
+      expectedSolQuoteAtoms.toString(),
+    );
+    assert.equal(
+      captured.snapshot.payload.jitosolExitDepthLamports,
+      expectedHedge.toString(),
+    );
+    assert.equal(
+      captured.snapshot.payload.notionalUsdMicros,
+      expectedNotional.toString(),
+    );
     assert.equal(captured.snapshot.payload.perpFeePpm, "400");
-    assert.equal(captured.snapshot.payload.maintenanceRequirementUsdMicros, "250000000");
-    assert.equal(captured.snapshot.payload.liquidationDistanceBps, "5000");
+    assert.equal(
+      captured.snapshot.payload.maintenanceRequirementUsdMicros,
+      expectedMaintenance.toString(),
+    );
+    assert.equal(
+      captured.snapshot.payload.liquidationDistanceBps,
+      ((500_000_000n - expectedMaintenance) * 10_000n / 500_000_000n)
+        .toString(),
+    );
     assert.equal(captured.navLamports, 1_234_567_890n);
     assert.equal(captured.funding.payload.venuePaymentId, "phoenix:SOL:1785020400");
     assert.equal(captured.funding.payload.realizedShortRatePpm, "250");

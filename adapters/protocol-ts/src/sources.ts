@@ -487,15 +487,18 @@ function quote(
   return { input, output, slot: integer(result.contextSlot, "quote contextSlot") };
 }
 
-async function jupiter(config: AdapterConfig): Promise<JupiterCapture> {
+async function jupiter(
+  config: AdapterConfig,
+  solQuantityAtoms: bigint,
+): Promise<JupiterCapture> {
   return firstProvider("Jupiter", config.jupiterUrls, async (endpoint) => {
     const request =
       config.jupiterApiKey.length > 0
         ? { headers: { "x-api-key": config.jupiterApiKey } }
         : {};
     const specs = [
-      [solMint, usdcMint, config.paperQuantityAtoms, "ExactIn"],
-      [usdcMint, solMint, config.paperQuantityAtoms, "ExactOut"],
+      [solMint, usdcMint, solQuantityAtoms, "ExactIn"],
+      [usdcMint, solMint, solQuantityAtoms, "ExactOut"],
       [jitoMint, usdcMint, config.paperQuantityAtoms, "ExactIn"],
       [usdcMint, jitoMint, config.paperQuantityAtoms, "ExactOut"],
     ] as const;
@@ -553,11 +556,16 @@ export async function buildAuthoritativeEvents(
   if (config.mode !== "authoritative") {
     throw new Error("authoritative source capture requires authoritative mode");
   }
-  const [perp, pool, spot] = await Promise.all([
+  const [perp, pool] = await Promise.all([
     phoenix(config),
     solana(config),
-    jupiter(config),
   ]);
+  const navLamports = pool.totalPoolLamports * billion / pool.supplyAtoms;
+  const solQuoteAtoms = ceilDiv(
+    config.paperQuantityAtoms * navLamports,
+    billion,
+  );
+  const spot = await jupiter(config, solQuoteAtoms);
   const sourceSlot = coherentSlots(
     [...perp.slots, ...pool.slots, ...spot.slots],
     config.sourceMaxSlotDrift,
@@ -572,9 +580,14 @@ export async function buildAuthoritativeEvents(
   if (perp.fundingPpm < -million || perp.fundingPpm > million) {
     throw new Error("Phoenix funding rate is outside the supported range");
   }
-  const navLamports = pool.totalPoolLamports * billion / pool.supplyAtoms;
+  const hedgeLamports =
+    config.paperQuantityAtoms * spot.jitoBidPrice / spot.solBidPrice;
+  const notionalUsdMicros = hedgeLamports * spot.solBidPrice / billion;
+  if (notionalUsdMicros > config.paperNotionalUsdMicros) {
+    throw new Error("paper notional exceeds its configured cap");
+  }
   const maintenance = ceilDiv(
-    config.paperNotionalUsdMicros * perp.maintenanceBps,
+    notionalUsdMicros * perp.maintenanceBps,
     10_000n,
   );
   const liquidationDistance =
@@ -588,7 +601,7 @@ export async function buildAuthoritativeEvents(
     totalPoolLamports: pool.totalPoolLamports.toString(),
     supplyAtoms: pool.supplyAtoms.toString(),
     jitosolAtoms: config.paperQuantityAtoms.toString(),
-    notionalUsdMicros: config.paperNotionalUsdMicros.toString(),
+    notionalUsdMicros: notionalUsdMicros.toString(),
     shortReceiptPpm: perp.fundingPpm.toString(),
     solPriceUsdMicros: spot.solBidPrice.toString(),
     priorNavLamports: (previousNavLamports ?? navLamports).toString(),
@@ -603,10 +616,8 @@ export async function buildAuthoritativeEvents(
     jitosolSpotAskPriceUsdMicros: spot.jitoAskPrice.toString(),
     perpBidPriceUsdMicros: perp.bidPrice.toString(),
     perpAskPriceUsdMicros: perp.askPrice.toString(),
-    solExitDepthLamports: config.paperQuantityAtoms.toString(),
-    jitosolExitDepthLamports: (
-      config.paperQuantityAtoms * navLamports / billion
-    ).toString(),
+    solExitDepthLamports: solQuoteAtoms.toString(),
+    jitosolExitDepthLamports: hedgeLamports.toString(),
     perpExitDepthLamports: perp.depthLamports.toString(),
     fillRatePpm: "1000000",
     slippagePpm: (config.paperSlippageBps * 100n).toString(),
