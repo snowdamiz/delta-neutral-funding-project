@@ -164,7 +164,7 @@ pub fn persist_paper_plan(
 end
 
 pub fn persist_opportunities(pool :: PoolHandle, body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet, config_hash :: String) -> Int ! String do
-  let rows = Pool.query(pool, "WITH source_event AS (INSERT INTO normalized_events (id, schema_version, event_type, source, observed_at_ms, source_slot, source_sequence, idempotency_key, raw_payload_hash, canonical_payload) VALUES ($1, 1, 'MarketSnapshot', $2, $3::bigint, $4::bigint, $5, $6, $7, $8::jsonb) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id), decisions AS (INSERT INTO opportunity_decisions (id, source_event_id, variant, observed_at_ms, nav_lamports, hedge_lamports, expected_funding_usd_micros, nav_reward_usd_micros, net_carry_usd_micros, eligible, reason_code, config_hash) SELECT $1 || ':sol', id, 'sol_control'::strategy_variant, $3::bigint, $9, $10, $11, '0', $12, $13::boolean, $14, $19 FROM source_event UNION ALL SELECT $1 || ':jitosol', id, 'jitosol_carry'::strategy_variant, $3::bigint, $9, $10, $11, $15, $16, $17::boolean, $18, $19 FROM source_event RETURNING id) SELECT count(*)::text AS inserted FROM decisions", [
+  let rows = Pool.query(pool, "WITH source_event AS (INSERT INTO normalized_events (id, schema_version, event_type, source, observed_at_ms, source_slot, source_sequence, idempotency_key, raw_payload_hash, canonical_payload) VALUES ($1, 1, 'MarketSnapshot', $2, $3::bigint, $4::bigint, $5, $6, $7, $8::jsonb) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id, raw_payload_hash, canonical_payload), recorded_event AS (SELECT id, raw_payload_hash, canonical_payload FROM source_event UNION ALL SELECT id, raw_payload_hash, canonical_payload FROM normalized_events WHERE idempotency_key = $6), decisions AS (INSERT INTO opportunity_decisions (id, source_event_id, variant, observed_at_ms, nav_lamports, hedge_lamports, expected_funding_usd_micros, nav_reward_usd_micros, net_carry_usd_micros, eligible, reason_code, config_hash) SELECT $1 || ':sol', id, 'sol_control'::strategy_variant, $3::bigint, $9, $10, $11, '0', $12, $13::boolean, $14, $19 FROM source_event UNION ALL SELECT $1 || ':jitosol', id, 'jitosol_carry'::strategy_variant, $3::bigint, $9, $10, $11, $15, $16, $17::boolean, $18, $19 FROM source_event RETURNING id) SELECT (SELECT count(*)::text FROM decisions) AS inserted, COALESCE((SELECT bool_and(id = $1 AND raw_payload_hash = $7 AND canonical_payload = $8::jsonb)::text FROM recorded_event), 'false') AS event_matches", [
     snapshot.event_id,
     snapshot.source,
     "${snapshot.observed_at_ms}",
@@ -188,6 +188,9 @@ pub fn persist_opportunities(pool :: PoolHandle, body :: String, snapshot :: Mar
   if List.length(rows) == 0 do
     Ok(0)
   else
+    if Map.get(List.head(rows), "event_matches") != "true" do
+      return Err("idempotency key reused for a different event")
+    end
     case String.to_int(Map.get(List.head(rows), "inserted")) do
       Some(count) -> Ok(count)
       None -> Err("database returned invalid insert count")
