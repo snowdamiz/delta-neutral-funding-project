@@ -41,7 +41,7 @@ COPY mesh /workspace/project/mesh
 COPY replay /workspace/project/replay
 COPY tests/vectors /workspace/project/tests/vectors
 ARG CODE_COMMIT=development
-ARG MESH_COMMIT=c5c75c405e4141eb2dc5a25e8ed638b75ccbd8c9
+ARG MESH_COMMIT=21a8736c8e01453a2fe8025f00b72a8fd5141050
 RUN sed -i \
       -e "s/__CODE_COMMIT__/$CODE_COMMIT/g" \
       -e "s/__MESH_COMMIT__/$MESH_COMMIT/g" \
@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/workspace/target,sharing=locked \
 
 FROM ubuntu:24.04 AS runtime
 ARG CODE_COMMIT=development
-ARG MESH_COMMIT=c5c75c405e4141eb2dc5a25e8ed638b75ccbd8c9
+ARG MESH_COMMIT=21a8736c8e01453a2fe8025f00b72a8fd5141050
 LABEL org.opencontainers.image.revision=$CODE_COMMIT
 LABEL org.mesh-lang.revision=$MESH_COMMIT
 RUN apt-get update && apt-get install -y --no-install-recommends \

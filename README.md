@@ -54,6 +54,7 @@ scripts/check-database.sh
 scripts/check-toolchain.sh
 scripts/check-shutdown.sh
 scripts/check-shadow-persistence.sh
+scripts/check-native-solana-read.sh
 scripts/check-recovery.sh
 scripts/check-security.sh
 scripts/check-observability.sh
@@ -73,6 +74,9 @@ tags for rollback.
 The shadow persistence check builds Jupiter and perp actions without network
 access, dry-runs the independent Rust policy, and records paper/simulation
 deltas through the authenticated Mesh API.
+The native Solana check runs the compiled Mesh collector as a read-only
+mainnet RPC client and compares its independently validated JitoSOL epoch and
+atomic NAV with the latest authoritative adapter observation.
 The shutdown check proves SIGTERM drains accepted requests, releases the fenced
 writer lease, and exits cleanly. The recovery check includes that drill and
 proves a PostgreSQL backup can be restored and reconciled in isolated temporary

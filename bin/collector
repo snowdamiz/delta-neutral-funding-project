@@ -11,6 +11,7 @@ usage() {
     'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
     'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper' \
     'replay: replay --bundle <path> --config <path>' \
+    'proof: solana-read' \
     'test: alerts-test <reason>'
 }
 
@@ -130,6 +131,29 @@ case "$command" in
       "$image" replay \
       --bundle /replay/bundle.jsonl \
       --config /replay/config.json |
+      jq .
+    ;;
+  solana-read)
+    test -z "${2:-}" || {
+      usage >&2
+      exit 2
+    }
+    image=$(docker compose \
+      --project-directory "$project_dir" \
+      --file "$project_dir/compose.yaml" \
+      config --format json |
+      jq -er '.services.collector.image')
+    docker image inspect "$image" >/dev/null 2>&1 || {
+      printf 'collector image is missing; run docker compose build collector\n' >&2
+      exit 2
+    }
+    docker run --rm \
+      --network bridge \
+      --read-only \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --env "SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}" \
+      "$image" solana-read |
       jq .
     ;;
   *)

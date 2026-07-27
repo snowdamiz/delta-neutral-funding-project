@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Pinned runtime commit: `c5c75c405e4141eb2dc5a25e8ed638b75ccbd8c9`
+Pinned runtime commit: `21a8736c8e01453a2fe8025f00b72a8fd5141050`
 
 The pin is a source commit, not an untracked application patch.
 
@@ -19,7 +19,7 @@ The pin is a source commit, not an untracked application patch.
 | MESH-BYTES/CODEC/NUM | Implemented | Binary-safe bytes, strict codecs, and checked U64/U128 arithmetic are native Mesh features |
 | MESH-NATIVE | Implemented | Manifest-gated native archives are hash-verified and linked |
 | MESH-WS/HTTP | Implemented | Scheduler-aware bounded clients with cancellation and deterministic limits |
-| MESH-BORSH/ANCHOR/SOL-READ | Implemented | Native package tests decode exact SPL/JitoSOL layouts and typed bounded RPC payloads; the production paper feed remains on the qualified TypeScript adapter pending differential soak |
+| MESH-BORSH/ANCHOR/SOL-READ | Implemented | Native package tests decode exact SPL/JitoSOL layouts and typed bounded RPC payloads; a compiled one-shot differential validates epoch and atomic NAV against the qualified TypeScript adapter, which remains the production paper feed pending sustained differential soak |
 | MESH-SOL-TX | Partial | Strict TypeScript simulation-artifact validator plus independently constrained Rust dry-run; exact current transaction construction and RPC/venue simulation remain a Milestone 8 gate |
 | MESH-SECRET/CRYPTO/SIGNER | Deferred | absent from paper and shadow deployments |
 

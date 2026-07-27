@@ -38,10 +38,11 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| Pinned compiler/runtime build manifest | PASS | Mesh `c5c75c4`; compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
+| Pinned compiler/runtime build manifest | PASS | Mesh `21a8736`; compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
 | Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; schema 28 |
 | Required P0 capability acceptance | PASS | `MESH-ACTOR-001` enforces item/byte bounds and nonblocking producer contention; all project probes pass |
 | Exact cross-language vectors | PASS | Mesh, TypeScript, and Rust conformance suites |
+| Native Solana read differential | PASS for one-shot proof | `scripts/check-native-solana-read.sh`; sustained replacement soak remains collecting |
 | Golden replay suite | PASS | `scripts/check-replay.sh` |
 | Bounded mailbox/concurrency/memory soak | COLLECTING | `scripts/runtime-stability-report.sh`; native/GC/overload probes pass; elapsed deployment evidence remains |
 | Compiler/runtime rollback image | PASS | Commit-qualified image produced by `scripts/check-toolchain.sh` |
