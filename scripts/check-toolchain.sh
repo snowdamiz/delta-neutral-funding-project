@@ -41,6 +41,7 @@ docker image tag \
   delta-neutral-funding-executor:latest \
   "delta-neutral-funding-executor:$code_commit"
 "$project_dir/scripts/check-shadow.sh"
+"$project_dir/scripts/check-lease-fencing.sh"
 "$project_dir/scripts/check-replay.sh"
 "$project_dir/scripts/check-toolchain-rollback.sh"
 "$project_dir/scripts/check-database.sh"

@@ -4,7 +4,7 @@ BEGIN;
 INSERT INTO build_manifests (
   id, code_commit, mesh_commit, schema_version, config_hash
 ) VALUES (
-  'local-paper-build', 'test', 'test', 30, repeat('a', 64)
+  'local-paper-build', 'test', 'test', 31, repeat('a', 64)
 );
 INSERT INTO strategy_runs (
   id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version

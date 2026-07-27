@@ -1,4 +1,4 @@
-from Packages.Log import error, info
+from Packages.Log import error
 from Runtime.Registry import get_pool
 
 fn holder_id() -> String do
@@ -24,11 +24,31 @@ fn required_generation(rows) -> Int ! String do
 end
 
 fn acquire(pool :: PoolHandle) -> Int ! String do
-  let rows = Pool.query(pool, "SELECT acquire_collector_lease($1, $2::int)::text AS generation", [
+  Pool.query(pool, "SELECT acquire_collector_lease($1, $2::int)::text AS generation", [
     holder_id(),
     "${lease_ttl_ms()}"
   ]) ?
-  required_generation(rows)
+    |> required_generation
+end
+
+fn held_generation(pool :: PoolHandle) -> Int ! String do
+  Pool.query(pool, "SELECT generation::text FROM leader_leases WHERE lease_name = 'collector' AND holder_instance_id = $1 AND expires_at > clock_timestamp()", [
+    holder_id()
+  ]) ?
+    |> required_generation
+end
+
+fn renew(pool :: PoolHandle, generation :: Int) -> Bool ! String do
+  let rows = Pool.query(pool, "SELECT renew_collector_lease($1, $2::bigint, $3::int)::text AS renewed", [
+    holder_id(),
+    "${generation}",
+    "${lease_ttl_ms()}"
+  ]) ?
+  if List.length(rows) != 1 do
+    Err("database returned an invalid leader lease renewal result")
+  else
+    Ok(Map.get(List.head(rows), "renewed") == "true")
+  end
 end
 
 pub fn acquire_startup(pool :: PoolHandle) -> Int ! String do
@@ -81,23 +101,19 @@ fn renewal_loop(previous_generation :: Int) -> Int do
     0
   else
     let pool = get_pool()
-    case acquire(pool) do
-      Ok(0) -> do
-        fail_closed(pool, previous_generation, "held_by_another_instance")
-        renewal_loop(previous_generation)
-      end
-      Ok(generation) -> do
-        if generation != previous_generation do
-          info(
-            "leader_lease_acquired",
-            json { generation : generation }
-          )
-        end
-        renewal_loop(generation)
+    case renew(pool, previous_generation) do
+      Ok(true) -> renewal_loop(previous_generation)
+      Ok(false) -> do
+        fail_closed(
+          pool,
+          previous_generation,
+          "lease_expired_or_fenced"
+        )
+        0
       end
       Err(reason) -> do
         fail_closed(pool, previous_generation, reason)
-        renewal_loop(previous_generation)
+        0
       end
     end
   end
@@ -105,15 +121,11 @@ end
 
 actor leader_lease_worker() do
   let pool = get_pool()
-  case acquire(pool) do
-    Ok(0) -> do
-      fail_closed(pool, 0, "held_by_another_instance")
-      renewal_loop(0)
-    end
+  case held_generation(pool) do
     Ok(generation) -> renewal_loop(generation)
     Err(reason) -> do
       fail_closed(pool, 0, reason)
-      renewal_loop(0)
+      0
     end
   end
 end

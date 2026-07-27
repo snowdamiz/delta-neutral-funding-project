@@ -18,6 +18,12 @@ BEGIN
   IF v_generation <> 1 OR NOT collector_lease_held('lease-test-a') THEN
     RAISE EXCEPTION 'first holder did not acquire generation one';
   END IF;
+  IF NOT renew_collector_lease('lease-test-a', v_generation, 10000) THEN
+    RAISE EXCEPTION 'live holder did not renew its fenced generation';
+  END IF;
+  IF renew_collector_lease('lease-test-a', v_generation + 1, 10000) THEN
+    RAISE EXCEPTION 'stale generation renewed the collector lease';
+  END IF;
   IF acquire_collector_lease('lease-test-b', 10000) <> 0 THEN
     RAISE EXCEPTION 'second holder acquired a live lease';
   END IF;
@@ -25,6 +31,10 @@ BEGIN
   UPDATE leader_leases
   SET expires_at = clock_timestamp() - interval '1 millisecond'
   WHERE lease_name = 'collector';
+  IF renew_collector_lease('lease-test-a', v_generation, 10000)
+     OR collector_lease_held('lease-test-a') THEN
+    RAISE EXCEPTION 'expired generation renewed the collector lease';
+  END IF;
   v_generation := acquire_collector_lease('lease-test-b', 10000);
   IF v_generation <> 2
      OR NOT collector_lease_held('lease-test-b')
