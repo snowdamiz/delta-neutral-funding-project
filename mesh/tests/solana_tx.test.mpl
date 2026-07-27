@@ -1,5 +1,5 @@
 from Solana.Read import Hash, Pubkey
-from Solana.Tx import CompiledInstruction, LegacyMessage, MessageHeader, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message
+from Solana.Tx import AddressTableLookup, CompiledInstruction, LegacyMessage, MessageHeader, MessageV0, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message, serialize_message_v0
 
 fn fixture() -> String do
   "{\"programId\":\"ComputeBudget111111111111111111111111111111\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":false,\"isWritable\":true},{\"pubkey\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\"isSigner\":true,\"isWritable\":false}],\"data\":\"AQID\"}"
@@ -26,6 +26,35 @@ fn legacy_message_fixture() -> LegacyMessage ! String do
         program_id_index: 1,
         account_indexes: [0],
         data: ("0201010000" |> Bytes.from_hex())?
+      }
+    ]
+  })
+end
+
+fn message_v0_fixture() -> MessageV0 ! String do
+  Ok(MessageV0 {
+    header: MessageHeader {
+      num_required_signatures: 1,
+      num_readonly_signed_accounts: 0,
+      num_readonly_unsigned_accounts: 1
+    },
+    static_account_keys: [
+      Pubkey { bytes: ("0000000000000000000000000000000000000000000000000000000000000000" |> Bytes.from_hex())? },
+      Pubkey { bytes: ("0101010101010101010101010101010101010101010101010101010101010101" |> Bytes.from_hex())? }
+    ],
+    recent_blockhash: Hash { bytes: ("0202020202020202020202020202020202020202020202020202020202020202" |> Bytes.from_hex())? },
+    instructions: [
+      CompiledInstruction {
+        program_id_index: 1,
+        account_indexes: [0, 2],
+        data: ("aabb" |> Bytes.from_hex())?
+      }
+    ],
+    address_table_lookups: [
+      AddressTableLookup {
+        account_key: Pubkey { bytes: ("0303030303030303030303030303030303030303030303030303030303030303" |> Bytes.from_hex())? },
+        writable_indexes: [4],
+        readonly_indexes: [5]
       }
     ]
   })
@@ -117,6 +146,26 @@ describe("Mesh-native Solana instruction inspection") do
         Ok(bytes) -> assert(
           Bytes.to_hex(bytes) ==
             "0100010200000000000000000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020201010100050201010000"
+        )
+      end
+    end
+  end
+
+  test("serializes a v0 message and address lookup to the exact Solana wire format") do
+    case message_v0_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(message) -> case message
+        |> serialize_message_v0() do
+        Err(error) -> do
+          println(error)
+          assert(false)
+        end
+        Ok(bytes) -> assert(
+          Bytes.to_hex(bytes) ==
+            "8001000102000000000000000000000000000000000000000000000000000000000000000001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202010102000202aabb01030303030303030303030303030303030303030303030303030303030303030301040105"
         )
       end
     end
