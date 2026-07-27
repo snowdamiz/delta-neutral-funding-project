@@ -1,5 +1,5 @@
-from Solana.Read import Hash, Pubkey
-from Solana.Tx import AddressTableLookup, CompiledInstruction, LegacyMessage, MessageHeader, MessageV0, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message, serialize_message_v0
+from Solana.Read import Hash, Pubkey, pubkey_string
+from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, compute_unit_limit_instruction, compute_unit_price_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message, serialize_message_v0
 
 fn fixture() -> String do
   "{\"programId\":\"ComputeBudget111111111111111111111111111111\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":false,\"isWritable\":true},{\"pubkey\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\"isSigner\":true,\"isWritable\":false}],\"data\":\"AQID\"}"
@@ -58,6 +58,14 @@ fn message_v0_fixture() -> MessageV0 ! String do
       }
     ]
   })
+end
+
+fn compute_budget_fixture() -> List < Instruction > ! String do
+  Ok([
+    compute_unit_limit_instruction(1_000_000) ?,
+    compute_unit_price_instruction(("5000"
+      |> U64.parse()) ?) ?
+  ])
 end
 
 describe("Mesh-native Solana instruction inspection") do
@@ -167,6 +175,25 @@ describe("Mesh-native Solana instruction inspection") do
           Bytes.to_hex(bytes) ==
             "8001000102000000000000000000000000000000000000000000000000000000000000000001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202010102000202aabb01030303030303030303030303030303030303030303030303030303030303030301040105"
         )
+      end
+    end
+  end
+
+  test("builds exact compute budget instructions") do
+    case compute_budget_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(instructions) -> do
+        let limit = List.get(instructions, 0)
+        let price = List.get(instructions, 1)
+        assert(pubkey_string(limit.program_id) == "ComputeBudget111111111111111111111111111111")
+        assert(List.length(limit.accounts) == 0)
+        assert(Bytes.to_hex(limit.data) == "0240420f00")
+        assert(pubkey_string(price.program_id) == "ComputeBudget111111111111111111111111111111")
+        assert(List.length(price.accounts) == 0)
+        assert(Bytes.to_hex(price.data) == "038813000000000000")
       end
     end
   end
