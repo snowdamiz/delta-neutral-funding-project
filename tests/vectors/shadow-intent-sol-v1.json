@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "intentId": "intent-sol-shadow-1",
+  "strategyRunId": "run-conformance-1",
+  "stateVersion": "8",
+  "variant": "sol_control",
+  "operation": "OPEN",
+  "leg": "SPOT",
+  "instrument": "JUPITER:SOL-USDC",
+  "side": "BUY",
+  "maxQuantityAtoms": "2500000000",
+  "limitPriceAtoms": "150050000",
+  "maxSlippageBps": "50",
+  "reduceOnly": false,
+  "expiresAtMs": "1785024005000",
+  "policyProfile": "shadow-v1",
+  "snapshotIds": ["snapshot-1"],
+  "configHash": "0000000000000000000000000000000000000000000000000000000000000000"
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "environment": "shadow",
+  "policyProfile": "shadow-v1",
+  "configHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "maxNotionalUsdMicros": "500000000",
+  "maxPriorityFeeLamports": "500000",
+  "maxFeeAtoms": "500000",
+  "maxComputeUnitLimit": "400000",
+  "allowedProgramIds": [
+    "qualified-perp-program",
+    "qualified-jupiter-program"
+  ],
+  "allowedInstruments": [
+    {
+      "market": "SOL-PERP",
+      "mint": "So11111111111111111111111111111111111111112",
+      "asset": "SOL-PERP",
+      "leg": "PERP",
+      "variants": ["sol_control", "jitosol_carry"]
+    },
+    {
+      "market": "JUPITER:SOL-USDC",
+      "mint": "So11111111111111111111111111111111111111112",
+      "asset": "SOL",
+      "leg": "SPOT",
+      "variants": ["sol_control"]
+    },
+    {
+      "market": "JUPITER:JITOSOL-USDC",
+      "mint": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+      "asset": "JitoSOL",
+      "leg": "SPOT",
+      "variants": ["jitosol_carry"]
+    }
+  ],
+  "allowedAccounts": [
+    "paper-perp-account",
+    "paper-margin-account",
+    "paper-wallet",
+    "paper-usdc-account",
+    "paper-sol-account",
+    "paper-jitosol-account"
+  ],
+  "signerEnabled": false,
+  "submissionEnabled": false,
+  "killSwitch": false
+}

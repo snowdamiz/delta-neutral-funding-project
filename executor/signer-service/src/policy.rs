@@ -60,6 +60,16 @@ pub struct BuiltAction {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AllowedInstrument {
+    pub market: String,
+    pub mint: String,
+    pub asset: String,
+    pub leg: String,
+    pub variants: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExecutorPolicy {
     pub schema_version: u32,
     pub environment: String,
@@ -70,8 +80,7 @@ pub struct ExecutorPolicy {
     pub max_fee_atoms: String,
     pub max_compute_unit_limit: String,
     pub allowed_program_ids: Vec<String>,
-    pub allowed_mints: Vec<String>,
-    pub allowed_markets: Vec<String>,
+    pub allowed_instruments: Vec<AllowedInstrument>,
     pub allowed_accounts: Vec<String>,
     pub signer_enabled: bool,
     pub submission_enabled: bool,
@@ -247,14 +256,27 @@ fn validate_policy(policy: &ExecutorPolicy) -> Result<(), PolicyError> {
     if unsigned(&policy.max_notional_usd_micros, "maxNotionalUsdMicros")? == 0
         || unsigned(&policy.max_compute_unit_limit, "maxComputeUnitLimit")? == 0
         || policy.allowed_program_ids.is_empty()
-        || policy.allowed_mints.is_empty()
-        || policy.allowed_markets.is_empty()
+        || policy.allowed_instruments.is_empty()
         || policy.allowed_accounts.is_empty()
     {
         return Err(PolicyError::InvalidField("policyLimits"));
     }
     unsigned(&policy.max_priority_fee_lamports, "maxPriorityFeeLamports")?;
     unsigned(&policy.max_fee_atoms, "maxFeeAtoms")?;
+    for instrument in &policy.allowed_instruments {
+        identity(&instrument.market, "allowedInstruments.market")?;
+        identity(&instrument.mint, "allowedInstruments.mint")?;
+        identity(&instrument.asset, "allowedInstruments.asset")?;
+        if !matches!(instrument.leg.as_str(), "SPOT" | "PERP")
+            || instrument.variants.is_empty()
+            || instrument
+                .variants
+                .iter()
+                .any(|variant| !matches!(variant.as_str(), "sol_control" | "jitosol_carry"))
+        {
+            return Err(PolicyError::InvalidField("allowedInstruments"));
+        }
+    }
     Ok(())
 }
 
@@ -263,13 +285,85 @@ fn all_allowed(values: &[String], allowed: &[String]) -> bool {
     !values.is_empty() && values.iter().all(|value| allowed.contains(value))
 }
 
+fn instrument<'a>(
+    intent: &ExecutionIntent,
+    action: &BuiltAction,
+    policy: &'a ExecutorPolicy,
+) -> Result<&'a AllowedInstrument, PolicyError> {
+    policy
+        .allowed_instruments
+        .iter()
+        .find(|allowed| {
+            allowed.market == action.market
+                && allowed.mint == action.mint
+                && allowed.leg == intent.leg
+                && allowed.variants.contains(&intent.variant)
+        })
+        .filter(|_| action.market == intent.instrument)
+        .ok_or(PolicyError::Instrument)
+}
+
+fn validate_deltas(
+    intent: &ExecutionIntent,
+    action: &BuiltAction,
+    allowed: &AllowedInstrument,
+    notional_floor: u128,
+    notional_ceil: u128,
+    max_notional: u64,
+) -> Result<(), PolicyError> {
+    let quantity = unsigned(&action.quantity_atoms, "quantityAtoms")?;
+    let fee = unsigned(&action.simulated_fee_atoms, "simulatedFeeAtoms")?;
+    let mut primary = 0i128;
+    let mut usdc = 0i128;
+    for (index, delta) in action.account_deltas.iter().enumerate() {
+        if action.account_deltas[..index]
+            .iter()
+            .any(|seen| seen.account == delta.account && seen.asset == delta.asset)
+        {
+            return Err(PolicyError::Simulation);
+        }
+        let amount = delta
+            .delta_atoms
+            .parse::<i128>()
+            .map_err(|_| PolicyError::Simulation)?;
+        if delta.asset == allowed.asset {
+            primary = primary.checked_add(amount).ok_or(PolicyError::Simulation)?;
+        } else if delta.asset == "USDC" {
+            usdc = usdc.checked_add(amount).ok_or(PolicyError::Simulation)?;
+        } else {
+            return Err(PolicyError::Simulation);
+        }
+    }
+
+    let expected_primary = i128::from(quantity) * if intent.side == "BUY" { 1 } else { -1 };
+    if primary != expected_primary {
+        return Err(PolicyError::Simulation);
+    }
+    if allowed.leg == "SPOT" {
+        let notional_floor = i128::try_from(notional_floor).map_err(|_| PolicyError::Simulation)?;
+        let notional_ceil = i128::try_from(notional_ceil).map_err(|_| PolicyError::Simulation)?;
+        let fee = i128::from(fee);
+        let quote_matches = if intent.side == "BUY" {
+            usdc <= -notional_floor && usdc >= -(notional_ceil + fee)
+        } else {
+            usdc >= (notional_floor - fee).max(0) && usdc <= notional_ceil
+        };
+        if !quote_matches {
+            return Err(PolicyError::Simulation);
+        }
+    } else if usdc.unsigned_abs() > u128::from(max_notional) + u128::from(fee) {
+        return Err(PolicyError::Simulation);
+    }
+    Ok(())
+}
+
 pub fn approve_shadow(
     intent: &ExecutionIntent,
     action: &BuiltAction,
     policy: &ExecutorPolicy,
     now_ms: u64,
 ) -> Result<ExecutionReport, PolicyError> {
-    if intent.schema_version != 1 || action.schema_version != 1 || policy.schema_version != 1 {
+    if intent.schema_version != 1 || action.schema_version != 1 || policy.schema_version != 2 {
         return Err(PolicyError::InvalidField("schemaVersion"));
     }
     validate_intent(intent)?;
@@ -307,12 +401,7 @@ pub fn approve_shadow(
     {
         return Err(PolicyError::Account);
     }
-    if !policy.allowed_markets.contains(&action.market)
-        || !policy.allowed_mints.contains(&action.mint)
-        || action.market != intent.instrument
-    {
-        return Err(PolicyError::Instrument);
-    }
+    let allowed_instrument = instrument(intent, action, policy)?;
 
     let quantity = unsigned(&action.quantity_atoms, "quantityAtoms")?;
     let price = unsigned(&action.limit_price_atoms, "limitPriceAtoms")?;
@@ -336,26 +425,31 @@ pub fn approve_shadow(
         "SELL" => price >= intent_price,
         _ => return Err(PolicyError::InvalidField("side")),
     };
-    let notional = u128::from(quantity)
+    let gross_notional = u128::from(quantity)
         .checked_mul(u128::from(price))
-        .ok_or(PolicyError::Limit)?
-        .div_ceil(1_000_000_000);
+        .ok_or(PolicyError::Limit)?;
+    let notional = gross_notional.div_ceil(1_000_000_000);
+    let maximum_notional = unsigned(&policy.max_notional_usd_micros, "maxNotionalUsdMicros")?;
+    let simulated_fee = unsigned(&action.simulated_fee_atoms, "simulatedFeeAtoms")?;
     if quantity == 0
         || quantity > intent_quantity
         || !price_within_intent
-        || notional
-            > u128::from(unsigned(
-                &policy.max_notional_usd_micros,
-                "maxNotionalUsdMicros",
-            )?)
+        || notional > u128::from(maximum_notional)
         || unsigned(&action.priority_fee_lamports, "priorityFeeLamports")?
             > unsigned(&policy.max_priority_fee_lamports, "maxPriorityFeeLamports")?
-        || unsigned(&action.simulated_fee_atoms, "simulatedFeeAtoms")?
-            > unsigned(&policy.max_fee_atoms, "maxFeeAtoms")?
+        || simulated_fee > unsigned(&policy.max_fee_atoms, "maxFeeAtoms")?
         || compute_limit > unsigned(&policy.max_compute_unit_limit, "maxComputeUnitLimit")?
     {
         return Err(PolicyError::Limit);
     }
+    validate_deltas(
+        intent,
+        action,
+        allowed_instrument,
+        gross_notional / 1_000_000_000,
+        notional,
+        maximum_notional,
+    )?;
 
     Ok(ExecutionReport {
         schema_version: 1,

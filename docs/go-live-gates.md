@@ -70,7 +70,7 @@ qualification run after the release is frozen.
 | Dedicated wallet and perp subaccount | OPERATOR | Create only after eligibility and venue qualification |
 | Minimal capped hot balance | OPERATOR | Fund only after canary approval |
 | Isolated executor and signer | GATED | Shadow-only Rust policy exists; signer integration is absent |
-| Program/mint/market/account/fee/destination policies | PASS for shadow | Independent Rust allowlist/cap validation |
+| Program/mint/market/account/fee/destination policies | PASS for shadow | Independent Rust validation binds market/mint/leg/variant tuples, account-delta semantics, allowlists, and caps |
 | Withdrawal-disabled delegation | OPERATOR | Depends on qualified Phoenix account capabilities |
 | Private authenticated operator API | PASS | Loopback binding, segmented Docker networks, HMAC/idempotency checks |
 | Executor kill switch | PASS for shadow | Rust policy and tests |

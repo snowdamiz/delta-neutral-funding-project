@@ -13,7 +13,7 @@ fn shadow_cli_emits_planned_report() -> Result<(), Box<dyn Error>> {
             "--action",
             vectors.join("shadow-action-v1.json").to_str().unwrap(),
             "--policy",
-            vectors.join("shadow-policy-v1.json").to_str().unwrap(),
+            vectors.join("shadow-policy-v2.json").to_str().unwrap(),
             "--now-ms",
             "1785024000000",
         ])

@@ -32,6 +32,34 @@ export type ShadowAction = {
   accountDeltas: AccountDelta[];
 };
 
+type InstrumentPolicy = {
+  mint: string;
+  asset: string;
+  leg: "SPOT" | "PERP";
+  variants: readonly string[];
+};
+
+const instruments: Record<string, InstrumentPolicy> = {
+  "SOL-PERP": {
+    mint: "So11111111111111111111111111111111111111112",
+    asset: "SOL-PERP",
+    leg: "PERP",
+    variants: ["sol_control", "jitosol_carry"],
+  },
+  "JUPITER:SOL-USDC": {
+    mint: "So11111111111111111111111111111111111111112",
+    asset: "SOL",
+    leg: "SPOT",
+    variants: ["sol_control"],
+  },
+  "JUPITER:JITOSOL-USDC": {
+    mint: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+    asset: "JitoSOL",
+    leg: "SPOT",
+    variants: ["jitosol_carry"],
+  },
+};
+
 const intentKeys = [
   "schemaVersion",
   "intentId",
@@ -197,6 +225,46 @@ function accountDeltas(input: ObjectValue, accounts: string[]): AccountDelta[] {
   });
 }
 
+function validateAccountDeltas(
+  intent: ObjectValue,
+  deltas: AccountDelta[],
+  instrument: InstrumentPolicy,
+  quantity: bigint,
+  price: bigint,
+  fee: bigint,
+) {
+  const seen = new Set<string>();
+  let primary = 0n;
+  let usdc = 0n;
+  for (const delta of deltas) {
+    const key = `${delta.account}\0${delta.asset}`;
+    if (seen.has(key)) {
+      throw new Error("simulation account deltas contain duplicates");
+    }
+    seen.add(key);
+    const amount = BigInt(delta.deltaAtoms);
+    if (delta.asset === instrument.asset) primary += amount;
+    else if (delta.asset === "USDC") usdc += amount;
+    else throw new Error("simulation account deltas contain an unsupported asset");
+  }
+
+  const expectedPrimary = intent.side === "BUY" ? quantity : -quantity;
+  const billion = 1_000_000_000n;
+  const gross = quantity * price;
+  const notionalFloor = gross / billion;
+  const notionalCeil = (gross + billion - 1n) / billion;
+  const quoteMatches =
+    instrument.leg === "PERP"
+      ? (usdc < 0n ? -usdc : usdc) <= notionalCeil + fee
+      : intent.side === "BUY"
+        ? usdc <= -notionalFloor && usdc >= -(notionalCeil + fee)
+        : usdc >= (notionalFloor - fee > 0n ? notionalFloor - fee : 0n) &&
+          usdc <= notionalCeil;
+  if (primary !== expectedPrimary || !quoteMatches) {
+    throw new Error("simulation account deltas do not match execution intent");
+  }
+}
+
 export function buildShadowAction(
   intentValue: unknown,
   simulationValue: unknown,
@@ -219,9 +287,18 @@ export function buildShadowAction(
   const computeUnitsConsumed = positive(simulation, "computeUnitsConsumed");
   const feeAtoms = unsigned(simulation, "feeAtoms");
   const deltas = accountDeltas(simulation, accounts);
+  const instrument = instruments[market];
 
   if (!accounts.includes(destination)) {
     throw new Error("destination is not a declared account");
+  }
+  if (
+    instrument === undefined ||
+    instrument.mint !== mint ||
+    instrument.leg !== intent.leg ||
+    !instrument.variants.includes(intent.variant as string)
+  ) {
+    throw new Error("simulation instrument does not match execution intent");
   }
   if (
     market !== intent.instrument ||
@@ -234,6 +311,14 @@ export function buildShadowAction(
   ) {
     throw new Error("simulation exceeds execution intent");
   }
+  validateAccountDeltas(
+    intent,
+    deltas,
+    instrument,
+    BigInt(quantityAtoms),
+    BigInt(averagePriceAtoms),
+    BigInt(feeAtoms),
+  );
 
   const messageHash = createHash("sha256")
     .update(

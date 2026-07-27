@@ -15,6 +15,11 @@ test("builds bounded simulation-only Jupiter and perp actions", async () => {
   for (const [intentName, simulationName, expectedMarket] of [
     ["shadow-intent-v1.json", "shadow-simulation-perp-v1.json", "SOL-PERP"],
     [
+      "shadow-intent-sol-v1.json",
+      "shadow-simulation-sol-v1.json",
+      "JUPITER:SOL-USDC",
+    ],
+    [
       "shadow-intent-jitosol-v1.json",
       "shadow-simulation-jitosol-v1.json",
       "JUPITER:JITOSOL-USDC",
@@ -39,5 +44,20 @@ test("builds bounded simulation-only Jupiter and perp actions", async () => {
   assert.throws(
     () => buildShadowAction(intent, expanded),
     /simulation exceeds execution intent/,
+  );
+
+  const crossProduct = await vector("shadow-simulation-perp-v1.json");
+  crossProduct.mint = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
+  assert.throws(
+    () => buildShadowAction(intent, crossProduct),
+    /simulation instrument does not match execution intent/,
+  );
+
+  const reversed = await vector("shadow-simulation-perp-v1.json");
+  const deltas = reversed.accountDeltas as Array<Record<string, unknown>>;
+  deltas[0]!.deltaAtoms = intent.maxQuantityAtoms;
+  assert.throws(
+    () => buildShadowAction(intent, reversed),
+    /simulation account deltas do not match execution intent/,
   );
 });

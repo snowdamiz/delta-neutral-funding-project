@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "simulationId": "jupiter-sol-simulation-1",
+  "programIds": ["qualified-jupiter-program"],
+  "accounts": [
+    "paper-wallet",
+    "paper-usdc-account",
+    "paper-sol-account"
+  ],
+  "market": "JUPITER:SOL-USDC",
+  "mint": "So11111111111111111111111111111111111111112",
+  "destination": "paper-sol-account",
+  "quantityAtoms": "2500000000",
+  "averagePriceAtoms": "150050000",
+  "priorityFeeLamports": "500000",
+  "computeUnitLimit": "400000",
+  "computeUnitsConsumed": "300000",
+  "feeAtoms": "150050",
+  "accountDeltas": [
+    {
+      "account": "paper-usdc-account",
+      "asset": "USDC",
+      "deltaAtoms": "-375125000"
+    },
+    {
+      "account": "paper-sol-account",
+      "asset": "SOL",
+      "deltaAtoms": "2500000000"
+    }
+  ]
+}

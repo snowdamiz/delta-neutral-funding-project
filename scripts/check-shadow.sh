@@ -32,7 +32,7 @@ run_shadow() {
     --security-opt no-new-privileges:true \
     --volume "$project_dir/tests/vectors/$intent:/vectors/intent.json:ro" \
     --volume "$action:/vectors/action.json:ro" \
-    --volume "$project_dir/tests/vectors/shadow-policy-v1.json:/vectors/policy.json:ro" \
+    --volume "$project_dir/tests/vectors/shadow-policy-v2.json:/vectors/policy.json:ro" \
     delta-neutral-funding-executor:latest \
     shadow \
     --intent /vectors/intent.json \
@@ -102,6 +102,11 @@ check_path \
   shadow-simulation-perp-v1.json \
   SOL-PERP \
   5500
+check_path \
+  shadow-intent-sol-v1.json \
+  shadow-simulation-sol-v1.json \
+  JUPITER:SOL-USDC \
+  150000
 check_path \
   shadow-intent-jitosol-v1.json \
   shadow-simulation-jitosol-v1.json \

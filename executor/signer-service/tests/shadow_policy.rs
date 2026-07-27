@@ -18,7 +18,7 @@ fn shadow_policy_approves_bounded_simulation() -> Result<(), Box<dyn Error>> {
     let report = approve_shadow(
         &vector::<ExecutionIntent>("shadow-intent-v1.json")?,
         &vector::<BuiltAction>("shadow-action-v1.json")?,
-        &vector::<ExecutorPolicy>("shadow-policy-v1.json")?,
+        &vector::<ExecutorPolicy>("shadow-policy-v2.json")?,
         1_785_024_000_000,
     )?;
 
@@ -48,7 +48,7 @@ fn shadow_policy_rejects_inconsistent_simulation() -> Result<(), Box<dyn Error>>
     let error = approve_shadow(
         &vector::<ExecutionIntent>("shadow-intent-v1.json")?,
         &action,
-        &vector::<ExecutorPolicy>("shadow-policy-v1.json")?,
+        &vector::<ExecutorPolicy>("shadow-policy-v2.json")?,
         1_785_024_000_000,
     )
     .expect_err("simulation consumption above the built limit must be rejected");
@@ -63,7 +63,7 @@ fn shadow_policy_rejects_inconsistent_simulation() -> Result<(), Box<dyn Error>>
     let error = approve_shadow(
         &vector::<ExecutionIntent>("shadow-intent-v1.json")?,
         &action,
-        &vector::<ExecutorPolicy>("shadow-policy-v1.json")?,
+        &vector::<ExecutorPolicy>("shadow-policy-v2.json")?,
         1_785_024_000_000,
     )
     .expect_err("simulation fees above policy must be rejected");
@@ -79,12 +79,51 @@ fn shadow_policy_rejects_unallowlisted_program() -> Result<(), Box<dyn Error>> {
     let error = approve_shadow(
         &vector::<ExecutionIntent>("shadow-intent-v1.json")?,
         &action,
-        &vector::<ExecutorPolicy>("shadow-policy-v1.json")?,
+        &vector::<ExecutorPolicy>("shadow-policy-v2.json")?,
         1_785_024_000_000,
     )
     .expect_err("an arbitrary program must be rejected");
 
     assert_eq!(error.to_string(), "program is not allowlisted");
+    Ok(())
+}
+
+#[test]
+fn shadow_policy_rejects_cross_product_market_and_mint() -> Result<(), Box<dyn Error>> {
+    let intent = vector::<ExecutionIntent>("shadow-intent-v1.json")?;
+    let mut action = vector::<BuiltAction>("shadow-action-v1.json")?;
+    action.mint = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn".to_owned();
+
+    let error = approve_shadow(
+        &intent,
+        &action,
+        &vector::<ExecutorPolicy>("shadow-policy-v2.json")?,
+        1_785_024_000_000,
+    )
+    .expect_err("market and mint must be approved as one instrument identity");
+
+    assert_eq!(error.to_string(), "market or mint is not allowlisted");
+    Ok(())
+}
+
+#[test]
+fn shadow_policy_rejects_deltas_that_do_not_match_the_intent() -> Result<(), Box<dyn Error>> {
+    let intent = vector::<ExecutionIntent>("shadow-intent-v1.json")?;
+    let mut action = vector::<BuiltAction>("shadow-action-v1.json")?;
+    action.account_deltas[0].delta_atoms = action.quantity_atoms.clone();
+
+    let error = approve_shadow(
+        &intent,
+        &action,
+        &vector::<ExecutorPolicy>("shadow-policy-v2.json")?,
+        1_785_024_000_000,
+    )
+    .expect_err("a short simulation must not report a long position delta");
+
+    assert_eq!(
+        error.to_string(),
+        "simulation result is inconsistent with the built action"
+    );
     Ok(())
 }
 
@@ -98,7 +137,7 @@ fn shadow_policy_rejects_rehashed_malformed_intent() -> Result<(), Box<dyn Error
     let error = approve_shadow(
         &intent,
         &action,
-        &vector::<ExecutorPolicy>("shadow-policy-v1.json")?,
+        &vector::<ExecutorPolicy>("shadow-policy-v2.json")?,
         1_785_024_000_000,
     )
     .expect_err("a malformed but correctly hashed intent must be rejected");
@@ -111,7 +150,7 @@ fn shadow_policy_rejects_rehashed_malformed_intent() -> Result<(), Box<dyn Error
 fn shadow_policy_honors_kill_switch_and_isolation() -> Result<(), Box<dyn Error>> {
     let intent = vector::<ExecutionIntent>("shadow-intent-v1.json")?;
     let action = vector::<BuiltAction>("shadow-action-v1.json")?;
-    let mut policy = vector::<ExecutorPolicy>("shadow-policy-v1.json")?;
+    let mut policy = vector::<ExecutorPolicy>("shadow-policy-v2.json")?;
     policy.kill_switch = true;
 
     let error = approve_shadow(&intent, &action, &policy, 1_785_024_000_000)
