@@ -482,11 +482,14 @@ describe("Mesh-native Solana instruction inspection") do
         assert(Json.get(report, "source") == "mesh-native-solana-tx")
         assert(Json.get(report, "signerReachable") == "false")
         assert(Json.get(report, "submit") == "false")
+        assert(Json.get(report, "messageCompiler") == "high-level-instructions")
         assert(Json.get(Json.get(report, "legacy"), "version") == "legacy")
+        assert(Json.get(Json.get(report, "legacy"), "messageBytes") == "109")
         assert(Json.get(Json.get(report, "v0"), "version") == "v0")
+        assert(Json.get(Json.get(report, "v0"), "messageBytes") == "147")
         assert(Json.get(Json.get(report, "simulation"), "method") == "simulateTransaction")
         assert(Json.get(Json.get(report, "simulation"), "sigVerify") == "false")
-        assert(Json.get(Json.get(report, "simulation"), "transactionBytes") == "175")
+        assert(Json.get(Json.get(report, "simulation"), "transactionBytes") == "174")
         assert(!String.contains(report, "AQAAAAAAAA"))
       end
     end

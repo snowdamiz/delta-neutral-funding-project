@@ -1,5 +1,5 @@
 from Solana.Read import hash_value, jitosol_mint, jitosol_stake_pool, pubkey
-from Solana.Tx import AddressTableLookup, CompiledInstruction, LegacyMessage, MessageHeader, MessageV0, compute_unit_limit_instruction, instruction_report_json, legacy_message_report_json, message_v0_report_json, serialize_unsigned_legacy_transaction, simulate_transaction_request, transfer_checked_instruction
+from Solana.Tx import AddressTableLookup, compile_legacy_message, compile_message_v0, compute_unit_limit_instruction, instruction_report_json, legacy_message_report_json, message_v0_report_json, serialize_unsigned_legacy_transaction, simulate_transaction_request, transfer_checked_instruction
 
 pub fn native_solana_transaction_report() -> String ! String do
   let payer = ("11111111111111111111111111111111"
@@ -8,37 +8,24 @@ pub fn native_solana_transaction_report() -> String ! String do
     |> compute_unit_limit_instruction()) ?
   let blockhash = ("11111111111111111111111111111111"
     |> hash_value()) ?
-  let legacy = LegacyMessage {
-    header : MessageHeader {
-      num_required_signatures : 1,
-      num_readonly_signed_accounts : 0,
-      num_readonly_unsigned_accounts : 1
-    },
-    account_keys : [payer, compute.program_id],
-    recent_blockhash : blockhash,
-    instructions : [
-      CompiledInstruction {
-        program_id_index : 1,
-        account_indexes : [0],
-        data : compute.data
-      }
-    ]
-  }
-  let v0 = MessageV0 {
-    header : legacy.header,
-    static_account_keys : legacy.account_keys,
-    recent_blockhash : legacy.recent_blockhash,
-    instructions : legacy.instructions,
-    address_table_lookups : [
-      AddressTableLookup {
-        account_key : (jitosol_stake_pool()) ?,
-        writable_indexes : [0],
-        readonly_indexes : [1],
-        writable_addresses : [(jitosol_mint()) ?],
-        readonly_addresses : [payer]
-      }
-    ]
-  }
+  let instructions = [compute]
+  let legacy = (payer
+    |> compile_legacy_message(blockhash, instructions)) ?
+  let v0 = (payer
+    |> compile_message_v0(
+      blockhash,
+      instructions,
+      [
+        AddressTableLookup {
+          account_key : (jitosol_stake_pool()) ?,
+          writable_indexes : [0],
+          readonly_indexes : [1],
+          writable_addresses : [(jitosol_mint()) ?],
+          readonly_addresses : [("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+            |> pubkey()) ?]
+        }
+      ]
+    )) ?
   let unsigned = (legacy
     |> serialize_unsigned_legacy_transaction()) ?
   let simulation = (unsigned |2> simulate_transaction_request(
@@ -72,7 +59,7 @@ pub fn native_solana_transaction_report() -> String ! String do
     replaceRecentBlockhash : false,
     transactionBytes : Bytes.length(unsigned)
   }
-  Ok("{\"schemaVersion\":1,\"source\":\"mesh-native-solana-tx\",\"signerReachable\":false,\"submit\":false,\"legacy\":#{legacy_report},\"v0\":#{v0_report},\"computeBudget\":#{compute_report},\"transferChecked\":#{transfer_report},\"simulation\":#{simulation_report}}")
+  Ok("{\"schemaVersion\":1,\"source\":\"mesh-native-solana-tx\",\"signerReachable\":false,\"submit\":false,\"messageCompiler\":\"high-level-instructions\",\"legacy\":#{legacy_report},\"v0\":#{v0_report},\"computeBudget\":#{compute_report},\"transferChecked\":#{transfer_report},\"simulation\":#{simulation_report}}")
 end
 
 fn run_transaction_burst(index :: Int, total :: Int) -> Int ! String do

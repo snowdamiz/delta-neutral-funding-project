@@ -26,6 +26,8 @@ read-only or shadow differential gate qualifies.
 - Collector Docker gate: all 21 Mesh suites, including 12 transaction tests.
 - Networkless `scripts/check-native-solana-instruction.sh` proof with
   `signerReachable=false`, `submit=false`, and no unsigned transaction bytes.
+- The proof compiles high-level instructions into both legacy and v0 messages;
+  no hand-authored program or account index remains in the production proof.
 - A 1,000-construction in-process burst records elapsed time and remains below
   the 128 MiB resident-memory gate.
 - Public package contract versioned as `mesh-solana` 0.2.

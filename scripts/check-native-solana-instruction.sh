@@ -59,11 +59,14 @@ printf '%s' "$transaction_report" |
     .source == "mesh-native-solana-tx" and
     .signerReachable == false and
     .submit == false and
+    .messageCompiler == "high-level-instructions" and
     .legacy.version == "legacy" and
+    .legacy.messageBytes == 109 and
     .legacy.programIds == [
       "ComputeBudget111111111111111111111111111111"
     ] and
     .v0.version == "v0" and
+    .v0.messageBytes == 147 and
     .v0.lookupTableKeys == [
       "Jito4APyf642JPZPx3hGc6WWJ8zPKtRbRs4P815Awbb"
     ] and
@@ -74,7 +77,7 @@ printf '%s' "$transaction_report" |
     .simulation.method == "simulateTransaction" and
     .simulation.sigVerify == false and
     .simulation.replaceRecentBlockhash == false and
-    .simulation.transactionBytes == 175
+    .simulation.transactionBytes == 174
   ' >/dev/null
 
 printf '%s' "$burst_report" |

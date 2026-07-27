@@ -85,8 +85,8 @@ The subscription check opens one bounded Mesh WebSocket slot subscription,
 validates its acknowledgement and slot lineage, and compares the observed slot
 with a separate native HTTP read.
 The instruction check runs without network access and proves the compiled Mesh
-collector can parse bounded Jupiter raw-instruction JSON into a typed
-program/account/signer/writable/data report before any signing path exists.
+collector can parse bounded Jupiter raw-instruction JSON and compile high-level
+instructions into legacy and v0 messages before any signing path exists.
 The shutdown check proves SIGTERM drains accepted requests, releases the fenced
 writer lease, and exits cleanly. The recovery check includes that drill and
 proves a PostgreSQL backup can be restored and reconciled in isolated temporary

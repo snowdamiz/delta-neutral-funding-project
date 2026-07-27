@@ -40,7 +40,7 @@ qualification run after the release is frozen.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| Pinned compiler/runtime build manifest | PASS | The running preserved release uses Mesh `e612743`; the burn-safe schema-29 candidate pins Mesh `728f534`; both use compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
+| Pinned compiler/runtime build manifest | PASS | The running preserved release uses Mesh `e612743`; the schema-29 candidate pins Mesh `bea7d21`; both use compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
 | Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; candidate schema 29 |
 | Required P0 capability acceptance | PASS | `MESH-ACTOR-001` enforces item/byte bounds and nonblocking producer contention; all project probes pass |
 | Exact cross-language vectors | PASS | Mesh, TypeScript, and Rust conformance suites |
