@@ -18,7 +18,7 @@ for scenario in calm volatile liquidity-loss doubled-costs epoch-boundary failur
   cmp "$first" "$second"
   jq -e --arg scenario "$scenario-v1" '
     .bundle_id == $scenario and
-    .mesh_commit == "21a8736c8e01453a2fe8025f00b72a8fd5141050"
+    .mesh_commit == "61f406f33065169e750e06ab374b1aadeddefb61"
   ' "$first" >/dev/null
   case "$scenario" in
     calm)

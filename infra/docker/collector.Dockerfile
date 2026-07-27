@@ -35,13 +35,14 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     && cargo test --locked -q -p mesh-rt actor::mailbox::tests::test_mailbox_concurrent_push \
     && cargo test --locked -q -p meshc --test e2e e2e_bounded_channel \
     && cargo test --locked -q -p meshc --test tooling_e2e test_test_runs_mesh_solana_path_dependency \
+    && cargo test --locked -q -p meshc --test e2e_solana_read_package \
     && cargo test --locked -q -p meshc --test e2e_actors gc_bounded_memory \
     && cargo test --locked -q -p meshc --test e2e_supervisors supervisor_restarts_crashed_permanent_child
 COPY mesh /workspace/project/mesh
 COPY replay /workspace/project/replay
 COPY tests/vectors /workspace/project/tests/vectors
 ARG CODE_COMMIT=development
-ARG MESH_COMMIT=21a8736c8e01453a2fe8025f00b72a8fd5141050
+ARG MESH_COMMIT=61f406f33065169e750e06ab374b1aadeddefb61
 RUN sed -i \
       -e "s/__CODE_COMMIT__/$CODE_COMMIT/g" \
       -e "s/__MESH_COMMIT__/$MESH_COMMIT/g" \
@@ -57,7 +58,7 @@ RUN --mount=type=cache,target=/workspace/target,sharing=locked \
 
 FROM ubuntu:24.04 AS runtime
 ARG CODE_COMMIT=development
-ARG MESH_COMMIT=21a8736c8e01453a2fe8025f00b72a8fd5141050
+ARG MESH_COMMIT=61f406f33065169e750e06ab374b1aadeddefb61
 LABEL org.opencontainers.image.revision=$CODE_COMMIT
 LABEL org.mesh-lang.revision=$MESH_COMMIT
 RUN apt-get update && apt-get install -y --no-install-recommends \

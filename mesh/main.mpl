@@ -7,6 +7,7 @@ from Packages.RuntimeConfig import RuntimeConfig, load_runtime_config, runtime_c
 from Packages.SolanaReadCli import run_native_solana_read, run_native_solana_subscription
 from Packages.Storage import bootstrap_paper_runs, reconcile_paper_state
 from Runtime.Registry import start_registry
+from Solana.Tx import instruction_from_jupiter_json, instruction_report_json
 
 fn fail_startup(event :: String, fields :: String) do
   error(event, fields)
@@ -195,19 +196,30 @@ fn solana_subscribe() do
   end
 end
 
+fn solana_inspect_instruction() do
+  case Env.get("SOLANA_INSTRUCTION_JSON", "")
+    |> instruction_from_jupiter_json() do
+    Ok(instruction) -> instruction
+      |> instruction_report_json()
+      |> println()
+    Err(reason) -> do
+      IO.eprintln(reason)
+      Process.exit(1)
+    end
+  end
+end
+
 fn main() do
   let args = Env.args()
-  if List.length(args) > 1 && List.get(args, 1) == "replay" do
-    replay(args)
+  if List.length(args) <= 1 do
+    serve_collector()
   else
-    if List.length(args) == 2 && List.get(args, 1) == "solana-read" do
-      solana_read()
-    else
-      if List.length(args) == 2 && List.get(args, 1) == "solana-subscribe" do
-        solana_subscribe()
-      else
-        serve_collector()
-      end
+    case List.get(args, 1) do
+      "replay" -> replay(args)
+      "solana-read" -> solana_read()
+      "solana-subscribe" -> solana_subscribe()
+      "solana-inspect-instruction" -> solana_inspect_instruction()
+      _ -> serve_collector()
     end
   end
 end

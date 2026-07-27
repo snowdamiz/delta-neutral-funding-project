@@ -3,7 +3,7 @@ from Packages.Replay import ReplayReport, run_replay
 fn replay(name :: String) -> ReplayReport ! String do
   ((File.read("replay/bundles/${name}-v1.jsonl")) ? |2> run_replay(
     (File.read("replay/configs/baseline-v1.json")) ?,
-    "21a8736c8e01453a2fe8025f00b72a8fd5141050"
+    "61f406f33065169e750e06ab374b1aadeddefb61"
   ))
 end
 

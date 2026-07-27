@@ -11,7 +11,7 @@ usage() {
     'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
     'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper' \
     'replay: replay --bundle <path> --config <path>' \
-    'proof: solana-read | solana-subscribe' \
+    'proof: solana-read | solana-subscribe | solana-inspect-instruction' \
     'test: alerts-test <reason>'
 }
 
@@ -177,6 +177,30 @@ case "$command" in
       --security-opt no-new-privileges \
       --env "SOLANA_WS_URL=${SOLANA_WS_URL:-wss://api.mainnet-beta.solana.com}" \
       "$image" solana-subscribe |
+      jq .
+    ;;
+  solana-inspect-instruction)
+    test -z "${2:-}" || {
+      usage >&2
+      exit 2
+    }
+    instruction=${SOLANA_INSTRUCTION_JSON:?SOLANA_INSTRUCTION_JSON is required}
+    image=$(docker compose \
+      --project-directory "$project_dir" \
+      --file "$project_dir/compose.yaml" \
+      config --format json |
+      jq -er '.services.collector.image')
+    docker image inspect "$image" >/dev/null 2>&1 || {
+      printf 'collector image is missing; run docker compose build collector\n' >&2
+      exit 2
+    }
+    docker run --rm \
+      --network none \
+      --read-only \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --env "SOLANA_INSTRUCTION_JSON=$instruction" \
+      "$image" solana-inspect-instruction |
       jq .
     ;;
   *)

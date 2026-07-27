@@ -56,6 +56,7 @@ scripts/check-shutdown.sh
 scripts/check-shadow-persistence.sh
 scripts/check-native-solana-read.sh
 scripts/check-native-solana-subscription.sh
+scripts/check-native-solana-instruction.sh
 scripts/check-recovery.sh
 scripts/check-security.sh
 scripts/check-observability.sh
@@ -81,6 +82,9 @@ atomic NAV with the latest authoritative adapter observation.
 The subscription check opens one bounded Mesh WebSocket slot subscription,
 validates its acknowledgement and slot lineage, and compares the observed slot
 with a separate native HTTP read.
+The instruction check runs without network access and proves the compiled Mesh
+collector can parse bounded Jupiter raw-instruction JSON into a typed
+program/account/signer/writable/data report before any signing path exists.
 The shutdown check proves SIGTERM drains accepted requests, releases the fenced
 writer lease, and exits cleanly. The recovery check includes that drill and
 proves a PostgreSQL backup can be restored and reconciled in isolated temporary
