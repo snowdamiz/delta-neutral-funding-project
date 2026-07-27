@@ -1,4 +1,4 @@
-from Packages.SolanaReadCli import jitosol_read_report
+from Packages.SolanaReadCli import jitosol_read_report, slot_subscription_report
 from Solana.Read import AccountInfo, AccountsAtSlot, EpochInfo, pubkey
 
 fn fixture_account(data :: String, owner :: String) -> AccountInfo ! String do
@@ -60,6 +60,27 @@ describe("native Solana read CLI") do
         assert(Json.get(report, "supplyAtoms") == "10000000000")
         assert(Json.get(report, "navLamports") == "1234567890")
         assert(Json.get(report, "programStatus") == "valid")
+      end
+    end
+  end
+
+  test("reports a validated native slot subscription") do
+    case slot_subscription_report(
+      "{\"jsonrpc\":\"2.0\",\"result\":42,\"id\":1}",
+      "{\"jsonrpc\":\"2.0\",\"method\":\"slotNotification\",\"params\":{\"result\":{\"parent\":320000005,\"root\":319999974,\"slot\":320000006},\"subscription\":42}}"
+    ) do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(report) -> do
+        assert(Json.get(report, "schemaVersion") == "1")
+        assert(Json.get(report, "source") == "mesh-native-solana-ws")
+        assert(Json.get(report, "subscription") == "42")
+        assert(Json.get(report, "slot") == "320000006")
+        assert(Json.get(report, "parent") == "320000005")
+        assert(Json.get(report, "root") == "319999974")
+        assert(Json.get(report, "status") == "valid")
       end
     end
   end

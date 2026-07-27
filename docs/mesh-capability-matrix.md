@@ -18,8 +18,8 @@ The pin is a source commit, not an untracked application patch.
 | MESH-PROTO-001 | Project-local | JSON Schema v1 plus shared fixtures |
 | MESH-BYTES/CODEC/NUM | Implemented | Binary-safe bytes, strict codecs, and checked U64/U128 arithmetic are native Mesh features |
 | MESH-NATIVE | Implemented | Manifest-gated native archives are hash-verified and linked |
-| MESH-WS/HTTP | Implemented | Scheduler-aware bounded clients with cancellation and deterministic limits |
-| MESH-BORSH/ANCHOR/SOL-READ | Implemented | Native package tests decode exact SPL/JitoSOL layouts and typed bounded RPC payloads; a compiled one-shot differential validates epoch and atomic NAV against the qualified TypeScript adapter, which remains the production paper feed pending sustained differential soak |
+| MESH-WS/HTTP | Implemented | Scheduler-aware bounded clients with cancellation and deterministic limits; a compiled bounded slot subscription validates its acknowledgement and lineage against a separate HTTP read |
+| MESH-BORSH/ANCHOR/SOL-READ | Implemented | Native package tests decode exact SPL/JitoSOL layouts and typed bounded RPC payloads; compiled one-shot differentials validate epoch, atomic NAV, and slot agreement, while the qualified TypeScript adapter remains the production paper feed pending sustained differential soak |
 | MESH-SOL-TX | Partial | Strict TypeScript simulation-artifact validator plus independently constrained Rust dry-run; exact current transaction construction and RPC/venue simulation remain a Milestone 8 gate |
 | MESH-SECRET/CRYPTO/SIGNER | Deferred | absent from paper and shadow deployments |
 

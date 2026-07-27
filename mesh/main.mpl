@@ -4,7 +4,7 @@ from Packages.LeaderLease import acquire_startup, release, start_leader_lease_su
 from Packages.Log import error, info
 from Packages.ReplayCli import run_replay_command
 from Packages.RuntimeConfig import RuntimeConfig, load_runtime_config, runtime_config_hash
-from Packages.SolanaReadCli import run_native_solana_read
+from Packages.SolanaReadCli import run_native_solana_read, run_native_solana_subscription
 from Packages.Storage import bootstrap_paper_runs, reconcile_paper_state
 from Runtime.Registry import start_registry
 
@@ -184,6 +184,17 @@ fn solana_read() do
   end
 end
 
+fn solana_subscribe() do
+  case Env.get("SOLANA_WS_URL", "")
+    |> run_native_solana_subscription() do
+    Ok(output) -> println(output)
+    Err(reason) -> do
+      IO.eprintln(reason)
+      Process.exit(1)
+    end
+  end
+end
+
 fn main() do
   let args = Env.args()
   if List.length(args) > 1 && List.get(args, 1) == "replay" do
@@ -192,7 +203,11 @@ fn main() do
     if List.length(args) == 2 && List.get(args, 1) == "solana-read" do
       solana_read()
     else
-      serve_collector()
+      if List.length(args) == 2 && List.get(args, 1) == "solana-subscribe" do
+        solana_subscribe()
+      else
+        serve_collector()
+      end
     end
   end
 end
