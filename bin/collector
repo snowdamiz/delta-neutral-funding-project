@@ -11,7 +11,7 @@ usage() {
     'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
     'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper' \
     'replay: replay --bundle <path> --config <path>' \
-    'proof: solana-read | solana-subscribe | solana-inspect-instruction | solana-inspect-jupiter-build' \
+    'proof: solana-read | solana-subscribe | solana-inspect-instruction | solana-inspect-jupiter-build | solana-transaction-proof' \
     'test: alerts-test <reason>'
 }
 
@@ -199,6 +199,20 @@ case "$command" in
       --security-opt no-new-privileges \
       --env "JUPITER_BUILD_JSON=$build" \
       "$image" solana-inspect-jupiter-build |
+      jq .
+    ;;
+  solana-transaction-proof)
+    test -z "${2:-}" || {
+      usage >&2
+      exit 2
+    }
+    image=$(collector_image)
+    docker run --rm \
+      --network none \
+      --read-only \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      "$image" solana-transaction-proof |
       jq .
     ;;
   *)

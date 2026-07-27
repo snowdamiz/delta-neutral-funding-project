@@ -1,3 +1,4 @@
+from Packages.SolanaTxCli import native_solana_transaction_report
 from Solana.Read import Hash, Pubkey, RpcRequest, pubkey_string, rpc_request_json, rpc_response
 from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, SimulationResult, compute_unit_limit_instruction, compute_unit_price_instruction, create_associated_token_idempotent_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, legacy_message_report_json, message_v0_report_json, serialize_legacy_message, serialize_message_v0, serialize_unsigned_legacy_transaction, simulate_transaction_request, simulation_result, transfer_checked_instruction
 
@@ -356,6 +357,27 @@ describe("Mesh-native Solana instruction inspection") do
           Some(units) -> assert(U64.to_string(units) == "42")
         end
         assert(Json.get(result.replacement_blockhash_json, "lastValidBlockHeight") == "999")
+      end
+    end
+  end
+
+  test("exposes a networkless transaction construction proof") do
+    case native_solana_transaction_report() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(report) -> do
+        assert(Json.get(report, "schemaVersion") == "1")
+        assert(Json.get(report, "source") == "mesh-native-solana-tx")
+        assert(Json.get(report, "signerReachable") == "false")
+        assert(Json.get(report, "submit") == "false")
+        assert(Json.get(Json.get(report, "legacy"), "version") == "legacy")
+        assert(Json.get(Json.get(report, "v0"), "version") == "v0")
+        assert(Json.get(Json.get(report, "simulation"), "method") == "simulateTransaction")
+        assert(Json.get(Json.get(report, "simulation"), "sigVerify") == "false")
+        assert(Json.get(Json.get(report, "simulation"), "transactionBytes") == "175")
+        assert(!String.contains(report, "AQAAAAAAAA"))
       end
     end
   end
