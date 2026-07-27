@@ -72,3 +72,47 @@ pub fn native_solana_transaction_report() -> String ! String do
   }
   Ok("{\"schemaVersion\":1,\"source\":\"mesh-native-solana-tx\",\"signerReachable\":false,\"submit\":false,\"legacy\":#{legacy_report},\"v0\":#{v0_report},\"computeBudget\":#{compute_report},\"transferChecked\":#{transfer_report},\"simulation\":#{simulation_report}}")
 end
+
+fn run_transaction_burst(index :: Int, total :: Int) -> Int ! String do
+  if index >= total do
+    Ok(index)
+  else
+    let report = (native_solana_transaction_report()) ?
+    if Json.get(report, "signerReachable") != "false" || Json.get(report, "submit") != "false" do
+      Err("SOLANA_TX: burst produced an unsafe report")
+    else
+      run_transaction_burst(index + 1, total)
+    end
+  end
+end
+
+pub fn native_solana_transaction_burst(
+  iterations :: Int
+) -> String ! String do
+  if iterations <= 0 || iterations > 100_000 do
+    Err("SOLANA_TX: burst iterations must be between 1 and 100000")
+  else
+    let before = Cluster.telemetry()
+    let started = Monotonic.now_nanos()
+    let completed = (run_transaction_burst(0, iterations)) ?
+    let elapsed = (started
+      |> Monotonic.elapsed(Monotonic.now_nanos())) ?
+    let ending_metrics = Cluster.telemetry()
+    Ok(json {
+      schemaVersion : 1,
+      source : "mesh-native-solana-tx-burst",
+      status : "passed",
+      iterations : completed,
+      elapsedNanoseconds : elapsed,
+      nanosecondsPerIteration : elapsed / completed,
+      residentBeforeBytes : Map.get(
+        before,
+        "process_resident_memory_bytes"
+      ),
+      residentAfterBytes : Map.get(
+        ending_metrics,
+        "process_resident_memory_bytes"
+      )
+    })
+  end
+end

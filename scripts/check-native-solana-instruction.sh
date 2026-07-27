@@ -7,6 +7,7 @@ report=$(SOLANA_INSTRUCTION_JSON=$instruction "$project_dir/bin/collector" solan
 build='{"computeBudgetInstructions":[{"programId":"ComputeBudget111111111111111111111111111111","accounts":[],"data":"AQID"}],"setupInstructions":[{"programId":"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL","accounts":[{"pubkey":"11111111111111111111111111111111","isSigner":true,"isWritable":true}],"data":""}],"swapInstruction":{"programId":"JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4","accounts":[{"pubkey":"11111111111111111111111111111111","isSigner":true,"isWritable":true},{"pubkey":"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA","isSigner":false,"isWritable":false}],"data":"BAUG"},"cleanupInstruction":null,"otherInstructions":[{"programId":"11111111111111111111111111111111","accounts":[],"data":""}],"addressesByLookupTableAddress":{}}'
 build_report=$(JUPITER_BUILD_JSON=$build "$project_dir/bin/collector" solana-inspect-jupiter-build)
 transaction_report=$("$project_dir/bin/collector" solana-transaction-proof)
+burst_report=$("$project_dir/bin/collector" solana-transaction-burst)
 
 printf '%s' "$report" |
   jq -e '
@@ -76,8 +77,21 @@ printf '%s' "$transaction_report" |
     .simulation.transactionBytes == 175
   ' >/dev/null
 
+printf '%s' "$burst_report" |
+  jq -e '
+    .schemaVersion == 1 and
+    .source == "mesh-native-solana-tx-burst" and
+    .status == "passed" and
+    .iterations == 1000 and
+    .elapsedNanoseconds > 0 and
+    .nanosecondsPerIteration > 0 and
+    .residentBeforeBytes > 0 and
+    .residentAfterBytes <= (.residentBeforeBytes + 67108864)
+  ' >/dev/null
+
 jq -n \
   --argjson report "$report" \
   --argjson build "$build_report" \
   --argjson transaction "$transaction_report" \
-  '{status: "passed", report: $report, build: $build, transaction: $transaction}'
+  --argjson burst "$burst_report" \
+  '{status: "passed", report: $report, build: $build, transaction: $transaction, burst: $burst}'

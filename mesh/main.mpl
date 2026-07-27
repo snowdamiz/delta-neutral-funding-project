@@ -5,7 +5,7 @@ from Packages.Log import error, info
 from Packages.ReplayCli import run_replay_command
 from Packages.RuntimeConfig import RuntimeConfig, load_runtime_config, runtime_config_hash
 from Packages.SolanaReadCli import run_native_solana_read, run_native_solana_subscription
-from Packages.SolanaTxCli import native_solana_transaction_report
+from Packages.SolanaTxCli import native_solana_transaction_burst, native_solana_transaction_report
 from Packages.Storage import bootstrap_paper_runs, reconcile_paper_state
 from Runtime.Registry import start_registry
 from Solana.Tx import instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json
@@ -233,6 +233,17 @@ fn solana_transaction_proof() do
   end
 end
 
+fn solana_transaction_burst() do
+  case Env.get_int("SOLANA_TX_BURST_ITERATIONS", 1000)
+    |> native_solana_transaction_burst() do
+    Ok(output) -> println(output)
+    Err(reason) -> do
+      IO.eprintln(reason)
+      Process.exit(1)
+    end
+  end
+end
+
 fn main() do
   let args = Env.args()
   if List.length(args) <= 1 do
@@ -245,6 +256,7 @@ fn main() do
       "solana-inspect-instruction" -> solana_inspect_instruction()
       "solana-inspect-jupiter-build" -> solana_inspect_jupiter_build()
       "solana-transaction-proof" -> solana_transaction_proof()
+      "solana-transaction-burst" -> solana_transaction_burst()
       _ -> serve_collector()
     end
   end

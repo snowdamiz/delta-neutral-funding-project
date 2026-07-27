@@ -11,7 +11,7 @@ usage() {
     'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
     'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper' \
     'replay: replay --bundle <path> --config <path>' \
-    'proof: solana-read | solana-subscribe | solana-inspect-instruction | solana-inspect-jupiter-build | solana-transaction-proof' \
+    'proof: solana-read | solana-subscribe | solana-inspect-instruction | solana-inspect-jupiter-build | solana-transaction-proof | solana-transaction-burst' \
     'test: alerts-test <reason>'
 }
 
@@ -216,6 +216,21 @@ case "$command" in
       --cap-drop ALL \
       --security-opt no-new-privileges \
       "$image" solana-transaction-proof |
+      jq .
+    ;;
+  solana-transaction-burst)
+    test -z "${2:-}" || {
+      usage >&2
+      exit 2
+    }
+    image=$(collector_image)
+    docker run --rm \
+      --network none \
+      --read-only \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --env "SOLANA_TX_BURST_ITERATIONS=${SOLANA_TX_BURST_ITERATIONS:-1000}" \
+      "$image" solana-transaction-burst |
       jq .
     ;;
   *)
