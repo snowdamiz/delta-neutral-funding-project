@@ -12,7 +12,7 @@ usage() {
     'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper' \
     'replay: replay --bundle <path> --config <path>' \
     'proof: solana-read | solana-subscribe | solana-inspect-instruction | solana-inspect-jupiter-build | solana-transaction-proof | solana-transaction-burst' \
-    'test: alerts-test <reason>'
+    'test: alerts-test <reason> | verify-toolchain'
 }
 
 read_endpoint() {
@@ -121,6 +121,13 @@ case "$command" in
   alerts-test)
     require_reason "${2:-}"
     mutate alerts-test /v1/alerts/test "$2"
+    ;;
+  verify-toolchain)
+    test -z "${2:-}" || {
+      usage >&2
+      exit 2
+    }
+    exec "$project_dir/scripts/check-toolchain.sh"
     ;;
   replay)
     test "${2:-}" = '--bundle' && test "${4:-}" = '--config' && test -z "${6:-}" || {

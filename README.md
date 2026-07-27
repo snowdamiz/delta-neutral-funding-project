@@ -49,6 +49,8 @@ bin/collector replay \
   --bundle replay/bundles/calm-v1.jsonl \
   --config replay/configs/baseline-v1.json
 
+bin/collector verify-toolchain
+
 scripts/check-replay.sh
 scripts/check-toolchain-rollback.sh
 scripts/check-database.sh
