@@ -1,6 +1,6 @@
 # Mesh capability audit
 
-Candidate Mesh pin: `2d77889767beb5c2b75bc8fda3956c7d43f116aa`
+Candidate Mesh pin: `728f534e0500f90a11cbe8184befb711664280de`
 
 This audit records the ownership and exit condition for every language boundary.
 The TypeScript adapter remains the authoritative paper feed until the applicable
@@ -16,7 +16,7 @@ read-only or shadow differential gate qualifies.
 | MESH-BYTES/CODEC/NUM | Runtime/native primitives | Mesh maintainers | None | N/A | Adopted; strict Base58/Base64/hex and checked U64/U128 proofs pass |
 | MESH-NATIVE | Package manager/linker | Mesh maintainers | None | N/A | Adopted; native archives are manifest-gated and hash-verified |
 | MESH-HTTP/WS | Runtime/stdlib | Mesh maintainers | TypeScript venue clients | Recorded feed differential, bounded soak, and rollback rehearsal pass | Implemented; bounded HTTP and WSS proofs pass, bridge retained |
-| MESH-BORSH/ANCHOR/SOL-READ | Reusable Mesh/native packages | Mesh maintainers | TypeScript protocol adapter | Fixture, replay, live read-only differential, bounded soak, and rollback pass | Implemented; native JitoSOL NAV/epoch/slot proofs pass, bridge retained |
+| MESH-BORSH/ANCHOR/SOL-READ | Reusable Mesh/native packages | Mesh maintainers | TypeScript protocol adapter | Fixture, replay, live read-only differential, bounded soak, and rollback pass | Implemented; native JitoSOL NAV/epoch/slot proofs use the stake-pool denominator, accept conservative direct-burn mint deficits, reject inflation, and retain the bridge |
 | MESH-SOL-TX | Reusable Mesh package | Mesh maintainers | Adapter/executor shadow builder | Credentialed exact-action simulation differential and rollback pass | Candidate implemented in `mesh-solana` 0.2: legacy/v0/ALT serialization, recent blockhashes, compute budget, SPL/ATA, unsigned simulation, response parsing, and byte-free allowlist reports; networkless collector proof passes |
 | MESH-SECRET/CRYPTO/SIGNER | Deferred native/security work | Security review owner | Isolated signer | Independent secret-memory, crypto, policy, and signer review plus explicit operator approval | Deliberately absent; no signer is reachable and no submit API exists |
 

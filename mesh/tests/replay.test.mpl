@@ -28,7 +28,7 @@ fn funding() -> String do
 end
 
 fn bundle(config :: String, events :: List<String>) -> String do
-  let manifest = "{\"replaySchemaVersion\":1,\"bundleId\":\"calm-v1\",\"configHash\":\"${Crypto.sha256(config)}\",\"meshCommit\":\"2d77889767beb5c2b75bc8fda3956c7d43f116aa\"}"
+  let manifest = "{\"replaySchemaVersion\":1,\"bundleId\":\"calm-v1\",\"configHash\":\"${Crypto.sha256(config)}\",\"meshCommit\":\"728f534e0500f90a11cbe8184befb711664280de\"}"
   String.join(List.concat([manifest], events), "\n")
 end
 
@@ -36,9 +36,9 @@ describe("deterministic replay") do
   test("uses virtual event time and rejects look-ahead ordering") do
     let config = "{\"replaySchemaVersion\":1,\"seed\":\"42\",\"maxSourceAgeMs\":\"5000\",\"minimumMarginRatioPpm\":\"1500000\",\"minimumLiquidationDistanceBps\":\"1000\",\"rebalanceDeltaBps\":\"50\"}"
     let events = [snapshot(), next_snapshot(), funding(), invalid_snapshot()]
-    case run_replay(config, bundle(config, events), "2d77889767beb5c2b75bc8fda3956c7d43f116aa") do
+    case run_replay(config, bundle(config, events), "728f534e0500f90a11cbe8184befb711664280de") do
       Ok(first) -> do
-        case run_replay(config, bundle(config, events), "2d77889767beb5c2b75bc8fda3956c7d43f116aa") do
+        case run_replay(config, bundle(config, events), "728f534e0500f90a11cbe8184befb711664280de") do
           Ok(second) -> do
             assert(first.event_count == 4)
             assert(first.decision_count == 6)
@@ -66,7 +66,7 @@ describe("deterministic replay") do
     case run_replay(
       config,
       bundle(config, [next_snapshot(), snapshot()]),
-      "2d77889767beb5c2b75bc8fda3956c7d43f116aa"
+      "728f534e0500f90a11cbe8184befb711664280de"
     ) do
       Ok(report) -> assert(false)
       Err(error) -> assert(error == "replay events are out of canonical order")
