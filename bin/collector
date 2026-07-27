@@ -61,11 +61,14 @@ absolute_file() {
 
 collector_image() {
   local image
-  image=$(docker compose \
-    --project-directory "$project_dir" \
-    --file "$project_dir/compose.yaml" \
-    config --format json |
-    jq -er '.services.collector.image')
+  image=${COLLECTOR_IMAGE:-}
+  if [ -z "$image" ]; then
+    image=$(docker compose \
+      --project-directory "$project_dir" \
+      --file "$project_dir/compose.yaml" \
+      config --format json |
+      jq -er '.services.collector.image')
+  fi
   docker image inspect "$image" >/dev/null 2>&1 || {
     printf 'collector image is missing; run docker compose build collector\n' >&2
     return 2
