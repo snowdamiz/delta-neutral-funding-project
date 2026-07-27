@@ -73,6 +73,8 @@ the Mesh, TypeScript, and Rust conformance suites while building their images.
 It requires a clean project checkout, compiles the Git and Mesh revisions into
 the collector, labels every image, and creates commit-qualified local image
 tags for rollback.
+The native instruction gate inspects both one raw instruction and a complete
+Jupiter build instruction set in a read-only container with networking disabled.
 The shadow persistence check builds Jupiter and perp actions without network
 access, dry-runs the independent Rust policy, and records paper/simulation
 deltas through the authenticated Mesh API.

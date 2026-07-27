@@ -1,7 +1,11 @@
-from Solana.Tx import instruction_from_jupiter_json, instruction_report_json
+from Solana.Tx import instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json
 
 fn fixture() -> String do
   "{\"programId\":\"ComputeBudget111111111111111111111111111111\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":false,\"isWritable\":true},{\"pubkey\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\"isSigner\":true,\"isWritable\":false}],\"data\":\"AQID\"}"
+end
+
+fn build_fixture() -> String do
+  "{\"computeBudgetInstructions\":[{\"programId\":\"ComputeBudget111111111111111111111111111111\",\"accounts\":[],\"data\":\"AQID\"}],\"setupInstructions\":[{\"programId\":\"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":true,\"isWritable\":true}],\"data\":\"\"}],\"swapInstruction\":{\"programId\":\"JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":true,\"isWritable\":true},{\"pubkey\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\"isSigner\":false,\"isWritable\":false}],\"data\":\"BAUG\"},\"cleanupInstruction\":null,\"otherInstructions\":[{\"programId\":\"11111111111111111111111111111111\",\"accounts\":[],\"data\":\"\"}],\"addressesByLookupTableAddress\":{}}"
 end
 
 describe("Mesh-native Solana instruction inspection") do
@@ -35,6 +39,43 @@ describe("Mesh-native Solana instruction inspection") do
       |> instruction_from_jupiter_json() do
       Ok( _) -> assert(false)
       Err(error) -> assert(error == "SOLANA_PUBKEY: invalid base58")
+    end
+  end
+
+  test("aggregates the complete bounded Jupiter instruction set") do
+    case build_fixture()
+      |> jupiter_instruction_set_from_json() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(instructions) -> do
+        let report = instructions
+          |> jupiter_instruction_set_report_json()
+        assert(Json.get(report, "schemaVersion") == "1")
+        assert(Json.get(report, "source") == "jupiter-build")
+        assert(Json.get(report, "instructionCount") == "4")
+        assert(Json.get(report, "computeBudgetCount") == "1")
+        assert(Json.get(report, "setupCount") == "1")
+        assert(Json.get(report, "otherCount") == "1")
+        assert(Json.get(report, "cleanupCount") == "0")
+        assert(Json.get(report, "tipCount") == "0")
+        assert(Json.get(report, "dataBytes") == "6")
+        assert(Json.get(report, "programIds") == "[\"ComputeBudget111111111111111111111111111111\",\"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL\",\"11111111111111111111111111111111\",\"JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4\"]")
+        assert(Json.get(report, "accountKeys") == "[\"11111111111111111111111111111111\",\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"]")
+        assert(Json.get(report, "signerKeys") == "[\"11111111111111111111111111111111\"]")
+        assert(Json.get(report, "writableKeys") == "[\"11111111111111111111111111111111\"]")
+      end
+    end
+
+    case build_fixture()
+      |> String.replace(
+        "\"otherInstructions\":[{\"programId\":\"11111111111111111111111111111111\",\"accounts\":[],\"data\":\"\"}],",
+        ""
+      )
+      |> jupiter_instruction_set_from_json() do
+      Ok( _) -> assert(false)
+      Err(error) -> assert(error == "SOLANA_TX: missing field otherInstructions")
     end
   end
 end

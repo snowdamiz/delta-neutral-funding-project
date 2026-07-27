@@ -38,7 +38,7 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| Pinned compiler/runtime build manifest | PASS | Mesh `61f406f`; compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
+| Pinned compiler/runtime build manifest | PASS | Mesh `e612743`; compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
 | Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; schema 28 |
 | Required P0 capability acceptance | PASS | `MESH-ACTOR-001` enforces item/byte bounds and nonblocking producer contention; all project probes pass |
 | Exact cross-language vectors | PASS | Mesh, TypeScript, and Rust conformance suites |

@@ -7,7 +7,7 @@ from Packages.RuntimeConfig import RuntimeConfig, load_runtime_config, runtime_c
 from Packages.SolanaReadCli import run_native_solana_read, run_native_solana_subscription
 from Packages.Storage import bootstrap_paper_runs, reconcile_paper_state
 from Runtime.Registry import start_registry
-from Solana.Tx import instruction_from_jupiter_json, instruction_report_json
+from Solana.Tx import instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json
 
 fn fail_startup(event :: String, fields :: String) do
   error(event, fields)
@@ -209,6 +209,19 @@ fn solana_inspect_instruction() do
   end
 end
 
+fn solana_inspect_jupiter_build() do
+  case Env.get("JUPITER_BUILD_JSON", "")
+    |> jupiter_instruction_set_from_json() do
+    Ok(instructions) -> instructions
+      |> jupiter_instruction_set_report_json()
+      |> println()
+    Err(reason) -> do
+      IO.eprintln(reason)
+      Process.exit(1)
+    end
+  end
+end
+
 fn main() do
   let args = Env.args()
   if List.length(args) <= 1 do
@@ -219,6 +232,7 @@ fn main() do
       "solana-read" -> solana_read()
       "solana-subscribe" -> solana_subscribe()
       "solana-inspect-instruction" -> solana_inspect_instruction()
+      "solana-inspect-jupiter-build" -> solana_inspect_jupiter_build()
       _ -> serve_collector()
     end
   end

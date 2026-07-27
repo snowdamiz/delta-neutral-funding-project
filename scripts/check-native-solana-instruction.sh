@@ -4,6 +4,8 @@ set -eu
 project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 instruction='{"programId":"ComputeBudget111111111111111111111111111111","accounts":[{"pubkey":"11111111111111111111111111111111","isSigner":false,"isWritable":true},{"pubkey":"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA","isSigner":true,"isWritable":false}],"data":"AQID"}'
 report=$(SOLANA_INSTRUCTION_JSON=$instruction "$project_dir/bin/collector" solana-inspect-instruction)
+build='{"computeBudgetInstructions":[{"programId":"ComputeBudget111111111111111111111111111111","accounts":[],"data":"AQID"}],"setupInstructions":[{"programId":"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL","accounts":[{"pubkey":"11111111111111111111111111111111","isSigner":true,"isWritable":true}],"data":""}],"swapInstruction":{"programId":"JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4","accounts":[{"pubkey":"11111111111111111111111111111111","isSigner":true,"isWritable":true},{"pubkey":"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA","isSigner":false,"isWritable":false}],"data":"BAUG"},"cleanupInstruction":null,"otherInstructions":[{"programId":"11111111111111111111111111111111","accounts":[],"data":""}],"addressesByLookupTableAddress":{}}'
+build_report=$(JUPITER_BUILD_JSON=$build "$project_dir/bin/collector" solana-inspect-jupiter-build)
 
 printf '%s' "$report" |
   jq -e '
@@ -24,4 +26,32 @@ printf '%s' "$report" |
     .dataBytes == 3
   ' >/dev/null
 
-jq -n --argjson report "$report" '{status: "passed", report: $report}'
+printf '%s' "$build_report" |
+  jq -e '
+    .schemaVersion == 1 and
+    .source == "jupiter-build" and
+    .instructionCount == 4 and
+    .computeBudgetCount == 1 and
+    .setupCount == 1 and
+    .otherCount == 1 and
+    .cleanupCount == 0 and
+    .tipCount == 0 and
+    .dataBytes == 6 and
+    .programIds == [
+      "ComputeBudget111111111111111111111111111111",
+      "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+      "11111111111111111111111111111111",
+      "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"
+    ] and
+    .accountKeys == [
+      "11111111111111111111111111111111",
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    ] and
+    .signerKeys == ["11111111111111111111111111111111"] and
+    .writableKeys == ["11111111111111111111111111111111"]
+  ' >/dev/null
+
+jq -n \
+  --argjson report "$report" \
+  --argjson build "$build_report" \
+  '{status: "passed", report: $report, build: $build}'
