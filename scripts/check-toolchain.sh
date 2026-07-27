@@ -3,7 +3,7 @@ set -eu
 
 project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 mesh_dir="$project_dir/../mesh-lang"
-expected_mesh=e612743eb9b2dd045c0cb50304f88d262e5356d7
+expected_mesh=2d77889767beb5c2b75bc8fda3956c7d43f116aa
 code_commit=$(git -C "$project_dir" rev-parse HEAD)
 mesh_tag=$(printf '%.7s' "$expected_mesh")
 

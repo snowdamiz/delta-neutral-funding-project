@@ -1,6 +1,6 @@
 # Mesh capability audit
 
-Candidate Mesh pin: `b0ee2d5626f3374403823bca7cc0703f668dae71`
+Candidate Mesh pin: `2d77889767beb5c2b75bc8fda3956c7d43f116aa`
 
 This audit records the ownership and exit condition for every language boundary.
 The TypeScript adapter remains the authoritative paper feed until the applicable
@@ -23,7 +23,7 @@ read-only or shadow differential gate qualifies.
 ## Candidate acceptance evidence
 
 - Mesh debug/release compilation and retained `e2e_solana_read_package` proof.
-- Collector Docker gate: all 21 Mesh suites, including 10 transaction tests.
+- Collector Docker gate: all 21 Mesh suites, including 12 transaction tests.
 - Networkless `scripts/check-native-solana-instruction.sh` proof with
   `signerReachable=false`, `submit=false`, and no unsigned transaction bytes.
 - A 1,000-construction in-process burst records elapsed time and remains below
