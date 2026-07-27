@@ -45,7 +45,7 @@ curl -fsS "$base_url/v1/positions" |
     )
   ' >/dev/null
 curl -fsS "$base_url/v1/orders?limit=2&offset=0" |
-  jq -e '.limit == 2 and .offset == 0 and (.items | length) <= 2 and all(.items[]; .intent.schemaVersion == 1 and .intent.intentId == .intentId and (.intent.snapshotIds | length) == 1 and (if .intent.leg == "PERP" then .intent.instrument == "SOL-PERP" elif .variant == "jitosol_carry" then .intent.instrument == "JUPITER:JITOSOL-USDC" else .intent.instrument == "JUPITER:SOL-USDC" end))' >/dev/null
+  jq -e '.limit == 2 and .offset == 0 and (.items | length) > 0 and (.items | length) <= 2 and all(.items[]; .intent.schemaVersion == 1 and .intent.intentId == .intentId and (.intent.snapshotIds | length) == 1 and (if .intent.leg == "PERP" then .intent.instrument == "SOL-PERP" elif .variant == "jitosol_carry" then .intent.instrument == "JUPITER:JITOSOL-USDC" else .intent.instrument == "JUPITER:SOL-USDC" end))' >/dev/null
 curl -fsS "$base_url/v1/fills?limit=2&offset=0" |
   jq -e '.limit == 2 and (.items | length) <= 2' >/dev/null
 curl -fsS "$base_url/v1/funding?limit=2&offset=0" |

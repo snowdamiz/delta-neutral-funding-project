@@ -317,7 +317,7 @@ pub fn persist_paper_plan(
     portfolio_id,
     runtime
   )) ?
-  let rows = Pool.query(pool, "SELECT apply_paper_plan($1::jsonb->>'portfolioRunId', ($1::jsonb->>'expectedStateVersion')::bigint, $2, $1::jsonb->'plan', $1::jsonb->'spotIntent', ($1::jsonb->>'spotIntentHash')::char(64), $1::jsonb->'perpIntent', ($1::jsonb->>'perpIntentHash')::char(64))::text AS applied", [
+  let rows = Pool.query(pool, "SELECT apply_paper_plan($1::jsonb->>'portfolioRunId', ($1::jsonb->>'expectedStateVersion')::bigint, $2, $1::jsonb->'plan', ($1::jsonb->>'spotIntent')::jsonb, ($1::jsonb->>'spotIntentHash')::char(64), ($1::jsonb->>'perpIntent')::jsonb, ($1::jsonb->>'perpIntentHash')::char(64))::text AS applied", [
     record,
     snapshot.event_id
   ]) ?
