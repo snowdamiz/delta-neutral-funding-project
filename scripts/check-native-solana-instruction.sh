@@ -86,7 +86,7 @@ printf '%s' "$burst_report" |
     .elapsedNanoseconds > 0 and
     .nanosecondsPerIteration > 0 and
     .residentBeforeBytes > 0 and
-    .residentAfterBytes <= (.residentBeforeBytes + 67108864)
+    .residentAfterBytes <= 134217728
   ' >/dev/null
 
 jq -n \
