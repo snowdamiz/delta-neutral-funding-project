@@ -1,5 +1,5 @@
-from Solana.Read import Hash, Pubkey, pubkey_string
-from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, compute_unit_limit_instruction, compute_unit_price_instruction, create_associated_token_idempotent_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message, serialize_message_v0, transfer_checked_instruction
+from Solana.Read import Hash, Pubkey, RpcRequest, pubkey_string, rpc_request_json, rpc_response
+from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, SimulationResult, compute_unit_limit_instruction, compute_unit_price_instruction, create_associated_token_idempotent_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message, serialize_message_v0, serialize_unsigned_legacy_transaction, simulate_transaction_request, simulation_result, transfer_checked_instruction
 
 fn fixture() -> String do
   "{\"programId\":\"ComputeBudget111111111111111111111111111111\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":false,\"isWritable\":true},{\"pubkey\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\"isSigner\":true,\"isWritable\":false}],\"data\":\"AQID\"}"
@@ -94,6 +94,25 @@ fn token_instruction_fixture() -> List < Instruction > ! String do
       mint
     ) ?
   ])
+end
+
+fn simulation_request_fixture() -> RpcRequest ! String do
+  let message = legacy_message_fixture() ?
+  let transaction = serialize_unsigned_legacy_transaction(message) ?
+  simulate_transaction_request(
+    7,
+    transaction,
+    "confirmed",
+    true,
+    Some(("123"
+      |> U64.parse()) ?)
+  )
+end
+
+fn simulation_result_fixture() -> SimulationResult ! String do
+  let response = ("{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"context\":{\"slot\":123},\"value\":{\"err\":null,\"logs\":[\"Program log: ok\"],\"unitsConsumed\":42,\"replacementBlockhash\":{\"blockhash\":\"11111111111111111111111111111111\",\"lastValidBlockHeight\":999},\"accounts\":null,\"returnData\":null,\"innerInstructions\":[]}}}"
+    |> rpc_response()) ?
+  simulation_result(response)
 end
 
 describe("Mesh-native Solana instruction inspection") do
@@ -256,6 +275,42 @@ describe("Mesh-native Solana instruction inspection") do
         assert(!account.signer && account.writable)
         assert(pubkey_string(List.get(associated.accounts, 4).pubkey) == "11111111111111111111111111111111")
         assert(pubkey_string(List.get(associated.accounts, 5).pubkey) == "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+      end
+    end
+  end
+
+  test("builds an unsigned transaction and bounded simulation request") do
+    case simulation_request_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(request) -> do
+        assert(request.method == "simulateTransaction")
+        assert(request.params_json ==
+          "[\"AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAECAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAQEBAAUCAQEAAA==\",{\"commitment\":\"confirmed\",\"encoding\":\"base64\",\"sigVerify\":false,\"replaceRecentBlockhash\":true,\"minContextSlot\":123}]"
+        )
+        assert(Json.get(rpc_request_json(request), "id") == "7")
+      end
+    end
+  end
+
+  test("parses an inspectable simulation result") do
+    case simulation_result_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(result) -> do
+        assert(U64.to_string(result.slot) == "123")
+        assert(result.succeeded)
+        assert(result.error_json == "")
+        assert(result.logs_json == "[\"Program log: ok\"]")
+        case result.units_consumed do
+          None -> assert(false)
+          Some(units) -> assert(U64.to_string(units) == "42")
+        end
+        assert(Json.get(result.replacement_blockhash_json, "lastValidBlockHeight") == "999")
       end
     end
   end
