@@ -13,7 +13,7 @@ qualification run after the release is frozen.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| 30 days continuous dual-paper operation | FAILED | The preserved schema-28 run beginning at `1785165668457` recorded a 777,664 ms source gap against the 60,000 ms limit; it must not be reset or backdated |
+| 30 days continuous dual-paper operation | COLLECTING | The failed schema-28 run beginning at `1785165668457` remains preserved with its 777,664 ms gap. The fresh schema-31 run began at `1785193575453` on project `9e958f6`, Mesh `bea7d21`, and config `f30c522`; do not reset or backdate it |
 | 100 funding intervals | COLLECTING | `funding_interval_count` in the durable soak report |
 | Several epoch/reward transitions | COLLECTING | `epoch_transition_count` and JitoSOL valuation events |
 | Acceptable cost-complete JitoSOL P&L | COLLECTING | `/v1/pnl`, `/v1/pnl-comparison`, soak acceptance |
@@ -40,7 +40,7 @@ qualification run after the release is frozen.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| Pinned compiler/runtime build manifest | PASS | The running preserved release uses Mesh `e612743`; the schema-31 candidate pins Mesh `bea7d21`; both use compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
+| Pinned compiler/runtime build manifest | PASS | The active schema-31 release pins Mesh `bea7d21`; the preserved failed release uses `e612743`. Both use compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
 | Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; candidate schema 31 |
 | Required P0 capability acceptance | PASS | `MESH-ACTOR-001` enforces item/byte bounds and nonblocking producer contention; all project probes pass |
 | Exact cross-language vectors | PASS | Mesh, TypeScript, and Rust conformance suites |

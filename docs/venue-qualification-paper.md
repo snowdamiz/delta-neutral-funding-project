@@ -74,14 +74,17 @@ they never use oracle, mark, or midpoint fills.
 
 ## Eligibility and operational risk
 
-Phoenix's May 2026 terms prohibit use of its services by U.S. persons and
-people located in the United States, prohibit location/identity circumvention,
-describe the app as beta without a stability guarantee, reserve administrative
-upgrade/pause/parameter powers, and do not guarantee API availability. The
-machine timezone or an IP observation is not proof of operator residence,
-citizenship, or legal eligibility. Live qualification therefore requires the
-operator to confirm eligibility and obtain appropriate advice; the project
-must never bypass access controls.
+Phoenix's terms were updated on 2026-07-27. They classify people or entities
+located in, organized in, resident in, or citizens of the United States,
+Canada, or the United Kingdom as restricted persons, alongside sanctions and
+other jurisdictional restrictions. They prohibit location/identity
+circumvention, describe the app as beta without a stability guarantee, reserve
+administrative upgrade/pause/parameter powers, and do not guarantee API
+availability. The machine timezone, an IP observation, or public API access is
+not proof of operator residence, citizenship, or legal eligibility. Live
+qualification therefore requires the operator to confirm eligibility against
+the then-current terms and obtain appropriate advice; the project must never
+bypass access controls.
 
 The official documentation links Phoenix's Discord for support/status
 escalation. That identifies a channel but does not satisfy the credentialed
