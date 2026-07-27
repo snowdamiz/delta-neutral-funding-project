@@ -7,6 +7,7 @@ import { buildAuthoritativeEvents } from "./sources.js";
 const solMint = "So11111111111111111111111111111111111111112";
 const jitoMint = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
 const usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const phoenixSolMarket = "71Si24E4uc3oCaPbPZTozC1ptSNNqygjjebxSmErSsC2";
 const billion = 1_000_000_000n;
 let expectedJitoQuoteAtoms =
   500_000_000n * billion * billion / (1_234_567_890n * 150_020_000n);
@@ -40,6 +41,7 @@ async function listen(
 test("normalizes a slotted source bundle, fails over, and rejects corrupt pool state", async () => {
   let primaryRequests = 0;
   let mintSupply = 10_000_000_000n;
+  let marketPubkey = phoenixSolMarket;
   let rejectDoubledQuotes = false;
   let expectedJupiterKey: string | undefined = "test-jupiter-key";
   const jupiterRequests = new Set<string>();
@@ -55,6 +57,12 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         json(response, {
           symbol: "SOL",
           marketStatus: "active",
+          marketPubkey,
+          baseLotsDecimals: 2,
+          leverageTiers: [
+            { maxLeverage: 25, maxSizeBaseLots: "300" },
+            { maxLeverage: 10, maxSizeBaseLots: "50000000" },
+          ],
           takerFee: 0.0004,
           riskFactors: { maintenanceBps: 5000 },
           statsSnapshot: { slot: 320000004 },
@@ -279,7 +287,11 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     const expectedJitoExitDepth =
       doubledJitoOutput * doubledSolAtoms / doubledSolOutput;
     const expectedNotional = expectedHedge * expectedSolBid / billion;
-    const expectedMaintenance = (expectedNotional * 5_000n + 9_999n) / 10_000n;
+    const expectedPerpNotional =
+      (expectedHedge * 150_020_000n + billion - 1n) / billion;
+    const expectedInitialMargin = (expectedPerpNotional + 9n) / 10n;
+    const expectedMaintenance = (expectedInitialMargin * 5_000n + 9_999n) /
+      10_000n;
     assert.equal(
       captured.snapshot.payload.solSpotBidPriceUsdMicros,
       expectedSolBid.toString(),
@@ -322,7 +334,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     );
     assert.equal(
       captured.snapshot.payload.liquidationDistanceBps,
-      ((500_000_000n - expectedMaintenance) * 10_000n / 500_000_000n)
+      ((500_000_000n - expectedMaintenance) * 10_000n / expectedPerpNotional)
         .toString(),
     );
     assert.equal(captured.navLamports, 1_234_567_890n);
@@ -341,6 +353,13 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     );
     assert.match(captured.snapshot.rawPayloadHash, /^[0-9a-f]{64}$/);
     assert(primaryRequests >= 3);
+
+    marketPubkey = "11111111111111111111111111111111";
+    await assert.rejects(
+      buildAuthoritativeEvents(config, 8n, 1_785_024_001_000n),
+      /Phoenix SOL market identity changed/,
+    );
+    marketPubkey = phoenixSolMarket;
 
     rejectDoubledQuotes = true;
     await assert.rejects(

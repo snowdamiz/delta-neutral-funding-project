@@ -13,6 +13,7 @@ const jitoMint = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
 const tokenProgram = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const solMint = "So11111111111111111111111111111111111111112";
 const usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const phoenixSolMarket = "71Si24E4uc3oCaPbPZTozC1ptSNNqygjjebxSmErSsC2";
 const million = 1_000_000n;
 const billion = 1_000_000_000n;
 const jupiterRequestSpacingMs = 2_100;
@@ -21,11 +22,18 @@ type ObjectValue = Record<string, unknown>;
 type RawJson = { raw: string; value: unknown };
 type Rounding = "floor" | "ceil";
 
+type PhoenixLeverageTier = {
+  maxLeveragePpm: bigint;
+  maxSizeBaseLots: bigint;
+};
+
 type PhoenixCapture = {
   bidPrice: bigint;
   askPrice: bigint;
+  baseLotsDecimals: bigint;
   depthLamports: bigint;
   feePpm: bigint;
+  leverageTiers: PhoenixLeverageTier[];
   maintenanceBps: bigint;
   fundingPpm: bigint;
   fundingTimestampSeconds: bigint;
@@ -272,10 +280,49 @@ async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
     ) {
       throw new Error("Phoenix SOL market is not active");
     }
+    if (text(market.marketPubkey, "market pubkey") !== phoenixSolMarket) {
+      throw new Error("Phoenix SOL market identity changed");
+    }
     const risk = object(market.riskFactors, "market risk factors");
     const maintenanceBps = integer(risk.maintenanceBps, "maintenanceBps");
     if (maintenanceBps === 0n || maintenanceBps > 10_000n) {
       throw new Error("maintenanceBps must be between 1 and 10000");
+    }
+    const baseLotsDecimals = integer(
+      market.baseLotsDecimals,
+      "baseLotsDecimals",
+    );
+    if (baseLotsDecimals > 9n) {
+      throw new Error("baseLotsDecimals cannot exceed SOL decimals");
+    }
+    const leverageTiers = array(market.leverageTiers, "leverage tiers")
+      .map((value, index) => {
+        const tier = object(value, `leverage tier ${index}`);
+        const maxLeveragePpm = decimal(
+          tier.maxLeverage,
+          6,
+          "floor",
+          `leverage tier ${index} maxLeverage`,
+        );
+        const maxSizeBaseLots = integer(
+          tier.maxSizeBaseLots,
+          `leverage tier ${index} maxSizeBaseLots`,
+        );
+        if (maxLeveragePpm <= 0n || maxSizeBaseLots === 0n) {
+          throw new Error("leverage tiers must have positive limits");
+        }
+        return { maxLeveragePpm, maxSizeBaseLots };
+      });
+    if (leverageTiers.length === 0) {
+      throw new Error("Phoenix leverage tiers are empty");
+    }
+    for (let index = 1; index < leverageTiers.length; index += 1) {
+      if (
+        (leverageTiers[index - 1] as PhoenixLeverageTier).maxSizeBaseLots >=
+          (leverageTiers[index] as PhoenixLeverageTier).maxSizeBaseLots
+      ) {
+        throw new Error("Phoenix leverage tiers must be ordered by size");
+      }
     }
     const feePpm = decimal(market.takerFee, 6, "ceil", "takerFee");
     if (feePpm < 0n || feePpm > million) {
@@ -324,8 +371,10 @@ async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
     return {
       bidPrice: parsedBook.bid,
       askPrice: parsedBook.ask,
+      baseLotsDecimals,
       depthLamports: parsedBook.depth,
       feePpm,
+      leverageTiers,
       maintenanceBps,
       fundingPpm: decimal(
         latest.fundingRatePercentage,
@@ -615,15 +664,33 @@ export async function buildAuthoritativeEvents(
   if (notionalUsdMicros > config.paperNotionalUsdMicros) {
     throw new Error("paper notional exceeds its configured cap");
   }
+  const positionBaseLots = ceilDiv(
+    hedgeLamports,
+    10n ** (9n - perp.baseLotsDecimals),
+  );
+  const leverageTier = perp.leverageTiers.find(
+    (tier) => positionBaseLots <= tier.maxSizeBaseLots,
+  );
+  if (!leverageTier) {
+    throw new Error("paper position exceeds Phoenix leverage tiers");
+  }
+  const perpNotionalUsdMicros = ceilDiv(
+    hedgeLamports * perp.askPrice,
+    billion,
+  );
+  const initialMargin = ceilDiv(
+    perpNotionalUsdMicros * million,
+    leverageTier.maxLeveragePpm,
+  );
   const maintenance = ceilDiv(
-    notionalUsdMicros * perp.maintenanceBps,
+    initialMargin * perp.maintenanceBps,
     10_000n,
   );
   const liquidationDistance =
     config.paperCollateralUsdMicros <= maintenance
       ? 0n
       : (config.paperCollateralUsdMicros - maintenance) * 10_000n /
-        config.paperCollateralUsdMicros;
+        perpNotionalUsdMicros;
   const payload: MarketSnapshotPayload = {
     epoch: pool.epoch.toString(),
     oracleStatus: "valid",
