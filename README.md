@@ -41,6 +41,20 @@ OPERATOR_HMAC_SECRET=local-operator-only-change-me \
   bin/collector exit jitosol-carry "manual paper exit" --approve-paper
 ```
 
+`paper-reset` is intentionally stricter: pause all entries, flatten every paper
+portfolio, and reconcile before using:
+
+```sh
+bin/collector paper-reset \
+  --initial-usdc 5000 \
+  --initial-collateral 500 \
+  --approve-paper-reset
+```
+
+The collateral must match the pinned runtime
+configuration. A successful reset atomically clears paper evidence, recreates
+opening ledgers, preserves build/operator audit records, and remains paused.
+
 Deterministic replay uses the same collector image without a network or writable
 root filesystem:
 

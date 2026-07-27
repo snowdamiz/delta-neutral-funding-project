@@ -54,5 +54,5 @@ done
 test "$(
   docker exec "$database_container" \
     psql -U funding -d funding -Atc "SELECT max(version) FROM schema_meta"
-)" = 29
+)" = 30
 printf 'database migration and contract checks passed\n'

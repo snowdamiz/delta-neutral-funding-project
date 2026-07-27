@@ -10,7 +10,7 @@ from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_
 from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events, shadow_results
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans
+from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -706,6 +706,116 @@ fn operator_response(request :: Request, action :: String, target :: String) do
   end
 end
 
+fn positive_json_integer(body :: String, name :: String) -> Int ! String do
+  if Json.is_string(body, name) == false do
+    return Err("${name} must be a JSON string")
+  end
+  let raw = Json.get(body, name)
+  if Regex.is_match(~r/^[1-9][0-9]{0,14}$/, raw) == false do
+    return Err("${name} must be a canonical positive integer")
+  end
+  case (raw
+    |> String.to_int) do
+    Some(value) -> Ok(value)
+    None -> Err("${name} must be a canonical integer")
+  end
+end
+
+fn paper_reset_approval_expiry(body :: String) -> Int ! String do
+  let expires_at_ms = positive_json_integer(body, "approvalExpiresAtMs") ?
+  let now_ms = DateTime.utc_now()
+    |> DateTime.to_unix_ms
+  if expires_at_ms < now_ms || expires_at_ms > now_ms + 60000 do
+    Err("paper reset approval is expired or too far in the future")
+  else
+    Ok(expires_at_ms)
+  end
+end
+
+fn paper_reset_response(request :: Request) do
+  let body = Request.body(request)
+  let idempotency_key = request_header(request, "x-idempotency-key")
+  if operator_authenticated(request, idempotency_key, body) == false do
+    warn("operator_command_rejected", "{\"action\":\"paper_reset\",\"reason\":\"authentication\"}")
+    return error_response(401, "unauthorized", "invalid operator signature")
+  end
+  if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
+    return error_response(400, "invalid_request", "invalid idempotency key")
+  end
+  case lease_held(get_pool()) do
+    Ok(true) -> ()
+    Ok(false) -> do
+      return error_response(409, "leader_required", "cannot reset without the writer lease")
+    end
+    Err(reason) -> do
+      return error_response(503, "lease_unavailable", reason)
+    end
+  end
+  case Json.parse(body) do
+    Err(reason) -> error_response(400, "invalid_request", reason)
+    Ok(_parsed) -> do
+      if Json.is_string(body, "reason") == false do
+        return error_response(400, "invalid_request", "reason must be a JSON string")
+      end
+      let reason = String.trim(Json.get(body, "reason"))
+      if String.length(reason) == 0 || String.length(reason) > 500 do
+        return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
+      end
+      let approved = Json.is_string(body, "approval") && Json.get(body, "approval") == "RESET PAPER"
+      if approved == false do
+        return error_response(400, "approval_required", "paper reset requires RESET PAPER approval")
+      end
+      case paper_reset_approval_expiry(body) do
+        Err(reason) -> error_response(400, "approval_required", reason)
+        Ok(approval_expires_at_ms) -> case positive_json_integer(
+          body,
+          "initialUsdcMicros"
+        ) do
+          Err(reason) -> error_response(400, "invalid_request", reason)
+          Ok(initial_usdc_micros) -> case positive_json_integer(
+            body,
+            "initialCollateralUsdMicros"
+          ) do
+            Err(reason) -> error_response(400, "invalid_request", reason)
+            Ok(initial_collateral_usd_micros) -> case load_runtime_config() do
+              Err(reason) -> error_response(503, "config_unavailable", reason)
+              Ok(config) -> do
+                if initial_collateral_usd_micros != config.paper_collateral_usd_micros do
+                  return error_response(409, "config_mismatch", "initial collateral must match the pinned paper configuration")
+                end
+                case ("${idempotency_key}\n${body}"
+                  |> Crypto.sha256
+                  |7> persist_paper_reset(
+                    get_pool(),
+                    initial_usdc_micros,
+                    initial_collateral_usd_micros,
+                    approval_expires_at_ms,
+                    idempotency_key,
+                    reason
+                  )) do
+                  Ok(result) -> do
+                    info("operator_command_applied", "{\"action\":\"paper_reset\",\"idempotencyKey\":\"${idempotency_key}\"}")
+                    HTTP.response(202, result)
+                  end
+                  Err(error) -> do
+                    if String.contains(error, "idempotency key reused") do
+                      error_response(409, "idempotency_conflict", "idempotency key reused for a different command")
+                    else if String.contains(error, "requires") || String.contains(error, "reconciliation failed") do
+                      error_response(409, "reset_precondition_failed", error)
+                    else
+                      error_response(500, "operator_command_failed", error)
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
 pub fn handle_event(request :: Request) -> Response do
   let body = Request.body(request)
   if authenticated(request, body) == false do
@@ -762,6 +872,10 @@ pub fn handle_alerts_test(request :: Request) -> Response do
   operator_response(request, "alerts_test", "")
 end
 
+pub fn handle_paper_reset(request :: Request) -> Response do
+  paper_reset_response(request)
+end
+
 pub fn handle_health(_request :: Request) -> Response do
   case ("SELECT 1 AS ok" |2> Pool.query(get_pool(), [])) do
     Ok(_rows) -> do
@@ -781,7 +895,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 29
+      schemaVersion : 30
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -996,7 +1110,7 @@ pub fn handle_config(_request :: Request) -> Response do
       directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
       directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
       protocolSchemaVersion : 1,
-      databaseSchemaVersion : 29,
+      databaseSchemaVersion : 30,
       liveEnabled : false
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)

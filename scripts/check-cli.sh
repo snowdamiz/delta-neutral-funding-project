@@ -12,4 +12,18 @@ if COLLECTOR_URL=$base_url "$project_dir/bin/collector" flatten test >/dev/null 
   exit 1
 fi
 
+set +e
+COLLECTOR_URL=http://127.0.0.1:9 \
+OPERATOR_HMAC_SECRET=paper-reset-dispatch-test \
+  "$project_dir/bin/collector" paper-reset \
+  --initial-usdc 5000 \
+  --initial-collateral 500 \
+  --approve-paper-reset >/dev/null 2>&1
+reset_status=$?
+set -e
+if [ "$reset_status" -eq 2 ]; then
+  printf 'paper-reset did not reach the signed HTTP path\n' >&2
+  exit 1
+fi
+
 printf 'collector CLI checks passed\n'

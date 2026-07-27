@@ -9,7 +9,7 @@ usage() {
     'usage: collector <command> [arguments]' \
     'read: status | capabilities | adapter-status | portfolios | opportunities | pnl | compare' \
     'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
-    'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper' \
+    'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper | paper-reset --initial-usdc <usd> --initial-collateral <usd> --approve-paper-reset' \
     'replay: replay --bundle <path> --config <path>' \
     'proof: solana-read | solana-subscribe | solana-inspect-instruction | solana-inspect-jupiter-build | solana-transaction-proof | solana-transaction-burst' \
     'test: alerts-test <reason> | verify-toolchain'
@@ -19,14 +19,13 @@ read_endpoint() {
   curl -fsS "$base_url$1" | jq .
 }
 
-mutate() {
+signed_post() {
   local action=$1
   local path=$2
-  local reason=$3
+  local body=$3
   local secret=${OPERATOR_HMAC_SECRET:?OPERATOR_HMAC_SECRET is required}
-  local key body signature
+  local key signature
   key="cli-$(date +%s)-$$-${action}"
-  body=$(jq -cn --arg reason "$reason" '{reason:$reason}')
   signature=$(
     printf '%s\n%s' "$key" "$body" |
       openssl dgst -sha256 -hmac "$secret" -hex |
@@ -41,11 +40,35 @@ mutate() {
     jq .
 }
 
+mutate() {
+  local action=$1
+  local path=$2
+  local reason=$3
+  local body
+  body=$(jq -cn --arg reason "$reason" '{reason:$reason}')
+  signed_post "$action" "$path" "$body"
+}
+
 require_reason() {
   test -n "${1:-}" || {
     usage >&2
     exit 2
   }
+}
+
+usd_to_micros() {
+  local usd=$1
+  case "$usd" in
+    '' | *[!0-9]* | 0)
+      printf 'USD amount must be a positive whole number\n' >&2
+      return 2
+      ;;
+  esac
+  test "${#usd}" -le 9 || {
+    printf 'USD amount is too large\n' >&2
+    return 2
+  }
+  printf '%s\n' "$((10#$usd * 1000000))"
 }
 
 absolute_file() {
@@ -117,6 +140,34 @@ case "$command" in
     }
     require_reason "${2:-}"
     mutate flatten /v1/emergency-flatten "$2"
+    ;;
+  paper-reset)
+    test "${2:-}" = '--initial-usdc' &&
+      test "${4:-}" = '--initial-collateral' &&
+      test "${6:-}" = '--approve-paper-reset' &&
+      test -z "${7:-}" || {
+        usage >&2
+        exit 2
+      }
+    initial_usdc_micros=$(usd_to_micros "${3:-}")
+    initial_collateral_usd_micros=$(usd_to_micros "${5:-}")
+    approval_expires_at_ms="$(($(date +%s) * 1000 + 60000))"
+    body=$(
+      jq -cn \
+        --arg reason 'operator paper reset' \
+        --arg approval 'RESET PAPER' \
+        --arg initialUsdcMicros "$initial_usdc_micros" \
+        --arg initialCollateralUsdMicros "$initial_collateral_usd_micros" \
+        --arg approvalExpiresAtMs "$approval_expires_at_ms" \
+        '{
+          reason: $reason,
+          approval: $approval,
+          initialUsdcMicros: $initialUsdcMicros,
+          initialCollateralUsdMicros: $initialCollateralUsdMicros,
+          approvalExpiresAtMs: $approvalExpiresAtMs
+        }'
+    )
+    signed_post paper-reset /v1/paper/reset "$body"
     ;;
   alerts-test)
     require_reason "${2:-}"
