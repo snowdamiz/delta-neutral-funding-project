@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Pinned runtime commit: `e612743eb9b2dd045c0cb50304f88d262e5356d7`
+Candidate runtime commit: `b0ee2d5626f3374403823bca7cc0703f668dae71`
 
 The pin is a source commit, not an untracked application patch.
 
@@ -20,7 +20,7 @@ The pin is a source commit, not an untracked application patch.
 | MESH-NATIVE | Implemented | Manifest-gated native archives are hash-verified and linked |
 | MESH-WS/HTTP | Implemented | Scheduler-aware bounded clients with cancellation and deterministic limits; a compiled bounded slot subscription validates its acknowledgement and lineage against a separate HTTP read |
 | MESH-BORSH/ANCHOR/SOL-READ | Implemented | Native package tests decode exact SPL/JitoSOL layouts and typed bounded RPC payloads; compiled one-shot differentials validate epoch, atomic NAV, and slot agreement, while the qualified TypeScript adapter remains the production paper feed pending sustained differential soak |
-| MESH-SOL-TX | Partial | Mesh ingests individual instructions and complete bounded Jupiter build instruction sets into typed account metadata and emits inspectable program/signer/writable/data reports; strict TypeScript simulation-artifact validation and the independently constrained Rust dry-run remain in place; exact current transaction construction and RPC/venue simulation remain a Milestone 8 gate |
+| MESH-SOL-TX | Implemented; bridge retained | `mesh-solana` 0.2 ingests bounded Jupiter instructions; serializes legacy/v0 messages and address lookups; reads recent blockhashes; builds compute-budget, SPL, and ATA instructions; builds unsigned simulation envelopes; parses simulation results; and emits byte-free message/instruction allowlist reports. The TypeScript/Rust bridge remains until credentialed exact-action differentials and rollback qualify |
 | MESH-SECRET/CRYPTO/SIGNER | Deferred | absent from paper and shadow deployments |
 
 ## Runtime verification
