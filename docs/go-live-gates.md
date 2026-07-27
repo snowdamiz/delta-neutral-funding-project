@@ -11,7 +11,7 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| 30 days continuous dual-paper operation | COLLECTING | `scripts/soak-report.sh`; PostgreSQL schema 27 |
+| 30 days continuous dual-paper operation | COLLECTING | `scripts/soak-report.sh`; PostgreSQL schema 28 |
 | 100 funding intervals | COLLECTING | `funding_interval_count` in the durable soak report |
 | Several epoch/reward transitions | COLLECTING | `epoch_transition_count` and JitoSOL valuation events |
 | Acceptable cost-complete JitoSOL P&L | COLLECTING | `/v1/pnl`, `/v1/pnl-comparison`, soak acceptance |
@@ -38,8 +38,8 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| Pinned compiler/runtime build manifest | PASS | Mesh `75ee275`; compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
-| Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; schema 27 |
+| Pinned compiler/runtime build manifest | PASS | Mesh `c5c75c4`; compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
+| Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; schema 28 |
 | Required P0 capability acceptance | PASS | `MESH-ACTOR-001` enforces item/byte bounds and nonblocking producer contention; all project probes pass |
 | Exact cross-language vectors | PASS | Mesh, TypeScript, and Rust conformance suites |
 | Golden replay suite | PASS | `scripts/check-replay.sh` |

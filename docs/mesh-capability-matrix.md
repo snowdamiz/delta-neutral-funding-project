@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Pinned runtime commit: `75ee275c3d479eb42693972f41ee5308150be9cd`
+Pinned runtime commit: `c5c75c405e4141eb2dc5a25e8ed638b75ccbd8c9`
 
 The pin is a source commit, not an untracked application patch.
 
@@ -16,9 +16,11 @@ The pin is a source commit, not an untracked application patch.
 | MESH-OBS-001 | Project-local | JSON-line logger; secret fields excluded |
 | MESH-METRICS-001 | Implemented | pure Mesh fixed-name Prometheus rendering over bounded runtime telemetry plus one database snapshot |
 | MESH-PROTO-001 | Project-local | JSON Schema v1 plus shared fixtures |
-| MESH-BYTES/CODEC/NUM | Bridged | TypeScript adapter transports base64 and decimal strings |
-| MESH-WS/HTTP/SOL-READ | Bridged | read-only TypeScript adapter |
-| MESH-SOL-TX | Bridged | Strict TypeScript simulation-artifact validator plus independently constrained Rust dry-run; exact current transaction construction and RPC/venue simulation remain a Milestone 8 gate |
+| MESH-BYTES/CODEC/NUM | Implemented | Binary-safe bytes, strict codecs, and checked U64/U128 arithmetic are native Mesh features |
+| MESH-NATIVE | Implemented | Manifest-gated native archives are hash-verified and linked |
+| MESH-WS/HTTP | Implemented | Scheduler-aware bounded clients with cancellation and deterministic limits |
+| MESH-BORSH/ANCHOR/SOL-READ | Implemented | Native package tests decode exact SPL/JitoSOL layouts and typed bounded RPC payloads; the production paper feed remains on the qualified TypeScript adapter pending differential soak |
+| MESH-SOL-TX | Partial | Strict TypeScript simulation-artifact validator plus independently constrained Rust dry-run; exact current transaction construction and RPC/venue simulation remain a Milestone 8 gate |
 | MESH-SECRET/CRYPTO/SIGNER | Deferred | absent from paper and shadow deployments |
 
 ## Runtime verification
@@ -42,9 +44,14 @@ cargo test -p meshc --test e2e e2e_deterministic_random
 cargo test -p meshc --test e2e e2e_process_shutdown_signal
 cargo test -p meshc --test e2e e2e_process_exit_sets_the_native_status_code
 cargo test -p meshc --test e2e e2e_nested_and
+cargo test -p meshc --test e2e_borsh_native
+cargo test -p meshc --test e2e_anchor_package
+cargo test -p meshc --test e2e_http_client
+cargo test -p meshc --test e2e_solana_read_package
+cargo test -p meshc --test tooling_e2e test_test_runs_mesh_solana_path_dependency
 ```
 
 Collector capability probes cover HTTP, JSON, PostgreSQL, actors, supervisors,
 timers, shutdown, and the project-local packages before milestone zero closes.
-Each exact build persists all 23 results in schema 27 and exposes them at
+Each exact build persists all 23 results in schema 28 and exposes them at
 `/v1/capabilities`; a missing or duplicate result rejects startup.

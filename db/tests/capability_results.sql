@@ -6,30 +6,35 @@ INSERT INTO build_manifests (
   'capability-test-build',
   'code-test',
   'mesh-test',
-  27,
+  28,
   repeat('0', 64)
-);
-
-INSERT INTO language_capability_results (
-  build_manifest_id, capability_id, status, evidence
-) VALUES (
-  'capability-test-build',
-  'MESH-FIN-001',
-  'implemented',
-  'checked arithmetic probe'
 );
 
 DO $$
 BEGIN
+  IF record_language_capability_results('capability-test-build') <> 23 THEN
+    RAISE EXCEPTION 'expected all 23 capability results';
+  END IF;
+
   IF (
     SELECT count(*)
     FROM language_capability_results
     WHERE build_manifest_id = 'capability-test-build'
-      AND capability_id = 'MESH-FIN-001'
+      AND capability_id IN (
+        'MESH-BYTES-001',
+        'MESH-CODEC-001',
+        'MESH-NUM-001',
+        'MESH-NATIVE-001',
+        'MESH-WS-001',
+        'MESH-HTTP-001',
+        'MESH-BORSH-001',
+        'MESH-ANCHOR-001',
+        'MESH-SOL-READ-001'
+      )
       AND status = 'implemented'
-      AND evidence = 'checked arithmetic probe'
-  ) <> 1 THEN
-    RAISE EXCEPTION 'capability evidence was not attached to its build';
+      AND length(btrim(evidence)) > 0
+  ) <> 9 THEN
+    RAISE EXCEPTION 'native read capability evidence is incomplete';
   END IF;
 END;
 $$;

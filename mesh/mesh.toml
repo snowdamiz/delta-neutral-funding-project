@@ -3,4 +3,4 @@ name = "funding-collector"
 version = "0.1.0"
 
 [dependencies]
-
+mesh-solana = { path = "../../mesh-lang/packages/mesh-solana" }
