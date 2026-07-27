@@ -6,7 +6,7 @@ INSERT INTO build_manifests (
   'capability-test-build',
   'code-test',
   'mesh-test',
-  28,
+  29,
   repeat('0', 64)
 );
 
@@ -35,6 +35,17 @@ BEGIN
       AND length(btrim(evidence)) > 0
   ) <> 9 THEN
     RAISE EXCEPTION 'native read capability evidence is incomplete';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM language_capability_results
+    WHERE build_manifest_id = 'capability-test-build'
+      AND capability_id = 'MESH-SOL-TX-001'
+      AND status = 'implemented'
+      AND length(btrim(evidence)) > 0
+  ) THEN
+    RAISE EXCEPTION 'native transaction capability evidence is incomplete';
   END IF;
 END;
 $$;

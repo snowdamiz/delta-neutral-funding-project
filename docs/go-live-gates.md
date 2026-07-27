@@ -1,17 +1,19 @@
 # Go-live evidence ledger
 
-Audit date: 2026-07-26. Live is not approved.
+Audit date: 2026-07-27. Live is not approved.
 
 `PASS` means reproducible local evidence exists. `COLLECTING` requires real
 elapsed authoritative observations. `OPERATOR` needs an eligible human,
 account, wallet, or alert destination. `GATED` is deliberately absent until
 earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
+`FAILED` preserves disqualifying evidence and requires a new, forward-timed
+qualification run after the release is frozen.
 
 ## Strategy and JitoSOL
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| 30 days continuous dual-paper operation | COLLECTING | `scripts/soak-report.sh`; PostgreSQL schema 28 |
+| 30 days continuous dual-paper operation | FAILED | The preserved schema-28 run beginning at `1785165668457` recorded a 777,664 ms source gap against the 60,000 ms limit; it must not be reset or backdated |
 | 100 funding intervals | COLLECTING | `funding_interval_count` in the durable soak report |
 | Several epoch/reward transitions | COLLECTING | `epoch_transition_count` and JitoSOL valuation events |
 | Acceptable cost-complete JitoSOL P&L | COLLECTING | `/v1/pnl`, `/v1/pnl-comparison`, soak acceptance |
@@ -38,11 +40,11 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| Pinned compiler/runtime build manifest | PASS | Mesh `e612743`; compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
-| Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; schema 28 |
+| Pinned compiler/runtime build manifest | PASS | The running preserved release uses Mesh `e612743`; the burn-safe schema-29 candidate pins Mesh `728f534`; both use compiled identity, immutable Docker labels, and fail-closed paper-run release identity |
+| Required capability probes | PASS | `scripts/check-toolchain.sh`; `/v1/capabilities`; candidate schema 29 |
 | Required P0 capability acceptance | PASS | `MESH-ACTOR-001` enforces item/byte bounds and nonblocking producer contention; all project probes pass |
 | Exact cross-language vectors | PASS | Mesh, TypeScript, and Rust conformance suites |
-| Native Solana bounded proofs | PASS | `scripts/check-native-solana-read.sh`; `scripts/check-native-solana-subscription.sh`; `scripts/check-native-solana-instruction.sh`; sustained feed-replacement soak and exact current action simulation remain incomplete |
+| Native Solana bounded proofs | PASS | `scripts/check-native-solana-read.sh`; `scripts/check-native-solana-subscription.sh`; `scripts/check-native-solana-instruction.sh`; exact legacy/v0/ALT construction and unsigned simulation are recorded as `MESH-SOL-TX-001`, while sustained feed replacement and credentialed current-action differentials remain incomplete |
 | Golden replay suite | PASS | `scripts/check-replay.sh` |
 | Bounded mailbox/concurrency/memory soak | COLLECTING | `scripts/runtime-stability-report.sh`; native/GC/overload probes pass; elapsed deployment evidence remains |
 | Compiler/runtime rollback image | PASS | Commit-qualified image produced by `scripts/check-toolchain.sh` |
@@ -89,7 +91,7 @@ earlier gates pass. `PARTIAL` has useful evidence but is not a completed gate.
 
 ## Promotion rule
 
-No `PARTIAL`, `COLLECTING`, `OPERATOR`, or `GATED` row may be treated as
+No `FAILED`, `PARTIAL`, `COLLECTING`, `OPERATOR`, or `GATED` row may be treated as
 complete. A live implementation may begin only after the elapsed/operator
 prerequisites are evidenced, and no transaction may be submitted without a
 separate explicit operator approval.

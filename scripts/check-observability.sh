@@ -14,7 +14,7 @@ test "$(tail -c 1 "$metrics_file" | wc -l | tr -d ' ')" = 1
 build=$(curl -fsS "$base_url/v1/build")
 app_commit=$(printf '%s' "$build" | jq -r .codeCommit)
 mesh_commit=$(printf '%s' "$build" | jq -r .meshCommit)
-grep -q "funding_collector_build_info{app_commit=\"$app_commit\",mesh_compiler_commit=\"$mesh_commit\",mesh_runtime_commit=\"$mesh_commit\",adapter_commit=\"$app_commit\",executor_commit=\"$app_commit\",schema_version=\"28\",execution_mode=\"paper\"} 1" \
+grep -q "funding_collector_build_info{app_commit=\"$app_commit\",mesh_compiler_commit=\"$mesh_commit\",mesh_runtime_commit=\"$mesh_commit\",adapter_commit=\"$app_commit\",executor_commit=\"$app_commit\",schema_version=\"29\",execution_mode=\"paper\"} 1" \
   "$metrics_file"
 
 for metric in \

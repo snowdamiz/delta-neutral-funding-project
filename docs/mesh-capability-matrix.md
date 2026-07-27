@@ -53,5 +53,5 @@ cargo test -p meshc --test tooling_e2e test_test_runs_mesh_solana_path_dependenc
 
 Collector capability probes cover HTTP, JSON, PostgreSQL, actors, supervisors,
 timers, shutdown, and the project-local packages before milestone zero closes.
-Each exact build persists all 23 results in schema 28 and exposes them at
+Each exact build persists all 23 results in schema 29 and exposes them at
 `/v1/capabilities`; a missing or duplicate result rejects startup.
