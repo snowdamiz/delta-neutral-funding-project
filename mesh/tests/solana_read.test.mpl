@@ -1,4 +1,4 @@
-from Solana.Read import Mint, StakePoolState, get_account_info_request, jitosol_mint, jitosol_nav, jitosol_stake_pool, pubkey_string, rpc_request_json
+from Solana.Read import LatestBlockhash, Mint, StakePoolState, get_account_info_request, get_latest_blockhash_request, hash_string, jitosol_mint, jitosol_nav, jitosol_stake_pool, latest_blockhash_from_response, pubkey_string, rpc_request_json, rpc_response
 
 fn native_jitosol_nav() -> String ! String do
   let epoch = (U64.parse("777")) ?
@@ -52,6 +52,12 @@ fn canonical_account_request_matches() -> Bool do
   end
 end
 
+fn latest_blockhash_fixture() -> LatestBlockhash ! String do
+  let response = ("{\"jsonrpc\":\"2.0\",\"id\":10,\"result\":{\"context\":{\"slot\":123},\"value\":{\"blockhash\":\"11111111111111111111111111111111\",\"lastValidBlockHeight\":456}}}"
+    |> rpc_response()) ?
+  latest_blockhash_from_response(response)
+end
+
 describe("Mesh-native Solana read capability") do
   test("validates JitoSOL identities and exact NAV arithmetic") do
     assert(native_jitosol_nav_matches())
@@ -59,5 +65,29 @@ describe("Mesh-native Solana read capability") do
 
   test("builds a canonical bounded account request") do
     assert(canonical_account_request_matches())
+  end
+
+  test("builds and parses a recent blockhash request") do
+    case get_latest_blockhash_request(10, "confirmed") do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(request) -> assert(
+        rpc_request_json(request) ==
+          "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"getLatestBlockhash\",\"params\":[{\"commitment\":\"confirmed\"}]}"
+      )
+    end
+    case latest_blockhash_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(value) -> do
+        assert(U64.to_string(value.context_slot) == "123")
+        assert(hash_string(value.blockhash) == "11111111111111111111111111111111")
+        assert(U64.to_string(value.last_valid_block_height) == "456")
+      end
+    end
   end
 end
