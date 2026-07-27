@@ -33,7 +33,9 @@ pub fn native_solana_transaction_report() -> String ! String do
       AddressTableLookup {
         account_key : (jitosol_stake_pool()) ?,
         writable_indexes : [0],
-        readonly_indexes : [1]
+        readonly_indexes : [1],
+        writable_addresses : [(jitosol_mint()) ?],
+        readonly_addresses : [payer]
       }
     ]
   }

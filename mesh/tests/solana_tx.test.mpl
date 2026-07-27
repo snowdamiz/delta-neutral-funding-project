@@ -55,7 +55,13 @@ fn message_v0_fixture() -> MessageV0 ! String do
       AddressTableLookup {
         account_key: Pubkey { bytes: ("0303030303030303030303030303030303030303030303030303030303030303" |> Bytes.from_hex())? },
         writable_indexes: [4],
-        readonly_indexes: [5]
+        readonly_indexes: [5],
+        writable_addresses: [
+          Pubkey { bytes: ("0404040404040404040404040404040404040404040404040404040404040404" |> Bytes.from_hex())? }
+        ],
+        readonly_addresses: [
+          Pubkey { bytes: ("0505050505050505050505050505050505050505050505050505050505050505" |> Bytes.from_hex())? }
+        ]
       }
     ]
   })
@@ -266,7 +272,44 @@ describe("Mesh-native Solana instruction inspection") do
           assert(Json.get(report, "lookupTableKeys") == "[\"CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8\"]")
           assert(Json.get(report, "loadedWritableAccounts") == "1")
           assert(Json.get(report, "loadedReadonlyAccounts") == "1")
+          assert(Json.get(report, "loadedWritableAccountKeys") != "[]")
+          assert(Json.get(report, "loadedReadonlyAccountKeys") != "[]")
+          assert(Json.get(report, "accountKeys") != Json.get(report, "staticAccountKeys"))
           assert(!String.contains(report, "aabb"))
+        end
+      end
+    end
+  end
+
+  test("rejects unresolved v0 lookup accounts") do
+    case message_v0_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(message) -> do
+        let lookup = List.get(message.address_table_lookups, 0)
+        let unresolved = MessageV0 {
+          header : message.header,
+          static_account_keys : message.static_account_keys,
+          recent_blockhash : message.recent_blockhash,
+          instructions : message.instructions,
+          address_table_lookups : [
+            AddressTableLookup {
+              account_key : lookup.account_key,
+              writable_indexes : lookup.writable_indexes,
+              readonly_indexes : lookup.readonly_indexes,
+              writable_addresses : List.new(),
+              readonly_addresses : lookup.readonly_addresses
+            }
+          ]
+        }
+        case message_v0_report_json(unresolved) do
+          Err(error) -> assert(error == "SOLANA_TX: address lookup indexes and resolved addresses differ")
+          Ok(report) -> do
+            println(report)
+            assert(false)
+          end
         end
       end
     end
