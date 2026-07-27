@@ -50,6 +50,7 @@ bin/collector replay \
   --config replay/configs/baseline-v1.json
 
 scripts/check-replay.sh
+scripts/check-toolchain-rollback.sh
 scripts/check-database.sh
 scripts/check-toolchain.sh
 scripts/check-shutdown.sh
@@ -66,6 +67,9 @@ scripts/runtime-stability-report.sh
 
 The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
 deterministic-failure bundles twice and checks their exact outcome hashes.
+The rollback gate replays all six bundles on the candidate and prior pinned
+Mesh images and requires identical economic traces after release identity is
+removed from the comparison.
 The database gate applies every migration and contract test to fresh temporary
 PostgreSQL storage.
 The toolchain gate additionally verifies the exact clean Mesh checkout and runs

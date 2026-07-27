@@ -47,7 +47,7 @@ qualification run after the release is frozen.
 | Native Solana bounded proofs | PASS | `scripts/check-native-solana-read.sh`; `scripts/check-native-solana-subscription.sh`; `scripts/check-native-solana-instruction.sh`; exact legacy/v0/ALT construction and unsigned simulation are recorded as `MESH-SOL-TX-001`, while sustained feed replacement and credentialed current-action differentials remain incomplete |
 | Golden replay suite | PASS | `scripts/check-replay.sh` |
 | Bounded mailbox/concurrency/memory soak | COLLECTING | `scripts/runtime-stability-report.sh`; native/GC/overload probes pass; elapsed deployment evidence remains |
-| Compiler/runtime rollback image | PASS | Commit-qualified image produced by `scripts/check-toolchain.sh` |
+| Compiler/runtime rollback image | PASS | Commit-qualified image plus six-bundle economic-equivalence rehearsal in `scripts/check-toolchain-rollback.sh` |
 
 ## Engineering
 

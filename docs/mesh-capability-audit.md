@@ -31,8 +31,9 @@ read-only or shadow differential gate qualifies.
 - A 1,000-construction in-process burst records elapsed time and remains below
   the 128 MiB resident-memory gate.
 - Public package contract versioned as `mesh-solana` 0.2.
-- Rollback remains the prior pinned Mesh/application image pair; no database
-  migration or strategy semantic change is required.
+- `scripts/check-toolchain-rollback.sh` replays all six bundles against the
+  prior pinned Mesh/application image pair and requires identical economics;
+  no database migration or strategy semantic change is required.
 
-Live differential and rollback rehearsal remain adoption gates, not reasons to
-expose signing or submission.
+Live differential remains an adoption gate, not a reason to expose signing or
+submission.
