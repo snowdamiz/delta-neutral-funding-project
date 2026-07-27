@@ -90,7 +90,7 @@ services:
         mesh_lang: ../mesh-lang
       args:
         CODE_COMMIT: ${CODE_COMMIT:-development}
-        MESH_COMMIT: 728f534e0500f90a11cbe8184befb711664280de
+        MESH_COMMIT: bea7d2159572d096eafea2577c2887ef7342ce86
       sbom: true
       provenance: mode=max
     depends_on:

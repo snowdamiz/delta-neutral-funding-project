@@ -1,6 +1,6 @@
 from Packages.SolanaTxCli import native_solana_transaction_burst, native_solana_transaction_report
 from Solana.Read import Hash, Pubkey, RpcRequest, pubkey_string, rpc_request_json, rpc_response
-from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, SimulationResult, compute_unit_limit_instruction, compute_unit_price_instruction, create_associated_token_idempotent_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, legacy_message_report_json, message_v0_report_json, serialize_legacy_message, serialize_message_v0, serialize_unsigned_legacy_transaction, simulate_transaction_request, simulation_result, transfer_checked_instruction
+from Solana.Tx import AccountMeta, AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, SimulationResult, compile_legacy_message, compile_message_v0, compute_unit_limit_instruction, compute_unit_price_instruction, create_associated_token_idempotent_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, jupiter_instructions, legacy_message_report_json, message_v0_report_json, serialize_legacy_message, serialize_message_v0, serialize_unsigned_legacy_transaction, simulate_transaction_request, simulation_result, transfer_checked_instruction
 
 fn fixture() -> String do
   "{\"programId\":\"ComputeBudget111111111111111111111111111111\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":false,\"isWritable\":true},{\"pubkey\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\"isSigner\":true,\"isWritable\":false}],\"data\":\"AQID\"}"
@@ -164,8 +164,15 @@ describe("Mesh-native Solana instruction inspection") do
         assert(false)
       end
       Ok(instructions) -> do
+        let ordered = instructions
+          |> jupiter_instructions()
         let report = instructions
           |> jupiter_instruction_set_report_json()
+        assert(List.length(ordered) == 4)
+        assert(pubkey_string(List.get(ordered, 0).program_id) == "ComputeBudget111111111111111111111111111111")
+        assert(pubkey_string(List.get(ordered, 1).program_id) == "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
+        assert(pubkey_string(List.get(ordered, 2).program_id) == "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4")
+        assert(pubkey_string(List.get(ordered, 3).program_id) == "11111111111111111111111111111111")
         assert(Json.get(report, "schemaVersion") == "1")
         assert(Json.get(report, "source") == "jupiter-build")
         assert(Json.get(report, "instructionCount") == "4")
@@ -199,16 +206,40 @@ describe("Mesh-native Solana instruction inspection") do
         println(error)
         assert(false)
       end
-      Ok(message) -> case message
-        |> serialize_legacy_message() do
+      Ok(message) -> case message.account_keys
+        |> List.get(0)
+        |> compile_legacy_message(
+          message.recent_blockhash,
+          [
+            Instruction {
+              program_id : message.account_keys
+                |> List.get(1),
+              accounts : [
+                AccountMeta {
+                  pubkey : message.account_keys
+                    |> List.get(0),
+                  signer : true,
+                  writable : true
+                }
+              ],
+              data : List.get(message.instructions, 0).data
+            }
+          ]
+        ) do
         Err(error) -> do
           println(error)
           assert(false)
         end
-        Ok(bytes) -> assert(
-          Bytes.to_hex(bytes) ==
-            "0100010200000000000000000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020201010100050201010000"
-        )
+        Ok(compiled) -> case serialize_legacy_message(compiled) do
+          Err(error) -> do
+            println(error)
+            assert(false)
+          end
+          Ok(bytes) -> assert(
+            Bytes.to_hex(bytes) ==
+              "0100010200000000000000000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020201010100050201010000"
+          )
+        end
       end
     end
   end
@@ -219,16 +250,52 @@ describe("Mesh-native Solana instruction inspection") do
         println(error)
         assert(false)
       end
-      Ok(message) -> case message
-        |> serialize_message_v0() do
+      Ok(message) -> case message.static_account_keys
+        |> List.get(0)
+        |> compile_message_v0(
+          message.recent_blockhash,
+          [
+            Instruction {
+              program_id : message.static_account_keys
+                |> List.get(1),
+              accounts : [
+                AccountMeta {
+                  pubkey : message.static_account_keys
+                    |> List.get(0),
+                  signer : true,
+                  writable : true
+                },
+                AccountMeta {
+                  pubkey : List.get(
+                    List.get(
+                      message.address_table_lookups,
+                      0
+                    ).writable_addresses,
+                    0
+                  ),
+                  signer : false,
+                  writable : true
+                }
+              ],
+              data : List.get(message.instructions, 0).data
+            }
+          ],
+          message.address_table_lookups
+        ) do
         Err(error) -> do
           println(error)
           assert(false)
         end
-        Ok(bytes) -> assert(
-          Bytes.to_hex(bytes) ==
-            "8001000102000000000000000000000000000000000000000000000000000000000000000001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202010102000202aabb01030303030303030303030303030303030303030303030303030303030303030301040105"
-        )
+        Ok(compiled) -> case serialize_message_v0(compiled) do
+          Err(error) -> do
+            println(error)
+            assert(false)
+          end
+          Ok(bytes) -> assert(
+            Bytes.to_hex(bytes) ==
+              "8001000102000000000000000000000000000000000000000000000000000000000000000001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202010102000202aabb01030303030303030303030303030303030303030303030303030303030303030301040105"
+          )
+        end
       end
     end
   end

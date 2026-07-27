@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Candidate runtime commit: `728f534e0500f90a11cbe8184befb711664280de`
+Candidate runtime commit: `bea7d2159572d096eafea2577c2887ef7342ce86`
 
 The pin is a source commit, not an untracked application patch.
 
@@ -20,7 +20,7 @@ The pin is a source commit, not an untracked application patch.
 | MESH-NATIVE | Implemented | Manifest-gated native archives are hash-verified and linked |
 | MESH-WS/HTTP | Implemented | Scheduler-aware bounded clients with cancellation and deterministic limits; a compiled bounded slot subscription validates its acknowledgement and lineage against a separate HTTP read |
 | MESH-BORSH/ANCHOR/SOL-READ | Implemented | Native package tests decode exact SPL/JitoSOL layouts and typed bounded RPC payloads; compiled one-shot differentials validate epoch, atomic NAV, and slot agreement. Burn-only mint deficits retain the conservative stake-pool denominator, while mint inflation fails closed; the qualified TypeScript adapter remains the production paper feed pending sustained differential soak |
-| MESH-SOL-TX | Implemented; bridge retained | `mesh-solana` 0.2 ingests bounded Jupiter instructions; serializes legacy/v0 messages and address lookups; reads recent blockhashes; builds compute-budget, SPL, and ATA instructions; builds unsigned simulation envelopes; parses simulation results; and emits byte-free message/instruction allowlist reports. The TypeScript/Rust bridge remains until credentialed exact-action differentials and rollback qualify |
+| MESH-SOL-TX | Implemented; bridge retained | `mesh-solana` 0.2 ingests and orders bounded Jupiter instructions; compiles and serializes high-level legacy/v0 messages and resolved address lookups; reads recent blockhashes; builds compute-budget, SPL, and ATA instructions; builds unsigned simulation envelopes; parses simulation results; and emits byte-free message/instruction allowlist reports. The TypeScript/Rust bridge remains until credentialed exact-action differentials and rollback qualify |
 | MESH-SECRET/CRYPTO/SIGNER | Deferred | absent from paper and shadow deployments |
 
 ## Runtime verification
