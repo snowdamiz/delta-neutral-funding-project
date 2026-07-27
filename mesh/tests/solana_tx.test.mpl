@@ -1,5 +1,5 @@
 from Solana.Read import Hash, Pubkey, pubkey_string
-from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, compute_unit_limit_instruction, compute_unit_price_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message, serialize_message_v0
+from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, compute_unit_limit_instruction, compute_unit_price_instruction, create_associated_token_idempotent_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message, serialize_message_v0, transfer_checked_instruction
 
 fn fixture() -> String do
   "{\"programId\":\"ComputeBudget111111111111111111111111111111\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":false,\"isWritable\":true},{\"pubkey\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\"isSigner\":true,\"isWritable\":false}],\"data\":\"AQID\"}"
@@ -65,6 +65,34 @@ fn compute_budget_fixture() -> List < Instruction > ! String do
     compute_unit_limit_instruction(1_000_000) ?,
     compute_unit_price_instruction(("5000"
       |> U64.parse()) ?) ?
+  ])
+end
+
+fn token_instruction_fixture() -> List < Instruction > ! String do
+  let source = Pubkey { bytes: ("0000000000000000000000000000000000000000000000000000000000000000"
+    |> Bytes.from_hex()) ? }
+  let mint = Pubkey { bytes: ("0101010101010101010101010101010101010101010101010101010101010101"
+    |> Bytes.from_hex()) ? }
+  let destination = Pubkey { bytes: ("0202020202020202020202020202020202020202020202020202020202020202"
+    |> Bytes.from_hex()) ? }
+  let authority = Pubkey { bytes: ("0303030303030303030303030303030303030303030303030303030303030303"
+    |> Bytes.from_hex()) ? }
+  Ok([
+    transfer_checked_instruction(
+      source,
+      mint,
+      destination,
+      authority,
+      ("1000000000"
+        |> U64.parse()) ?,
+      9
+    ) ?,
+    create_associated_token_idempotent_instruction(
+      source,
+      destination,
+      authority,
+      mint
+    ) ?
   ])
 end
 
@@ -194,6 +222,40 @@ describe("Mesh-native Solana instruction inspection") do
         assert(pubkey_string(price.program_id) == "ComputeBudget111111111111111111111111111111")
         assert(List.length(price.accounts) == 0)
         assert(Bytes.to_hex(price.data) == "038813000000000000")
+      end
+    end
+  end
+
+  test("builds exact SPL transfer and idempotent associated-token instructions") do
+    case token_instruction_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(instructions) -> do
+        let transfer = List.get(instructions, 0)
+        let transfer_source = List.get(transfer.accounts, 0)
+        let transfer_mint = List.get(transfer.accounts, 1)
+        let transfer_destination = List.get(transfer.accounts, 2)
+        let transfer_authority = List.get(transfer.accounts, 3)
+        assert(pubkey_string(transfer.program_id) == "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+        assert(Bytes.to_hex(transfer.data) == "0c00ca9a3b0000000009")
+        assert(List.length(transfer.accounts) == 4)
+        assert(!transfer_source.signer && transfer_source.writable)
+        assert(!transfer_mint.signer && !transfer_mint.writable)
+        assert(!transfer_destination.signer && transfer_destination.writable)
+        assert(transfer_authority.signer && !transfer_authority.writable)
+
+        let associated = List.get(instructions, 1)
+        let payer = List.get(associated.accounts, 0)
+        let account = List.get(associated.accounts, 1)
+        assert(pubkey_string(associated.program_id) == "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
+        assert(Bytes.to_hex(associated.data) == "01")
+        assert(List.length(associated.accounts) == 6)
+        assert(payer.signer && payer.writable)
+        assert(!account.signer && account.writable)
+        assert(pubkey_string(List.get(associated.accounts, 4).pubkey) == "11111111111111111111111111111111")
+        assert(pubkey_string(List.get(associated.accounts, 5).pubkey) == "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
       end
     end
   end
