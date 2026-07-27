@@ -39,7 +39,7 @@ async function listen(
 
 test("normalizes a slotted source bundle, fails over, and rejects corrupt pool state", async () => {
   let primaryRequests = 0;
-  let mismatchMintSupply = false;
+  let mintSupply = 10_000_000_000n;
   let rejectDoubledQuotes = false;
   let expectedJupiterKey: string | undefined = "test-jupiter-key";
   const jupiterRequests = new Set<string>();
@@ -97,10 +97,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         pool.writeBigUInt64LE(10_000_000_000n, 266);
         pool.writeBigUInt64LE(777n, 274);
         const mint = Buffer.alloc(82);
-        mint.writeBigUInt64LE(
-          mismatchMintSupply ? 9_999_999_999n : 10_000_000_000n,
-          36,
-        );
+        mint.writeBigUInt64LE(mintSupply, 36);
         mint[44] = 9;
         mint[45] = 1;
         const rpc = JSON.parse(await requestBody(request)) as Array<{ id: number }>;
@@ -387,10 +384,22 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     );
 
     expectedJupiterKey = "test-jupiter-key";
-    mismatchMintSupply = true;
+    expectedJitoQuoteAtoms =
+      500_000_000n * billion * billion / (1_234_567_890n * 150_020_000n);
+    expectedSolQuoteAtoms =
+      (expectedJitoQuoteAtoms * 1_234_567_890n + billion - 1n) / billion;
+    mintSupply = 9_999_999_999n;
+    const burned = await buildAuthoritativeEvents(
+      config,
+      9n,
+      1_785_024_001_000n,
+    );
+    assert.equal(burned.snapshot.payload.supplyAtoms, "10000000000");
+
+    mintSupply = 10_000_000_001n;
     await assert.rejects(
-      buildAuthoritativeEvents(config, 9n, 1_785_024_001_000n),
-      /mint supply does not match stake pool/,
+      buildAuthoritativeEvents(config, 10n, 1_785_024_001_000n),
+      /mint supply exceeds stake pool accounting/,
     );
   } finally {
     await Promise.all([primary.close(), backup.close()]);

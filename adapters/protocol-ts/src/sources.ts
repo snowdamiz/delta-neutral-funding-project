@@ -419,8 +419,9 @@ async function solana(config: AdapterConfig): Promise<SolanaCapture> {
     const mintSupply = mint.readBigUInt64LE(36);
     positive(totalPoolLamports, "stake pool total lamports");
     positive(supplyAtoms, "stake pool supply");
-    if (mintSupply !== supplyAtoms) {
-      throw new Error("mint supply does not match stake pool");
+    // Direct token burns make the mint supply lower until the pool's next balance update.
+    if (mintSupply > supplyAtoms) {
+      throw new Error("mint supply exceeds stake pool accounting");
     }
     const epochInfo = rpcResult(responses, 2);
     const epoch = integer(epochInfo.epoch, "current epoch");

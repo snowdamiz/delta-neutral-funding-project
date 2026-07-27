@@ -33,6 +33,28 @@ fn native_jitosol_nav_matches() -> Bool do
   end
 end
 
+fn native_jitosol_nav_with_mint_supply(mint_supply :: String) -> U128 ! String do
+  let epoch = (U64.parse("777")) ?
+  (jitosol_stake_pool()) ?
+    |> jitosol_nav(
+      StakePoolState {
+        account_type : 1,
+        total_lamports : (U64.parse("12345678900")) ?,
+        pool_token_supply : (U64.parse("10000000000")) ?,
+        last_update_epoch : epoch
+      },
+      (jitosol_mint()) ?,
+      Mint {
+        mint_authority : None,
+        supply : (U64.parse(mint_supply)) ?,
+        decimals : 9,
+        initialized : true,
+        freeze_authority : None
+      },
+      epoch
+    )
+end
+
 fn canonical_account_request_matches() -> Bool do
   case jitosol_mint() do
     Err(_error) -> false
@@ -61,6 +83,17 @@ end
 describe("Mesh-native Solana read capability") do
   test("validates JitoSOL identities and exact NAV arithmetic") do
     assert(native_jitosol_nav_matches())
+    case native_jitosol_nav_with_mint_supply("9999999999") do
+      Ok(value) -> assert(U128.to_string(value) == "1234567890")
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+    end
+    case native_jitosol_nav_with_mint_supply("10000000001") do
+      Err(error) -> assert(error == "SOLANA_JITOSOL: mint supply exceeds stake pool accounting")
+      Ok(_value) -> assert(false)
+    end
   end
 
   test("builds a canonical bounded account request") do
