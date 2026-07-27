@@ -13,7 +13,7 @@ qualification run after the release is frozen.
 
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
-| 30 days continuous dual-paper operation | COLLECTING | The failed schema-28 run beginning at `1785165668457` remains preserved with its 777,664 ms gap. The fresh schema-31 run began at `1785193575453` on project `9e958f6`, Mesh `bea7d21`, and config `f30c522`; do not reset or backdate it |
+| 30 days continuous dual-paper operation | FAILED | The schema-28 gap failure and schema-31 run beginning at `1785193575453` remain preserved. The latter used pre-fix Phoenix maintenance semantics and cannot qualify the corrected model; a new verified release must start from real time |
 | 100 funding intervals | COLLECTING | `funding_interval_count` in the durable soak report |
 | Several epoch/reward transitions | COLLECTING | `epoch_transition_count` and JitoSOL valuation events |
 | Acceptable cost-complete JitoSOL P&L | COLLECTING | `/v1/pnl`, `/v1/pnl-comparison`, soak acceptance |
@@ -29,8 +29,8 @@ qualification run after the release is frozen.
 | Section 27 gate | State | Evidence or owner |
 |---|---|---|
 | Funding semantics from docs and records | PASS for paper | `docs/venue-qualification-paper.md`; durable Phoenix funding records |
-| Current program/market/mint/API/SDK identities | PARTIAL | Paper identities are pinned; shadow/live startup reverification remains |
-| Current fee/margin/liquidation/funding rules | PARTIAL | Public Phoenix parameters are recorded; credentialed/on-chain reproduction remains |
+| Current program/market/mint/API/SDK identities | PARTIAL | The public SOL market/global-config owners and paper identities are pinned; program-data authority, SDK release, and shadow/live startup reverification remain |
+| Current fee/margin/liquidation/funding rules | PARTIAL | Current public Phoenix tiers, fees, risk factors, and cadence are recorded; the paper adapter applies tiered maintenance correctly, while credentialed/on-chain reproduction remains |
 | JitoSOL direct-unstake parameters | PASS for paper | `docs/jitosol-qualification.md`; reverify again at live gate |
 | Audits, authority, pause controls, incidents | PARTIAL | Jito audits/authority and Phoenix admin terms reviewed; pre-live incident review remains |
 | Operator eligibility and terms | OPERATOR | Explicit legal/jurisdictional confirmation; no circumvention |

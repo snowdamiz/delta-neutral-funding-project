@@ -10,9 +10,10 @@ would therefore be unsafe.
 
 ## Phoenix evidence
 
-- The current Phoenix exchange snapshot reports program
-  `EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih`, an active exchange, and an
-  active `SOL` perpetual market.
+- The current Phoenix API reports an active `SOL` perpetual market at
+  `71Si24E4uc3oCaPbPZTozC1ptSNNqygjjebxSmErSsC2`. A confirmed mainnet account
+  read verifies that the market and global config are owned by program
+  `EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih`.
 - The documented REST API exposes exchange snapshots, market parameters,
   executable orderbook levels with source slots, mark prices, and hourly
   funding history.
@@ -29,9 +30,37 @@ would therefore be unsafe.
   Public read access is not evidence that an operator can obtain or lawfully
   use a trading account.
 
+### Public identity and parameter check
+
+Checked on 2026-07-27 against `https://perp-api.phoenix.trade` and confirmed
+mainnet slot `435630449`:
+
+| Item | Observed value |
+|---|---|
+| Program | `EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih` (executable, upgradeable-loader owned) |
+| Global config | `2zskx2iyCvb6Stg7RBZkt1f6MrF4dpYtMG3yMvKwqtUZ` (program owned) |
+| SOL market | `71Si24E4uc3oCaPbPZTozC1ptSNNqygjjebxSmErSsC2` (program owned, active, asset ID 0) |
+| SOL spline | `EVhkquLbfm5rDRXtZu9FoyDSXX5mYq2EYU6yD8zfKEqM` |
+| Base precision / tick | 2 base-lot decimals / 100 quote lots |
+| Base fees | 0.5 bps maker / 3.5 bps taker |
+| Funding cadence | 3,600-second intervals / 86,400-second settlement period |
+| Current first leverage tier | 25× through 32,164,684 base lots |
+| Risk factors | 50% maintenance, 20% backstop, 10% high-risk, 75% cancel-order |
+| Open-interest / liquidation caps | 32,164,684 / 50,000 base lots |
+
+Phoenix defines maintenance as a risk factor applied to tiered initial margin:
+`initial_margin = position_notional / max_leverage`, then
+`maintenance = initial_margin × maintenance_factor`. The adapter now selects
+the size-appropriate tier with conservative atomic rounding and values the
+short at the adverse executable perp price. It does not apply the 50%
+maintenance factor directly to notional.
+
 Official sources:
 
 - https://docs.phoenix.trade/phoenix/perpetual-futures
+- https://docs.phoenix.trade/phoenix/matching-engine/fees
+- https://docs.phoenix.trade/phoenix/margin-and-risk/margin-math
+- https://docs.phoenix.trade/phoenix/margin-and-risk/liquidations
 - https://docs.phoenix.trade/phoenix/margin-and-risk/funding-rate
 - https://docs.phoenix.trade/api/exchange/get-exchange-snapshot
 - https://docs.phoenix.trade/api/exchange/get-market
@@ -92,8 +121,8 @@ account/support drill required before live use.
 
 ## Qualification still required for live
 
-- Pin and independently verify the Phoenix program, market, oracle, and account
-  layouts at startup.
+- Independently decode and verify Phoenix program-data authority, market,
+  oracle, and trader-account layouts at shadow/live startup.
 - Reproduce exact fee, margin, liquidation, funding-cap, and settlement
   behavior from the pinned on-chain program.
 - Measure fill depth, partial fills, confirmation latency, and provider
