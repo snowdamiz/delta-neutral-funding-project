@@ -1,5 +1,5 @@
 from Solana.Read import Hash, Pubkey, RpcRequest, pubkey_string, rpc_request_json, rpc_response
-from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, SimulationResult, compute_unit_limit_instruction, compute_unit_price_instruction, create_associated_token_idempotent_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, serialize_legacy_message, serialize_message_v0, serialize_unsigned_legacy_transaction, simulate_transaction_request, simulation_result, transfer_checked_instruction
+from Solana.Tx import AddressTableLookup, CompiledInstruction, Instruction, LegacyMessage, MessageHeader, MessageV0, SimulationResult, compute_unit_limit_instruction, compute_unit_price_instruction, create_associated_token_idempotent_instruction, instruction_from_jupiter_json, instruction_report_json, jupiter_instruction_set_from_json, jupiter_instruction_set_report_json, legacy_message_report_json, message_v0_report_json, serialize_legacy_message, serialize_message_v0, serialize_unsigned_legacy_transaction, simulate_transaction_request, simulation_result, transfer_checked_instruction
 
 fn fixture() -> String do
   "{\"programId\":\"ComputeBudget111111111111111111111111111111\",\"accounts\":[{\"pubkey\":\"11111111111111111111111111111111\",\"isSigner\":false,\"isWritable\":true},{\"pubkey\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\",\"isSigner\":true,\"isWritable\":false}],\"data\":\"AQID\"}"
@@ -222,6 +222,51 @@ describe("Mesh-native Solana instruction inspection") do
           Bytes.to_hex(bytes) ==
             "8001000102000000000000000000000000000000000000000000000000000000000000000001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202010102000202aabb01030303030303030303030303030303030303030303030303030303030303030301040105"
         )
+      end
+    end
+  end
+
+  test("reports legacy and v0 messages without exposing transaction bytes") do
+    case legacy_message_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(message) -> case legacy_message_report_json(message) do
+        Err(error) -> do
+          println(error)
+          assert(false)
+        end
+        Ok(report) -> do
+          assert(Json.get(report, "version") == "legacy")
+          assert(Json.get(report, "requiredSignatures") == "1")
+          assert(Json.get(report, "instructionCount") == "1")
+          assert(Json.get(report, "messageBytes") == "110")
+          assert(Json.get(report, "programIds") == "[\"4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi\"]")
+          assert(Json.get(report, "lookupTableKeys") == "[]")
+          assert(!String.contains(report, "AQAAAAAAAA"))
+        end
+      end
+    end
+
+    case message_v0_fixture() do
+      Err(error) -> do
+        println(error)
+        assert(false)
+      end
+      Ok(message) -> case message_v0_report_json(message) do
+        Err(error) -> do
+          println(error)
+          assert(false)
+        end
+        Ok(report) -> do
+          assert(Json.get(report, "version") == "v0")
+          assert(Json.get(report, "instructionCount") == "1")
+          assert(Json.get(report, "lookupTableKeys") == "[\"CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8\"]")
+          assert(Json.get(report, "loadedWritableAccounts") == "1")
+          assert(Json.get(report, "loadedReadonlyAccounts") == "1")
+          assert(!String.contains(report, "aabb"))
+        end
       end
     end
   end
