@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Bring up the local paper stack and run the operator console against it.
+#
+# No process juggling: `docker compose up --wait` supervises the six services
+# detached and blocks until their healthchecks pass, so the console is the only
+# foreground process. One set of logs, and Ctrl-C means one obvious thing.
+set -euo pipefail
+
+project_dir=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+cd "$project_dir"
+
+console_port=${CONSOLE_PORT:-5173}
+
+usage() {
+  printf '%s\n' \
+    'usage: dev.sh [command]' \
+    '  up       start the stack, wait for health, run the console (default)' \
+    '  stack    start the stack only, without the console' \
+    '  build    rebuild the images, then start everything' \
+    '  status   show service state and the local URLs' \
+    '  down     stop the stack (paper evidence and Prometheus history are kept)' \
+    '  logs     follow collector and adapter logs' \
+    '' \
+    'ADAPTER_MODE=authoritative dev.sh   captures live Phoenix/RPC/Jupiter data' \
+    'CONSOLE_PORT=3001 dev.sh            moves the console off 5173'
+}
+
+urls() {
+  printf '\n  %-11s %s\n' \
+    console    "http://127.0.0.1:$console_port" \
+    collector  'http://127.0.0.1:8080/v1/status' \
+    adapter    'http://127.0.0.1:8090' \
+    prometheus 'http://127.0.0.1:9090' \
+    grafana    'http://127.0.0.1:3000'
+  printf '\n'
+}
+
+require() {
+  command -v "$1" >/dev/null 2>&1 || {
+    printf 'dev.sh: %s is required but not installed\n' "$1" >&2
+    exit 1
+  }
+}
+
+start_stack() {
+  require docker
+  docker info >/dev/null 2>&1 || {
+    printf 'dev.sh: the Docker daemon is not running\n' >&2
+    exit 1
+  }
+
+  # Building is opt-in because it is genuinely expensive: the collector image
+  # compiles the Mesh toolchain from ../mesh-lang — LLVM 21, Rust, `cargo build
+  # -p meshc`, and twelve cargo test invocations — before it ever reaches this
+  # project's sources. That is minutes, and almost never what you want when you
+  # only edited the console. `dev.sh build` forces it; otherwise we build only
+  # when the image is missing.
+  local build=()
+  if [ "${REBUILD:-0}" = 1 ] || ! docker image inspect \
+    delta-neutral-funding-collector:latest >/dev/null 2>&1; then
+    build=(--build)
+    printf 'building images (compiles the Mesh toolchain — expect several minutes)...\n'
+  fi
+
+  printf 'starting stack (compose waits for every healthcheck)...\n'
+  # --wait blocks until postgres, collector and adapter report healthy and the
+  # migration job exits 0. Without it the console would poll a collector that
+  # has not applied its migrations yet.
+  if ! docker compose up -d "${build[@]}" --wait; then
+    printf '\ndev.sh: the stack did not come up healthy\n\n' >&2
+    docker compose ps >&2 || true
+    printf '\n--- collector ---\n' >&2
+    docker compose logs --tail=40 collector >&2 || true
+    exit 1
+  fi
+}
+
+install_console() {
+  require node
+  require npm
+  # Reinstall when the lockfile is newer than the tree it produced, so a pulled
+  # dependency change is not silently ignored.
+  if [ ! -d ui/node_modules ] || [ ui/package-lock.json -nt ui/node_modules ]; then
+    printf 'installing console dependencies...\n'
+    npm --prefix ui install --no-audit --no-fund
+    touch ui/node_modules
+  fi
+}
+
+case ${1:-up} in
+  up)
+    start_stack
+    install_console
+    urls
+    printf 'the stack keeps running after the console exits — `dev.sh down` stops it\n\n'
+    cd ui
+    exec npm run dev -- --port "$console_port" --strictPort
+    ;;
+  stack)
+    start_stack
+    urls
+    ;;
+  build)
+    REBUILD=1 start_stack
+    install_console
+    urls
+    cd ui
+    exec npm run dev -- --port "$console_port" --strictPort
+    ;;
+  status)
+    docker compose ps
+    urls
+    curl -fsS --max-time 3 http://127.0.0.1:8080/v1/status 2>/dev/null |
+      { command -v jq >/dev/null 2>&1 && jq . || cat; } ||
+      printf 'collector is not answering on 8080\n'
+    ;;
+  down)
+    # Never -v: the paper ledger, soak evidence and Prometheus history live in
+    # named volumes and a dev script has no business deleting them.
+    docker compose down
+    ;;
+  logs)
+    docker compose logs -f collector adapter
+    ;;
+  -h | --help | help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

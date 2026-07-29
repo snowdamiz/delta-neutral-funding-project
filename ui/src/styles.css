@@ -1,0 +1,179 @@
+/* ─── tokens ─────────────────────────────────────────────────────────────
+   Series hues are the validated categorical slot-1/slot-2 pair: on this
+   surface they clear CVD ΔE 26.8 and normal-vision ΔE 31.8. Status hues are a
+   reserved palette and always ship with a glyph and a word, never colour
+   alone — red↔green is indistinguishable under deuteranopia. */
+:root {
+  --s0:#050807; --s1:#0b100f; --s2:#131817; --s3:#1a201e;
+  --line:#1c2321; --line-hi:#2b3532;
+  --ink1:#e9e7e0; --ink2:#98a39f; --ink3:#5e6a66; --ink4:#3a4340;
+  --sol:#3987e5; --jito:#d95926;
+  --ok:#2bc4a0; --warn:#d29922; --crit:#e66767;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,sans-serif;
+  --serif:"Instrument Serif",Georgia,"Times New Roman",serif;
+  --pad:clamp(1.25rem,4vw,3.5rem);
+  color-scheme: dark;
+}
+* { box-sizing:border-box; margin:0; padding:0 }
+html { -webkit-text-size-adjust:100% }
+body {
+  background:var(--s0); color:var(--ink1);
+  font-family:var(--sans); font-weight:300; font-size:15px; line-height:1.5;
+  -webkit-font-smoothing:antialiased; overflow-x:hidden;
+}
+/* graph-paper substrate + vignette: depth without a single image byte */
+body::before {
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    repeating-linear-gradient(to right,transparent 0 79px,#ffffff05 79px 80px),
+    repeating-linear-gradient(to bottom,transparent 0 79px,#ffffff05 79px 80px);
+  mask-image:radial-gradient(ellipse 120% 80% at 50% 0%,#000 0%,transparent 75%);
+}
+body::after {
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:radial-gradient(ellipse 90% 55% at 50% -10%,#12433a2e,transparent 70%);
+}
+.wrap { position:relative; z-index:1; max-width:1560px; margin:0 auto; padding:0 var(--pad) 7rem }
+
+/* ─── typography primitives ─────────────────────────────────────────── */
+.num { font-family:var(--mono); font-variant-numeric:tabular-nums lining-nums; font-weight:400; letter-spacing:-.01em }
+.micro { font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink3); font-weight:500 }
+.lbl { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink3); font-weight:500 }
+.unit { font-size:.5em; color:var(--ink3); letter-spacing:.06em; margin-left:.3em }
+
+/* ─── masthead ───────────────────────────────────────────────────────── */
+header { padding:3.25rem 0 1.5rem; display:flex; flex-wrap:wrap; gap:2rem; align-items:flex-end; justify-content:space-between }
+h1 { font-family:var(--serif); font-weight:400; font-size:clamp(2rem,4.4vw,3.15rem); line-height:.95; letter-spacing:-.015em }
+h1 em { font-style:italic; color:var(--ink2) }
+.sub { margin-top:.6rem; max-width:44ch; color:var(--ink2); font-size:13.5px; line-height:1.55 }
+.meta { display:grid; grid-template-columns:auto auto; gap:.3rem 1.5rem; text-align:right; font-family:var(--mono); font-size:11px }
+.meta dt { color:var(--ink4); letter-spacing:.1em; text-transform:uppercase; font-size:9.5px; align-self:center }
+.meta dd { color:var(--ink2); letter-spacing:-.02em }
+
+.live { display:inline-flex; align-items:center; gap:.5rem; justify-content:flex-end }
+.dot { width:6px; height:6px; border-radius:50%; background:var(--ok); color:var(--ok); animation:pulse 2.4s ease-out infinite; flex:none }
+.dot.bad { background:var(--crit); color:var(--crit) }
+@keyframes pulse { 0%{box-shadow:0 0 0 0 currentColor} 70%{box-shadow:0 0 0 7px transparent} 100%{box-shadow:0 0 0 0 transparent} }
+@media (prefers-reduced-motion:reduce) { .dot { animation:none } }
+
+/* ─── section rule: serif numeral + mono label + hairline to the edge ── */
+section { margin-top:3.5rem }
+.shead { display:flex; align-items:baseline; gap:1rem; margin-bottom:1.25rem }
+.shead .n { font-family:var(--serif); font-size:1.5rem; color:var(--ink4); font-style:italic; line-height:1 }
+.shead h2 { font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.22em; text-transform:uppercase; color:var(--ink2); white-space:nowrap }
+.shead .rule { flex:1; height:1px; background:linear-gradient(to right,var(--line-hi),transparent) }
+.shead .note { font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--ink4); text-transform:uppercase; white-space:nowrap }
+
+/* ─── panels ─────────────────────────────────────────────────────────── */
+.panel { background:var(--s1); border:1px solid var(--line); border-radius:3px }
+.panel > .ph { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.85rem 1.15rem; border-bottom:1px solid var(--line) }
+
+/* ─── status hero ────────────────────────────────────────────────────── */
+.hero { display:grid; grid-template-columns:minmax(320px,.85fr) 1.15fr; background:var(--s1); border:1px solid var(--line); border-left:3px solid var(--st,var(--ink3)); border-radius:3px; overflow:hidden }
+.hero .left { padding:2.1rem 2rem 1.9rem; border-right:1px solid var(--line) }
+.state { font-family:var(--serif); font-size:clamp(3.2rem,7.5vw,5.25rem); line-height:.86; letter-spacing:-.025em; color:var(--st,var(--ink1)); margin-left:-.055em }
+.state-sub { margin-top:.85rem; font-family:var(--mono); font-size:12px; color:var(--ink2); line-height:1.55 }
+.state-sub code { color:var(--st,var(--ink1)); background:#ffffff08; padding:.1rem .38rem; border-radius:2px; font-size:11.5px }
+.diag { display:grid; grid-template-columns:repeat(auto-fit,minmax(178px,1fr)); gap:1px; background:var(--line) }
+.diag > div { background:var(--s1); padding:1.05rem 1.15rem }
+.diag .v { font-family:var(--mono); font-size:15px; margin-top:.42rem; letter-spacing:-.01em; display:flex; align-items:center; gap:.45rem }
+.diag .foot { font-size:11px; color:var(--ink4); margin-top:.3rem; font-family:var(--mono) }
+@media (max-width:900px) {
+  .hero { grid-template-columns:1fr }
+  .hero .left { border-right:0; border-bottom:1px solid var(--line) }
+}
+
+/* status chips — glyph + word, never colour alone */
+.chip { display:inline-flex; align-items:center; gap:.4rem; font-family:var(--mono); font-size:10.5px; font-weight:500; letter-spacing:.11em; text-transform:uppercase; padding:.2rem .5rem .2rem .42rem; border-radius:2px; border:1px solid; white-space:nowrap }
+.chip .g { font-size:9px; line-height:1 }
+.c-ok   { color:var(--ok);   border-color:#2bc4a040; background:#2bc4a012 }
+.c-warn { color:var(--warn); border-color:#d2992240; background:#d2992212 }
+.c-crit { color:var(--crit); border-color:#e6676740; background:#e6676714 }
+.c-mute { color:var(--ink3); border-color:var(--line-hi); background:#ffffff05 }
+
+/* ─── KPI / stat tiles ───────────────────────────────────────────────── */
+.kpis { display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:3px }
+.kpi { background:var(--s1); padding:1.5rem 1.4rem 1.35rem; display:flex; flex-direction:column; justify-content:space-between; min-height:148px }
+.kpi.hero-kpi { background:linear-gradient(155deg,#101816,var(--s1) 62%) }
+.kpi .val { font-family:var(--mono); font-weight:400; font-size:clamp(1.6rem,3vw,2.3rem); letter-spacing:-.035em; line-height:1; margin-top:.9rem }
+.kpi.hero-kpi .val { font-size:clamp(2rem,4.2vw,3.1rem) }
+.kpi .pending { color:var(--ink3); font-size:1.5rem; letter-spacing:.1em }
+.kpi .cap { font-size:11.5px; color:var(--ink3); margin-top:.55rem; line-height:1.45; font-family:var(--mono) }
+@media (max-width:1040px) { .kpis { grid-template-columns:1fr 1fr } }
+@media (max-width:560px)  { .kpis { grid-template-columns:1fr } }
+
+/* ─── tables ─────────────────────────────────────────────────────────── */
+.tw { overflow-x:auto }
+table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px; font-variant-numeric:tabular-nums lining-nums }
+th { text-align:left; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink4); font-weight:500; padding:.7rem 1rem; border-bottom:1px solid var(--line); white-space:nowrap; background:var(--s1) }
+td { padding:.72rem 1rem; border-bottom:1px solid var(--line); white-space:nowrap; color:var(--ink2) }
+tbody tr:last-child td { border-bottom:0 }
+tbody tr { transition:background .14s ease }
+tbody tr:hover { background:#ffffff05 }
+td.n, th.n { text-align:right }
+td strong { color:var(--ink1); font-weight:500 }
+
+/* series identity: a coloured key beside the text, never coloured text */
+.key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:.55rem; flex:none }
+.k-sol { background:var(--sol) } .k-jito { background:var(--jito) }
+.legend { display:flex; gap:1.25rem; flex-wrap:wrap; align-items:center }
+.legend span { display:inline-flex; align-items:center; font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink2) }
+
+/* ─── limit-proximity meter ──────────────────────────────────────────── */
+.meter { display:flex; align-items:center; gap:.7rem; min-width:168px }
+.track { position:relative; flex:1; height:5px; background:var(--s3); border-radius:3px; overflow:hidden }
+.bar { position:absolute; inset:0 auto 0 0; border-radius:3px; transition:width .5s cubic-bezier(.4,0,.2,1) }
+.meter .pct { font-family:var(--mono); font-size:11px; color:var(--ink3); width:3.4em; text-align:right; flex:none }
+
+/* ─── attribution composition bar ────────────────────────────────────── */
+.attr { display:flex; gap:2px; height:7px; margin:.55rem 0 .3rem; min-width:150px }
+.attr i { display:block; border-radius:1px }
+.attr .empty { flex:1; background:var(--s3); border-radius:1px }
+
+/* ─── feeds ──────────────────────────────────────────────────────────── */
+.feed { max-height:400px; overflow-y:auto }
+.item { display:grid; grid-template-columns:auto 1fr auto; gap:.5rem 1rem; align-items:center; padding:.8rem 1.15rem; border-bottom:1px solid var(--line) }
+.item:last-child { border-bottom:0 }
+.item .t { font-family:var(--mono); font-size:12.5px; color:var(--ink1); display:flex; align-items:center }
+.item .d { font-family:var(--mono); font-size:10.5px; color:var(--ink4); margin-top:.22rem; letter-spacing:.02em; white-space:normal }
+.item .ts { font-family:var(--mono); font-size:10.5px; color:var(--ink4); text-align:right; white-space:nowrap }
+
+/* ─── capability chips ───────────────────────────────────────────────── */
+.caps { display:flex; flex-wrap:wrap; gap:.45rem; padding:1.15rem }
+.cap-chip { display:inline-flex; align-items:center; gap:.42rem; font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; padding:.32rem .55rem; border-radius:2px; border:1px solid var(--line-hi); background:var(--s2); color:var(--ink2); cursor:default }
+.cap-chip .g { font-size:8px }
+.cap-chip[data-s="implemented"]   { color:var(--ok);   border-color:#2bc4a033 }
+.cap-chip[data-s="project_local"] { color:var(--ink2) }
+.cap-chip[data-s="deferred"]      { color:var(--warn); border-color:#d2992233 }
+
+/* ─── config sheet ───────────────────────────────────────────────────── */
+details.cfg summary { cursor:pointer; list-style:none; padding:.85rem 1.15rem; font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink3); display:flex; justify-content:space-between; align-items:center }
+details.cfg summary::-webkit-details-marker { display:none }
+details.cfg summary::after { content:"+"; color:var(--ink4); font-size:14px }
+details.cfg[open] summary::after { content:"−" }
+details.cfg[open] summary { border-bottom:1px solid var(--line) }
+.cfg-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(268px,1fr)); gap:1px; background:var(--line) }
+.cfg-grid > div { background:var(--s1); padding:.72rem 1.15rem; display:flex; justify-content:space-between; gap:1rem; font-family:var(--mono); font-size:11.5px }
+.cfg-grid dt { color:var(--ink4) }
+.cfg-grid dd { color:var(--ink1); text-align:right; word-break:break-all }
+
+/* ─── empty states: intentional, not broken ──────────────────────────── */
+.empty-state { padding:2.4rem 1.15rem; text-align:center; color:var(--ink4); font-family:var(--mono); font-size:11.5px; letter-spacing:.04em; line-height:1.7 }
+.empty-state .g { display:block; font-size:18px; color:var(--ink4); margin-bottom:.5rem; opacity:.5 }
+
+/* ─── layout helpers ─────────────────────────────────────────────────── */
+.cols { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem }
+.cols-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:1.5rem }
+@media (max-width:1040px) { .cols, .cols-3 { grid-template-columns:1fr } }
+
+/* ─── entrance: one orchestrated load, staggered ─────────────────────── */
+@media (prefers-reduced-motion:no-preference) {
+  .rise { animation:rise .7s cubic-bezier(.16,1,.3,1) backwards }
+  @keyframes rise { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:none } }
+}
+footer { margin-top:4rem; padding-top:1.5rem; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:1rem; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--ink4); letter-spacing:.06em }
+::-webkit-scrollbar { width:9px; height:9px }
+::-webkit-scrollbar-track { background:var(--s0) }
+::-webkit-scrollbar-thumb { background:var(--line-hi); border-radius:5px }
+::selection { background:#2bc4a033 }

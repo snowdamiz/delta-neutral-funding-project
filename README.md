@@ -10,7 +10,25 @@ contains no private key and no route from the paper deployment to a signer.
 
 ## Local development
 
-The complete stack is started with Docker Compose:
+`dev.sh` brings up everything — the six compose services and the operator
+console — and waits for every healthcheck before handing over:
+
+```sh
+./dev.sh              # stack + console on http://127.0.0.1:5173
+./dev.sh stack        # stack only
+./dev.sh build        # force an image rebuild first
+./dev.sh status       # service state and URLs
+./dev.sh down         # stop the stack; volumes are kept
+```
+
+Building is opt-in because the collector image compiles the Mesh toolchain from
+`../mesh-lang` — LLVM, Rust, and the `meshc` test suite — before it reaches this
+project's sources. `dev.sh` builds only when the image is missing, so ordinary
+runs start in seconds. Use `./dev.sh build` after changing Mesh or collector
+sources.
+
+The stack keeps running when the console exits, so closing the console never
+interrupts a soak. The underlying compose invocation still works directly:
 
 ```sh
 docker compose up --build
@@ -31,6 +49,30 @@ fifteen-second post-capture interval; the 60-second source-age limit covers a
 complete six-request capture cycle. `JUPITER_API_KEY` enables a separately
 managed higher-rate quota. Comma-separated `PHOENIX_URLS`, `SOLANA_RPC_URLS`,
 and `JUPITER_URLS` provide ordered failover.
+
+## Operator console
+
+`ui/` is a React console over the read API — signal state, the JitoSOL-versus-SOL
+comparison, positions against their pinned margin and liquidation floors, risk
+decisions, and the capability matrix.
+
+```sh
+cd ui
+npm install
+npm run dev          # http://127.0.0.1:5173, proxies /v1 to the collector
+```
+
+`COLLECTOR=http://host:port npm run dev` targets a different collector. For a
+build without a Node runtime, `npm run build && python3 serve.py` serves `dist/`
+with the same proxy on port 8081.
+
+The console is strictly read-only: it issues GET requests only, and both proxies
+forward nothing else, so the collector's mutating routes — all POST — are
+unreachable from the browser. They stay with `bin/collector`, which holds the
+operator secret. `npm test` covers the fixed-point conversions, which go through
+BigInt because atoms exceed `Number.MAX_SAFE_INTEGER`.
+
+## Operator commands
 
 Read-only operator commands use `bin/collector` directly. Mutations require the
 separate operator secret, and paper exits/flattening also require the explicit
