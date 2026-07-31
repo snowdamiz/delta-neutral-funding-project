@@ -46,6 +46,8 @@ type PhoenixCapture = {
 type SolanaCapture = {
   totalPoolLamports: bigint;
   supplyAtoms: bigint;
+  lastEpochTotalLamports: bigint;
+  lastEpochSupplyAtoms: bigint;
   epoch: bigint;
   slots: bigint[];
   raw: string;
@@ -142,6 +144,28 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
     throw new Error("ceilDiv requires a non-negative numerator and positive denominator");
   }
   return (numerator + denominator - 1n) / denominator;
+}
+
+export function completedEpochRewardRatePpmPerHour(
+  totalPoolLamports: bigint,
+  supplyAtoms: bigint,
+  lastEpochTotalLamports: bigint,
+  lastEpochSupplyAtoms: bigint,
+  haircutPpm: bigint,
+): bigint {
+  positive(totalPoolLamports, "stake pool total lamports");
+  positive(supplyAtoms, "stake pool supply");
+  positive(lastEpochTotalLamports, "last epoch total lamports");
+  positive(lastEpochSupplyAtoms, "last epoch supply");
+  if (haircutPpm < 0n || haircutPpm > million) {
+    throw new Error("JitoSOL reward haircut must be between zero and one million ppm");
+  }
+  const growth =
+    totalPoolLamports * lastEpochSupplyAtoms -
+    supplyAtoms * lastEpochTotalLamports;
+  if (growth <= 0n) return 0n;
+  return growth * (million - haircutPpm) /
+    (supplyAtoms * lastEpochTotalLamports * 48n);
 }
 
 function hash(raw: string): string {
@@ -413,6 +437,35 @@ function rpcResult(responses: unknown[], id: number): ObjectValue {
   return object(response.result, `RPC result ${id}`);
 }
 
+function stakePoolEpochTotals(pool: Buffer): {
+  supply: bigint;
+  lamports: bigint;
+} {
+  let offset = 346;
+  const variant = (field: string, maximum: number, payloadBytes: number) => {
+    if (offset >= pool.length) throw new Error(`truncated ${field}`);
+    const discriminator = pool.readUInt8(offset);
+    if (discriminator > maximum) throw new Error(`invalid ${field}`);
+    offset += 1 + (discriminator === 0 ? 0 : payloadBytes);
+  };
+  variant("next epoch fee", 2, 16);
+  variant("preferred deposit validator", 1, 32);
+  variant("preferred withdraw validator", 1, 32);
+  offset += 32;
+  variant("next stake withdrawal fee", 2, 16);
+  offset += 1;
+  variant("SOL deposit authority", 1, 32);
+  offset += 17;
+  variant("SOL withdraw authority", 1, 32);
+  offset += 16;
+  variant("next SOL withdrawal fee", 2, 16);
+  if (offset + 16 > pool.length) throw new Error("truncated stake pool epoch totals");
+  return {
+    supply: pool.readBigUInt64LE(offset),
+    lamports: pool.readBigUInt64LE(offset + 8),
+  };
+}
+
 async function solana(config: AdapterConfig): Promise<SolanaCapture> {
   return firstProvider("Solana RPC", config.solanaRpcUrls, async (endpoint) => {
     const response = await fetchJson(endpoint, config.requestTimeoutMs, {
@@ -465,9 +518,14 @@ async function solana(config: AdapterConfig): Promise<SolanaCapture> {
     const totalPoolLamports = pool.readBigUInt64LE(258);
     const supplyAtoms = pool.readBigUInt64LE(266);
     const lastUpdateEpoch = pool.readBigUInt64LE(274);
+    const lastEpoch = stakePoolEpochTotals(pool);
+    const lastEpochSupplyAtoms = lastEpoch.supply;
+    const lastEpochTotalLamports = lastEpoch.lamports;
     const mintSupply = mint.readBigUInt64LE(36);
     positive(totalPoolLamports, "stake pool total lamports");
     positive(supplyAtoms, "stake pool supply");
+    positive(lastEpochSupplyAtoms, "last epoch stake pool supply");
+    positive(lastEpochTotalLamports, "last epoch stake pool total lamports");
     // Direct token burns make the mint supply lower until the pool's next balance update.
     if (mintSupply > supplyAtoms) {
       throw new Error("mint supply exceeds stake pool accounting");
@@ -480,6 +538,8 @@ async function solana(config: AdapterConfig): Promise<SolanaCapture> {
     return {
       totalPoolLamports,
       supplyAtoms,
+      lastEpochTotalLamports,
+      lastEpochSupplyAtoms,
       epoch,
       slots: [
         integer(context.slot, "RPC account slot"),
@@ -699,6 +759,13 @@ export async function buildAuthoritativeEvents(
     jitosolAtoms: jitoSolAtoms.toString(),
     notionalUsdMicros: notionalUsdMicros.toString(),
     shortReceiptPpm: perp.fundingPpm.toString(),
+    rewardRatePpmPerHour: completedEpochRewardRatePpmPerHour(
+      pool.totalPoolLamports,
+      pool.supplyAtoms,
+      pool.lastEpochTotalLamports,
+      pool.lastEpochSupplyAtoms,
+      config.jitosolRewardHaircutPpm,
+    ).toString(),
     solPriceUsdMicros: spot.solBidPrice.toString(),
     priorNavLamports: (previousNavLamports ?? navLamports).toString(),
     costsUsdMicros: config.paperCostsUsdMicros.toString(),

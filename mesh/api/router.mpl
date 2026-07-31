@@ -1,4 +1,4 @@
-from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_paper_reset, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_risk_decisions, handle_risk_events, handle_shadow_result, handle_shadow_results, handle_status
+from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_cross_venue_funding_leaderboard, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_funding_leaderboard, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_paper_reset, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_reverse_carry_leaderboard, handle_risk_decisions, handle_risk_events, handle_shadow_result, handle_shadow_results, handle_status, handle_strategies, handle_wallet_config, handle_wallet_config_update, handle_wallet_tracking
 
 pub fn build_router() do
   HTTP.router()
@@ -8,6 +8,7 @@ pub fn build_router() do
     |> HTTP.on_get("/v1/status", handle_status)
     |> HTTP.on_get("/v1/adapter/status", handle_adapter_status)
     |> HTTP.on_get("/v1/executor/status", handle_executor_status)
+    |> HTTP.on_get("/v1/strategies", handle_strategies)
     |> HTTP.on_get("/v1/portfolios", handle_portfolios)
     |> HTTP.on_get("/v1/portfolios/:portfolio", handle_portfolio)
     |> HTTP.on_get("/v1/positions", handle_positions)
@@ -15,6 +16,11 @@ pub fn build_router() do
     |> HTTP.on_get("/v1/shadow-results", handle_shadow_results)
     |> HTTP.on_get("/v1/fills", handle_fills)
     |> HTTP.on_get("/v1/funding", handle_funding)
+    |> HTTP.on_get("/v1/funding/leaderboard", handle_funding_leaderboard)
+    |> HTTP.on_get("/v1/reverse-carry/leaderboard", handle_reverse_carry_leaderboard)
+    |> HTTP.on_get("/v1/cross-venue/leaderboard", handle_cross_venue_funding_leaderboard)
+    |> HTTP.on_get("/v1/wallets", handle_wallet_tracking)
+    |> HTTP.on_get("/v1/wallets/config", handle_wallet_config)
     |> HTTP.on_get("/v1/jitosol", handle_jitosol)
     |> HTTP.on_get("/v1/pnl", handle_pnl)
     |> HTTP.on_get("/v1/pnl/comparison", handle_pnl_comparison)
@@ -34,4 +40,5 @@ pub fn build_router() do
     |> HTTP.on_post("/v1/emergency-flatten", handle_emergency_flatten)
     |> HTTP.on_post("/v1/paper/reset", handle_paper_reset)
     |> HTTP.on_post("/v1/alerts/test", handle_alerts_test)
+    |> HTTP.on_post("/v1/wallets/config", handle_wallet_config_update)
 end

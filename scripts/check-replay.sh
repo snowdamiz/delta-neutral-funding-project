@@ -18,49 +18,49 @@ for scenario in calm volatile liquidity-loss doubled-costs epoch-boundary failur
   cmp "$first" "$second"
   jq -e --arg scenario "$scenario-v1" '
     .bundle_id == $scenario and
-    .mesh_commit == "bea7d2159572d096eafea2577c2887ef7342ce86"
+    .mesh_commit == "c5379f8d00990df18248e4bf2d53bbb1d04868fb"
   ' "$first" >/dev/null
   case "$scenario" in
     calm)
       jq -e '
         .sol_funding_usd_micros == 92525 and
         .jitosol_funding_usd_micros == 92525 and
-        .trace_hash == "958bc37dcf2056845805e07965411bc82f3d07551c84387708fa1b1cfa3c6d2b"
+        .trace_hash == "776326623977543dd62d3f845b78fbbdfa9c1e27b81676899153611de0805aee"
       ' "$first" >/dev/null
       ;;
     volatile)
       jq -e '
         .jitosol_rebalances == 1 and
         .jitosol_basis_lamports == -334000000 and
-        .trace_hash == "0da7b7d82558228ddf246bd46755febd74ba15babb26a7222b6112a4cfc9cc8d"
+        .trace_hash == "0d7702e8459a9f1ea15e960e1b02a1381401734f6ff0f54f531bc1b8ebde4bef"
       ' "$first" >/dev/null
       ;;
     liquidity-loss)
       jq -e '
         .sol_emergencies == 0 and
         .jitosol_emergencies == 1 and
-        .trace_hash == "8d1d3a027f0bbd2f1751e79c8fe420fed6a981d216dc74bd0ac37becc728c10b"
+        .trace_hash == "3f4dea289929a339ed544d2a145acffa65e768b21c0cab910bd375946c1d6a0b"
       ' "$first" >/dev/null
       ;;
     doubled-costs)
       jq -e '
         .sol_execution_fees_usd_micros == 1332362 and
         .jitosol_execution_fees_usd_micros == 1332762 and
-        .trace_hash == "683a8f2306d27d778bb87860e452c4bc284ab36655f9625b3a9fbd9a25b10f3a"
+        .trace_hash == "1c98a9c25c0d981e88e8fd05558641f9d5eaf2e2596847757b506f4ffe9f73d9"
       ' "$first" >/dev/null
       ;;
     epoch-boundary)
       jq -e '
         .jitosol_reward_lamports == 2000000 and
         .jitosol_basis_lamports == -2000000 and
-        .trace_hash == "8c0383435ce507a86ddb296a853c20585661c84ff0a2c0139f379c8ba21266b0"
+        .trace_hash == "5638bfeafb8c50517fc1f2fc0b09576ef139e1ad9fdfa389ae80c7f2b6e2336e"
       ' "$first" >/dev/null
       ;;
     failure)
       jq -e '
         .jitosol_rebalances == 0 and
         .jitosol_emergencies == 1 and
-        .trace_hash == "0d756f74ae845ce17d17b90d49f9a965d80c94c73bd8a0d8e2f73f2873cc252f"
+        .trace_hash == "b2d2eceade8ef89aa0389ad3c8eaca62797551fe26156905ef4f84180748a8dd"
       ' "$first" >/dev/null
       ;;
   esac

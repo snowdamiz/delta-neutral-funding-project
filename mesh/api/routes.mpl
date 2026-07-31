@@ -4,13 +4,13 @@ from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
 from Packages.Metrics import render
-from Packages.Opportunity import OpportunitySet, evaluate_snapshot
+from Packages.Opportunity import OpportunitySet, evaluate_snapshot_for_horizon
 from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, plan_controlled_entry, plan_controlled_position, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
-from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, parse_funding_settlement, parse_market_snapshot, parse_shadow_result
-from Packages.ReadModels import adapter_status, fills, funding, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, risk_decisions, risk_events, shadow_results
+from Packages.ProtocolContracts import FundingObservation, FundingSettlement, MarketSnapshot, WalletObservation, parse_funding_observation, parse_funding_settlement, parse_market_snapshot, parse_shadow_result, parse_wallet_observation
+from Packages.ReadModels import adapter_status, cross_venue_funding_leaderboard, fills, funding, funding_leaderboard, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, reverse_carry_leaderboard, risk_decisions, risk_events, shadow_results, strategies, wallet_config, wallet_tracking
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans
+from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_observation, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans, persist_wallet_config, persist_wallet_observation, run_cross_asset_paper_scan, run_cross_venue_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -478,6 +478,21 @@ fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: Opportu
     config.direct_unstake_scenario
   )) ?
   let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
+  let nav_result = run_nav_discount_paper_cycle(
+    pool,
+    snapshot.event_id,
+    now_ms,
+    config.max_source_age_ms,
+    config.minimum_margin_ratio_ppm,
+    config.minimum_liquidation_distance_bps,
+    config.direct_unstake_fee_ppm,
+    config.direct_unstake_chain_fees_usd_micros,
+    config.direct_unstake_hedge_cost_usd_micros,
+    config.direct_unstake_capital_delay_haircut_usd_micros,
+    config.direct_unstake_final_hedge_close_cost_usd_micros,
+    config.expected_hold_hours
+  ) ?
+  info("nav_discount_paper_cycle", nav_result)
   (now_ms |4> run_independent_pair(pool, snapshot, result)) ?
   (now_ms |4> run_synchronized_pair(pool, snapshot, result)) ?
   Ok(inserted)
@@ -502,12 +517,19 @@ fn persist_response(body :: String, snapshot :: MarketSnapshot, result :: Opport
 end
 
 fn evaluate_response(body :: String, snapshot :: MarketSnapshot) do
-  case evaluate_snapshot(snapshot) do
-    Ok(result) -> persist_response(body, snapshot, result)
-    Err(reason) -> do
-      record_rejected()
-      error_response(422, "evaluation_failed", reason)
+  case load_runtime_config() do
+    Ok(config) -> case evaluate_snapshot_for_horizon(
+      snapshot,
+      config.expected_hold_hours,
+      config.maximum_break_even_hours
+    ) do
+      Ok(result) -> persist_response(body, snapshot, result)
+      Err(reason) -> do
+        record_rejected()
+        error_response(422, "evaluation_failed", reason)
+      end
     end
+    Err(reason) -> error_response(503, "config_unavailable", reason)
   end
 end
 
@@ -615,6 +637,141 @@ fn funding_response(body :: String, event :: FundingSettlement) do
   end
 end
 
+fn funding_observation_response(event :: FundingObservation) do
+  case load_runtime_config() do
+    Ok(config) -> case persist_funding_observation(
+      get_pool(),
+      event,
+      config.source_max_funding_age_ms,
+      config.source_max_borrow_age_ms
+    ) do
+      Ok(result) -> do
+        let cross_result = if result.scan_complete do
+          run_cross_asset_paper_scan(
+            get_pool(),
+            event.scan_id,
+            event.observed_at_ms,
+            config.source_max_funding_age_ms,
+            config.target_notional_usd_micros,
+            config.paper_costs_usd_micros,
+            config.paper_risk_haircut_usd_micros,
+            config.expected_hold_hours
+          )
+        else
+          Ok("{\"status\":\"scan_incomplete\"}")
+        end
+        case cross_result do
+          Err(reason) -> do
+            record_rejected()
+            return error_response(500, "paper_cycle_failed", reason)
+          end
+          Ok(body) -> if result.scan_complete do
+            info("cross_asset_paper_cycle", body)
+          else
+            ()
+          end
+        end
+        let reverse_result = if result.scan_complete do
+          run_reverse_carry_paper_scan(
+            get_pool(),
+            event.scan_id,
+            event.observed_at_ms,
+            config.source_max_funding_age_ms,
+            config.source_max_borrow_age_ms,
+            config.target_notional_usd_micros,
+            config.paper_costs_usd_micros,
+            config.paper_risk_haircut_usd_micros,
+            config.expected_hold_hours,
+            config.maximum_break_even_hours,
+            config.reverse_minimum_negative_funding_ppm,
+            config.reverse_maximum_borrow_utilization_ppm
+          )
+        else
+          Ok("{\"status\":\"scan_incomplete\"}")
+        end
+        case reverse_result do
+          Err(reason) -> do
+            record_rejected()
+            return error_response(500, "paper_cycle_failed", reason)
+          end
+          Ok(body) -> if result.scan_complete do
+            info("reverse_carry_paper_cycle", body)
+          else
+            ()
+          end
+        end
+        let venue_result = if result.scan_complete do
+          run_cross_venue_paper_scan(
+            get_pool(),
+            event.scan_id,
+            event.observed_at_ms,
+            config.source_max_funding_age_ms,
+            config.target_notional_usd_micros,
+            config.paper_costs_usd_micros,
+            config.paper_risk_haircut_usd_micros,
+            config.expected_hold_hours,
+            config.paper_collateral_usd_micros,
+            config.minimum_margin_ratio_ppm,
+            config.minimum_liquidation_distance_bps
+          )
+        else
+          Ok("{\"status\":\"scan_incomplete\"}")
+        end
+        case venue_result do
+          Err(reason) -> do
+            record_rejected()
+            return error_response(500, "paper_cycle_failed", reason)
+          end
+          Ok(body) -> if result.scan_complete do
+            info("cross_venue_paper_cycle", body)
+          else
+            ()
+          end
+        end
+        record_accepted()
+        info("funding_observation_accepted", "{\"eventId\":\"${event.event_id}\",\"venue\":\"${event.venue}\",\"asset\":\"${event.asset}\",\"scanComplete\":\"${result.scan_complete}\"}")
+        HTTP.response(202, json {
+          status : if result.inserted do "accepted" else "duplicate" end,
+          eventId : event.event_id,
+          scanId : event.scan_id,
+          scanComplete : result.scan_complete
+        })
+      end
+      Err(reason) -> do
+        record_rejected()
+        error_response(500, "persistence_failed", reason)
+      end
+    end
+    Err(reason) -> error_response(503, "config_unavailable", reason)
+  end
+end
+
+fn wallet_observation_response(event :: WalletObservation) do
+  case load_runtime_config() do
+    Ok(config) -> case persist_wallet_observation(
+      get_pool(),
+      event,
+      config.source_max_funding_age_ms,
+      config.target_notional_usd_micros,
+      config.paper_costs_usd_micros
+    ) do
+      Ok(body) -> do
+        record_accepted()
+        info(
+          "wallet_observation_accepted",
+          "{\"eventId\":\"${event.event_id}\",\"wallet\":\"${event.wallet}\",\"positions\":\"${event.positions}\",\"fills\":\"${event.fills}\"}"
+        )
+        HTTP.response(202, body)
+      end
+      Err(reason) -> do
+        record_rejected()
+        error_response(500, "persistence_failed", reason)
+      end
+    end
+    Err(reason) -> error_response(503, "config_unavailable", reason)
+  end
+end
+
 fn authenticated_event_response(body :: String) do
   case Json.parse(body) do
     Ok(_parsed) -> do
@@ -631,6 +788,24 @@ fn authenticated_event_response(body :: String) do
         "FundingSettlement" -> do
           case parse_funding_settlement(body) do
             Ok(event) -> funding_response(body, event)
+            Err(reason) -> do
+              record_rejected()
+              error_response(400, "invalid_event", reason)
+            end
+          end
+        end
+        "FundingObservation" -> do
+          case parse_funding_observation(body) do
+            Ok(event) -> funding_observation_response(event)
+            Err(reason) -> do
+              record_rejected()
+              error_response(400, "invalid_event", reason)
+            end
+          end
+        end
+        "WalletObservation" -> do
+          case parse_wallet_observation(body) do
+            Ok(event) -> wallet_observation_response(event)
             Err(reason) -> do
               record_rejected()
               error_response(400, "invalid_event", reason)
@@ -697,6 +872,72 @@ fn operator_response(request :: Request, action :: String, target :: String) do
         Err(error) -> do
           if String.contains(error, "idempotency key reused") do
             error_response(409, "idempotency_conflict", "idempotency key reused for a different command")
+          else
+            error_response(500, "operator_command_failed", error)
+          end
+        end
+      end
+    end
+  end
+end
+
+fn wallet_config_values(body :: String) -> String ! String do
+  let root = Json.parse(body) ?
+  let wallets = (root |> Json.object_get("wallets")) ?
+  let count = (wallets |> Json.array_length()) ?
+  if count > 50 do
+    Err("wallets must contain at most 50 addresses")
+  else
+    Ok(wallets |> Json.encode)
+  end
+end
+
+fn wallet_config_response(request :: Request) do
+  let body = Request.body(request)
+  let idempotency_key = request_header(request, "x-idempotency-key")
+  if operator_authenticated(request, idempotency_key, body) == false do
+    warn("operator_command_rejected", "{\"action\":\"wallet_config\",\"reason\":\"authentication\"}")
+    return error_response(401, "unauthorized", "invalid operator signature")
+  end
+  if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
+    return error_response(400, "invalid_request", "invalid idempotency key")
+  end
+  case lease_held(get_pool()) do
+    Ok(true) -> ()
+    Ok(false) -> do
+      return error_response(409, "leader_required", "cannot configure wallets without the writer lease")
+    end
+    Err(reason) -> do
+      return error_response(503, "lease_unavailable", reason)
+    end
+  end
+  case wallet_config_values(body) do
+    Err(reason) -> error_response(400, "invalid_wallet_config", reason)
+    Ok(wallets_json) -> do
+      if Json.is_string(body, "reason") == false do
+        return error_response(400, "invalid_request", "reason must be a JSON string")
+      end
+      let reason = String.trim(Json.get(body, "reason"))
+      if String.length(reason) == 0 || String.length(reason) > 500 do
+        return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
+      end
+      let request_hash = "${idempotency_key}\n${body}" |> Crypto.sha256
+      case persist_wallet_config(
+        get_pool(),
+        idempotency_key,
+        reason,
+        request_hash,
+        wallets_json
+      ) do
+        Ok(result) -> do
+          info("operator_command_applied", "{\"action\":\"wallet_config\",\"idempotencyKey\":\"${idempotency_key}\"}")
+          HTTP.response(202, result)
+        end
+        Err(error) -> do
+          if String.contains(error, "idempotency key reused") do
+            error_response(409, "idempotency_conflict", "idempotency key reused for a different command")
+          else if String.contains(error, "wallet") do
+            error_response(400, "invalid_wallet_config", error)
           else
             error_response(500, "operator_command_failed", error)
           end
@@ -895,7 +1136,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 31
+      schemaVersion : 39
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -915,7 +1156,7 @@ pub fn handle_capabilities(_request :: Request) -> Response do
 end
 
 pub fn handle_status(_request :: Request) -> Response do
-  case Pool.query(get_pool(), "SELECT c.pause_entries::text, c.pause_all::text, c.reason, c.version::text, COALESCE((SELECT holder_instance_id FROM leader_leases WHERE lease_name = 'collector'), '') AS leader_holder, COALESCE((SELECT generation::text FROM leader_leases WHERE lease_name = 'collector'), '0') AS leader_generation, (SELECT count(*)::text FROM portfolio_runs WHERE strategy_run_id = 'local-paper-run' AND state NOT IN ('idle', 'paused')) AS active_portfolios FROM control_state c", []) do
+  case Pool.query(get_pool(), "SELECT c.pause_entries::text, c.pause_all::text, c.reason, c.version::text, COALESCE((SELECT holder_instance_id FROM leader_leases WHERE lease_name = 'collector'), '') AS leader_holder, COALESCE((SELECT generation::text FROM leader_leases WHERE lease_name = 'collector'), '0') AS leader_generation, (SELECT count(*)::text FROM portfolio_runs WHERE strategy_run_id = 'local-paper-run' AND state NOT IN ('idle', 'paused')) AS active_portfolios, COALESCE((SELECT sum(g.target_notional_usd_micros)::text FROM portfolio_runs p JOIN comparison_groups g ON g.id = p.comparison_group_id WHERE p.strategy_run_id = 'local-paper-run' AND p.state NOT IN ('idle', 'paused')), '0') AS live_notional FROM control_state c", []) do
     Ok(rows) -> do
       let row = List.head(rows)
       HTTP.response(200, json {
@@ -929,7 +1170,7 @@ pub fn handle_status(_request :: Request) -> Response do
         leaderLeaseHolder : Map.get(row, "leader_holder"),
         leaderLeaseGeneration : Map.get(row, "leader_generation"),
         activePortfolios : Map.get(row, "active_portfolios"),
-        liveNotional : json { atoms : "0", scale : 6 },
+        liveNotional : json { atoms : Map.get(row, "live_notional"), scale : 6 },
         codeCommit : code_commit(),
         meshCommit : mesh_commit(),
         signerReachable : false,
@@ -966,6 +1207,10 @@ pub fn handle_executor_status(_request :: Request) -> Response do
     signerReachable : false,
     policyVersion : "not_installed"
   })
+end
+
+pub fn handle_strategies(_request :: Request) -> Response do
+  read_response(get_pool() |> strategies)
 end
 
 pub fn handle_portfolios(_request :: Request) -> Response do
@@ -1049,6 +1294,75 @@ pub fn handle_funding(request :: Request) -> Response do
   end
 end
 
+pub fn handle_funding_leaderboard(_request :: Request) -> Response do
+  case load_runtime_config() do
+    Ok(config) -> read_response(funding_leaderboard(
+      get_pool(),
+      DateTime.utc_now() |> DateTime.to_unix_ms,
+      config.source_max_funding_age_ms,
+      config.target_notional_usd_micros,
+      config.paper_costs_usd_micros,
+      config.paper_risk_haircut_usd_micros,
+      config.expected_hold_hours
+    ))
+    Err(reason) -> error_response(503, "config_unavailable", reason)
+  end
+end
+
+pub fn handle_reverse_carry_leaderboard(_request :: Request) -> Response do
+  case load_runtime_config() do
+    Ok(config) -> read_response(reverse_carry_leaderboard(
+      get_pool(),
+      DateTime.utc_now() |> DateTime.to_unix_ms,
+      config.source_max_funding_age_ms,
+      config.source_max_borrow_age_ms,
+      config.target_notional_usd_micros,
+      config.paper_costs_usd_micros,
+      config.paper_risk_haircut_usd_micros,
+      config.expected_hold_hours,
+      config.maximum_break_even_hours,
+      config.reverse_minimum_negative_funding_ppm,
+      config.reverse_maximum_borrow_utilization_ppm
+    ))
+    Err(reason) -> error_response(503, "config_unavailable", reason)
+  end
+end
+
+pub fn handle_cross_venue_funding_leaderboard(
+  _request :: Request
+) -> Response do
+  case load_runtime_config() do
+    Ok(config) -> read_response(cross_venue_funding_leaderboard(
+      get_pool(),
+      DateTime.utc_now() |> DateTime.to_unix_ms,
+      config.source_max_funding_age_ms,
+      config.target_notional_usd_micros,
+      config.paper_costs_usd_micros,
+      config.paper_risk_haircut_usd_micros,
+      config.expected_hold_hours,
+      config.paper_collateral_usd_micros,
+      config.minimum_margin_ratio_ppm,
+      config.minimum_liquidation_distance_bps
+    ))
+    Err(reason) -> error_response(503, "config_unavailable", reason)
+  end
+end
+
+pub fn handle_wallet_tracking(_request :: Request) -> Response do
+  read_response(wallet_tracking(
+    get_pool(),
+    DateTime.utc_now() |> DateTime.to_unix_ms
+  ))
+end
+
+pub fn handle_wallet_config(_request :: Request) -> Response do
+  read_response(get_pool() |> wallet_config)
+end
+
+pub fn handle_wallet_config_update(request :: Request) -> Response do
+  wallet_config_response(request)
+end
+
 pub fn handle_jitosol(_request :: Request) -> Response do
   read_response(get_pool() |> jitosol)
 end
@@ -1088,14 +1402,21 @@ pub fn handle_config(_request :: Request) -> Response do
       deploymentEnvironment : "local",
       emitIntervalMs : config.emit_interval_ms,
       fundingIntervalEvents : config.funding_interval_events,
+      fundingScanIntervalMs : config.funding_scan_interval_ms,
       sourceMaxSlotDrift : config.source_max_slot_drift,
       sourceMaxFundingAgeMs : config.source_max_funding_age_ms,
+      sourceMaxBorrowAgeMs : config.source_max_borrow_age_ms,
       targetNotionalUsdMicros : "${config.target_notional_usd_micros}",
       paperMaximumJitoSolAtoms : "${config.paper_maximum_jitosol_atoms}",
       paperCollateralUsdMicros : "${config.paper_collateral_usd_micros}",
       paperCostsUsdMicros : "${config.paper_costs_usd_micros}",
       paperRiskHaircutUsdMicros : "${config.paper_risk_haircut_usd_micros}",
       paperSlippageBps : config.paper_slippage_bps,
+      expectedHoldHours : config.expected_hold_hours,
+      maximumBreakEvenHours : config.maximum_break_even_hours,
+      reverseMinimumNegativeFundingPpm : config.reverse_minimum_negative_funding_ppm,
+      reverseMaximumBorrowUtilizationPpm : config.reverse_maximum_borrow_utilization_ppm,
+      jitosolRewardHaircutPpm : config.jitosol_reward_haircut_ppm,
       maxSourceAgeMs : config.max_source_age_ms,
       minimumMarginRatioPpm : config.minimum_margin_ratio_ppm,
       minimumLiquidationDistanceBps : config.minimum_liquidation_distance_bps,
@@ -1110,7 +1431,7 @@ pub fn handle_config(_request :: Request) -> Response do
       directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
       directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
       protocolSchemaVersion : 1,
-      databaseSchemaVersion : 31,
+      databaseSchemaVersion : 39,
       liveEnabled : false
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)

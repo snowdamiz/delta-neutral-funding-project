@@ -38,6 +38,48 @@ pub fn net_carry_usd_micros(funding :: UsdMicros, reward :: UsdMicros, costs :: 
     |> usd_sub(risk_haircut))
 end
 
+pub fn projected_net_carry_usd_micros(
+  hourly_funding :: UsdMicros,
+  hourly_reward :: UsdMicros,
+  costs :: UsdMicros,
+  risk_haircut :: UsdMicros,
+  expected_hold_hours :: Int
+) -> UsdMicros ! String do
+  if expected_hold_hours <= 0 do
+    return Err("expected hold hours must be positive")
+  end
+  let hourly_income = usd_add(hourly_funding, hourly_reward) ?
+  let projected_income = Checked.mul(
+    hourly_income.atoms,
+    expected_hold_hours
+  ) ?
+  net_carry_usd_micros(
+    UsdMicros { atoms : projected_income },
+    UsdMicros { atoms : 0 },
+    costs,
+    risk_haircut
+  )
+end
+
+pub fn break_even_within_hours(
+  hourly_funding :: UsdMicros,
+  hourly_reward :: UsdMicros,
+  costs :: UsdMicros,
+  risk_haircut :: UsdMicros,
+  maximum_hours :: Int
+) -> Bool ! String do
+  if maximum_hours <= 0 do
+    return Err("maximum break-even hours must be positive")
+  end
+  let hourly_income = usd_add(hourly_funding, hourly_reward) ?
+  if hourly_income.atoms <= 0 do
+    return Ok(false)
+  end
+  let maximum_income = Checked.mul(hourly_income.atoms, maximum_hours) ?
+  let required_income = usd_add(costs, risk_haircut) ?
+  Ok(maximum_income >= required_income.atoms)
+end
+
 pub fn is_entry_eligible(short_receipt_ppm :: RatePpm, net_carry_usd_micros :: UsdMicros) -> Bool do
   short_receipt_ppm.atoms > 0 && net_carry_usd_micros.atoms > 0
 end

@@ -68,6 +68,21 @@ BEGIN
   ) <> 1 THEN
     RAISE EXCEPTION 'lease loss risk event is missing or duplicated';
   END IF;
+  PERFORM apply_operator_command(
+    'resume',
+    '',
+    'lease-loss-resume-test',
+    'operator resumed after lease recovery',
+    repeat('a', 64)
+  );
+  IF EXISTS (
+    SELECT 1
+    FROM risk_events
+    WHERE id = 'leader-lease-lost:lease-test-b:2'
+      AND resolved_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'successful resume did not resolve the lease loss risk event';
+  END IF;
 
   DELETE FROM leader_leases WHERE lease_name = 'collector';
   v_generation := acquire_collector_lease('release-test-a', 10000);

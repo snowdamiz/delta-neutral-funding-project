@@ -3,14 +3,21 @@ pub struct RuntimeConfig do
   adapter_mode :: String
   emit_interval_ms :: Int
   funding_interval_events :: Int
+  funding_scan_interval_ms :: Int
   source_max_slot_drift :: Int
   source_max_funding_age_ms :: Int
+  source_max_borrow_age_ms :: Int
   target_notional_usd_micros :: Int
   paper_maximum_jitosol_atoms :: Int
   paper_collateral_usd_micros :: Int
   paper_costs_usd_micros :: Int
   paper_risk_haircut_usd_micros :: Int
   paper_slippage_bps :: Int
+  expected_hold_hours :: Int
+  maximum_break_even_hours :: Int
+  reverse_minimum_negative_funding_ppm :: Int
+  reverse_maximum_borrow_utilization_ppm :: Int
+  jitosol_reward_haircut_ppm :: Int
   max_source_age_ms :: Int
   minimum_margin_ratio_ppm :: Int
   minimum_liquidation_distance_bps :: Int
@@ -45,9 +52,13 @@ pub fn load_runtime_config() -> RuntimeConfig ! String do
       |> unsigned_env(10000)) ?,
     funding_interval_events : ("FUNDING_INTERVAL_EVENTS"
       |> unsigned_env(12)) ?,
+    funding_scan_interval_ms : ("FUNDING_SCAN_INTERVAL_MS"
+      |> unsigned_env(3600000)) ?,
     source_max_slot_drift : ("SOURCE_MAX_SLOT_DRIFT"
       |> unsigned_env(5000)) ?,
     source_max_funding_age_ms : ("SOURCE_MAX_FUNDING_AGE_MS"
+      |> unsigned_env(7200000)) ?,
+    source_max_borrow_age_ms : ("SOURCE_MAX_BORROW_AGE_MS"
       |> unsigned_env(7200000)) ?,
     target_notional_usd_micros : ("PAPER_NOTIONAL_USD_MICROS"
       |> unsigned_env(500000000)) ?,
@@ -61,6 +72,20 @@ pub fn load_runtime_config() -> RuntimeConfig ! String do
       |> unsigned_env(50000)) ?,
     paper_slippage_bps : ("PAPER_SLIPPAGE_BPS"
       |> unsigned_env(50)) ?,
+    expected_hold_hours : ("EXPECTED_HOLD_HOURS"
+      |> unsigned_env(72)) ?,
+    maximum_break_even_hours : ("MAXIMUM_BREAK_EVEN_HOURS"
+      |> unsigned_env(48)) ?,
+    reverse_minimum_negative_funding_ppm : (
+      "REVERSE_MIN_NEGATIVE_FUNDING_PPM"
+      |> unsigned_env(10)
+    ) ?,
+    reverse_maximum_borrow_utilization_ppm : (
+      "REVERSE_MAX_BORROW_UTILIZATION_PPM"
+      |> unsigned_env(950000)
+    ) ?,
+    jitosol_reward_haircut_ppm : ("JITOSOL_REWARD_HAIRCUT_PPM"
+      |> unsigned_env(250000)) ?,
     max_source_age_ms : ("MAX_SOURCE_AGE_MS"
       |> unsigned_env(60000)) ?,
     minimum_margin_ratio_ppm : ("MIN_MARGIN_RATIO_PPM"
@@ -119,8 +144,14 @@ pub fn validate_runtime_config(
   if config.funding_interval_events <= 0 do
     return Err("FUNDING_INTERVAL_EVENTS must be positive")
   end
+  if config.funding_scan_interval_ms <= 0 do
+    return Err("FUNDING_SCAN_INTERVAL_MS must be positive")
+  end
   if config.source_max_funding_age_ms <= 0 do
     return Err("SOURCE_MAX_FUNDING_AGE_MS must be positive")
+  end
+  if config.source_max_borrow_age_ms <= 0 do
+    return Err("SOURCE_MAX_BORROW_AGE_MS must be positive")
   end
   if config.target_notional_usd_micros <= 0 do
     return Err("PAPER_NOTIONAL_USD_MICROS must be positive")
@@ -133,6 +164,23 @@ pub fn validate_runtime_config(
   end
   if config.paper_slippage_bps > 10000 do
     return Err("PAPER_SLIPPAGE_BPS must be between 0 and 10000")
+  end
+  if config.expected_hold_hours <= 0 do
+    return Err("EXPECTED_HOLD_HOURS must be positive")
+  end
+  if config.maximum_break_even_hours <= 0 do
+    return Err("MAXIMUM_BREAK_EVEN_HOURS must be positive")
+  end
+  if (config.reverse_minimum_negative_funding_ppm <= 0
+    || config.reverse_minimum_negative_funding_ppm > 1000000) do
+    return Err("REVERSE_MIN_NEGATIVE_FUNDING_PPM must be between 1 and 1000000")
+  end
+  if (config.reverse_maximum_borrow_utilization_ppm <= 0
+    || config.reverse_maximum_borrow_utilization_ppm > 1000000) do
+    return Err("REVERSE_MAX_BORROW_UTILIZATION_PPM must be between 1 and 1000000")
+  end
+  if config.jitosol_reward_haircut_ppm > 1000000 do
+    return Err("JITOSOL_REWARD_HAIRCUT_PPM must be between 0 and 1000000")
   end
   if config.max_source_age_ms <= 0 do
     return Err("MAX_SOURCE_AGE_MS must be positive")
@@ -166,7 +214,7 @@ pub fn validate_runtime_config(
 end
 
 pub fn canonical_runtime_config(config :: RuntimeConfig) -> String do
-  "{\"adapterMode\":\"${config.adapter_mode}\",\"configSchemaVersion\":1,\"directUnstakeCapitalDelayHaircutUsdMicros\":\"${config.direct_unstake_capital_delay_haircut_usd_micros}\",\"directUnstakeChainFeesUsdMicros\":\"${config.direct_unstake_chain_fees_usd_micros}\",\"directUnstakeFeePpm\":\"${config.direct_unstake_fee_ppm}\",\"directUnstakeFinalHedgeCloseCostUsdMicros\":\"${config.direct_unstake_final_hedge_close_cost_usd_micros}\",\"directUnstakeHedgeCostUsdMicros\":\"${config.direct_unstake_hedge_cost_usd_micros}\",\"directUnstakeScenario\":\"${config.direct_unstake_scenario}\",\"emitIntervalMs\":\"${config.emit_interval_ms}\",\"executionIntentTtlMs\":\"${config.execution_intent_ttl_ms}\",\"executionMode\":\"${config.execution_mode}\",\"executionPolicyProfile\":\"${config.execution_policy_profile}\",\"fundingIntervalEvents\":\"${config.funding_interval_events}\",\"maxSourceAgeMs\":\"${config.max_source_age_ms}\",\"maximumExecutionSlippageBps\":\"${config.maximum_execution_slippage_bps}\",\"minimumLiquidationDistanceBps\":\"${config.minimum_liquidation_distance_bps}\",\"minimumMarginRatioPpm\":\"${config.minimum_margin_ratio_ppm}\",\"paperCollateralUsdMicros\":\"${config.paper_collateral_usd_micros}\",\"paperCostsUsdMicros\":\"${config.paper_costs_usd_micros}\",\"paperMaximumJitoSolAtoms\":\"${config.paper_maximum_jitosol_atoms}\",\"paperRiskHaircutUsdMicros\":\"${config.paper_risk_haircut_usd_micros}\",\"paperSlippageBps\":\"${config.paper_slippage_bps}\",\"rebalanceDeltaBps\":\"${config.rebalance_delta_bps}\",\"sourceMaxFundingAgeMs\":\"${config.source_max_funding_age_ms}\",\"sourceMaxSlotDrift\":\"${config.source_max_slot_drift}\",\"targetNotionalUsdMicros\":\"${config.target_notional_usd_micros}\"}"
+  "{\"adapterMode\":\"${config.adapter_mode}\",\"configSchemaVersion\":1,\"directUnstakeCapitalDelayHaircutUsdMicros\":\"${config.direct_unstake_capital_delay_haircut_usd_micros}\",\"directUnstakeChainFeesUsdMicros\":\"${config.direct_unstake_chain_fees_usd_micros}\",\"directUnstakeFeePpm\":\"${config.direct_unstake_fee_ppm}\",\"directUnstakeFinalHedgeCloseCostUsdMicros\":\"${config.direct_unstake_final_hedge_close_cost_usd_micros}\",\"directUnstakeHedgeCostUsdMicros\":\"${config.direct_unstake_hedge_cost_usd_micros}\",\"directUnstakeScenario\":\"${config.direct_unstake_scenario}\",\"emitIntervalMs\":\"${config.emit_interval_ms}\",\"executionIntentTtlMs\":\"${config.execution_intent_ttl_ms}\",\"executionMode\":\"${config.execution_mode}\",\"executionPolicyProfile\":\"${config.execution_policy_profile}\",\"expectedHoldHours\":\"${config.expected_hold_hours}\",\"fundingIntervalEvents\":\"${config.funding_interval_events}\",\"fundingScanIntervalMs\":\"${config.funding_scan_interval_ms}\",\"jitosolRewardHaircutPpm\":\"${config.jitosol_reward_haircut_ppm}\",\"maxSourceAgeMs\":\"${config.max_source_age_ms}\",\"maximumBreakEvenHours\":\"${config.maximum_break_even_hours}\",\"maximumExecutionSlippageBps\":\"${config.maximum_execution_slippage_bps}\",\"minimumLiquidationDistanceBps\":\"${config.minimum_liquidation_distance_bps}\",\"minimumMarginRatioPpm\":\"${config.minimum_margin_ratio_ppm}\",\"paperCollateralUsdMicros\":\"${config.paper_collateral_usd_micros}\",\"paperCostsUsdMicros\":\"${config.paper_costs_usd_micros}\",\"paperMaximumJitoSolAtoms\":\"${config.paper_maximum_jitosol_atoms}\",\"paperRiskHaircutUsdMicros\":\"${config.paper_risk_haircut_usd_micros}\",\"paperSlippageBps\":\"${config.paper_slippage_bps}\",\"rebalanceDeltaBps\":\"${config.rebalance_delta_bps}\",\"reverseMaximumBorrowUtilizationPpm\":\"${config.reverse_maximum_borrow_utilization_ppm}\",\"reverseMinimumNegativeFundingPpm\":\"${config.reverse_minimum_negative_funding_ppm}\",\"sourceMaxBorrowAgeMs\":\"${config.source_max_borrow_age_ms}\",\"sourceMaxFundingAgeMs\":\"${config.source_max_funding_age_ms}\",\"sourceMaxSlotDrift\":\"${config.source_max_slot_drift}\",\"targetNotionalUsdMicros\":\"${config.target_notional_usd_micros}\"}"
 end
 
 pub fn runtime_config_hash(config :: RuntimeConfig) -> String do

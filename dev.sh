@@ -55,10 +55,10 @@ start_stack() {
   # project's sources. That is minutes, and almost never what you want when you
   # only edited the console. `dev.sh build` forces it; otherwise we build only
   # when the image is missing.
-  local build=()
+  local build=
   if [ "${REBUILD:-0}" = 1 ] || ! docker image inspect \
     delta-neutral-funding-collector:latest >/dev/null 2>&1; then
-    build=(--build)
+    build=--build
     printf 'building images (compiles the Mesh toolchain — expect several minutes)...\n'
   fi
 
@@ -66,7 +66,7 @@ start_stack() {
   # --wait blocks until postgres, collector and adapter report healthy and the
   # migration job exits 0. Without it the console would poll a collector that
   # has not applied its migrations yet.
-  if ! docker compose up -d "${build[@]}" --wait; then
+  if ! docker compose up -d ${build:+"$build"} --wait; then
     printf '\ndev.sh: the stack did not come up healthy\n\n' >&2
     docker compose ps >&2 || true
     printf '\n--- collector ---\n' >&2
@@ -87,14 +87,23 @@ install_console() {
   fi
 }
 
+run_console() {
+  install_console
+  urls
+  if curl -fsS --max-time 1 "http://127.0.0.1:$console_port/" 2>/dev/null |
+    grep -Fq 'Delta-Neutral Funding — Console'; then
+    printf 'console is already running at http://127.0.0.1:%s; reusing it\n' "$console_port"
+    return
+  fi
+  printf 'the stack keeps running after the console exits — `dev.sh down` stops it\n\n'
+  cd ui
+  exec npm run dev -- --port "$console_port" --strictPort
+}
+
 case ${1:-up} in
   up)
     start_stack
-    install_console
-    urls
-    printf 'the stack keeps running after the console exits — `dev.sh down` stops it\n\n'
-    cd ui
-    exec npm run dev -- --port "$console_port" --strictPort
+    run_console
     ;;
   stack)
     start_stack
@@ -102,10 +111,7 @@ case ${1:-up} in
     ;;
   build)
     REBUILD=1 start_stack
-    install_console
-    urls
-    cd ui
-    exec npm run dev -- --port "$console_port" --strictPort
+    run_console
     ;;
   status)
     docker compose ps

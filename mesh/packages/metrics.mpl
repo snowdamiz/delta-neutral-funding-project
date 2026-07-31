@@ -36,8 +36,8 @@ fn runtime_metadata() -> String do
     |> String.join("")
 end
 
-fn build_metric(app_commit :: String, mesh_commit :: String) -> String do
-  "funding_collector_build_info{app_commit=\"${app_commit}\",mesh_compiler_commit=\"${mesh_commit}\",mesh_runtime_commit=\"${mesh_commit}\",adapter_commit=\"${app_commit}\",executor_commit=\"${app_commit}\",schema_version=\"31\",execution_mode=\"paper\"} 1\n"
+pub fn build_metric(app_commit :: String, mesh_commit :: String) -> String do
+  "funding_collector_build_info{app_commit=\"${app_commit}\",mesh_compiler_commit=\"${mesh_commit}\",mesh_runtime_commit=\"${mesh_commit}\",adapter_commit=\"${app_commit}\",executor_commit=\"${app_commit}\",schema_version=\"39\",execution_mode=\"paper\"} 1\n"
 end
 
 fn formatted_int_sample(series :: String, value :: Int) -> String do

@@ -4,7 +4,7 @@ from Packages.ExecutionIntents import ExecutionIntent, canonical_execution_inten
 from Packages.Finance import Lamports, PriceMicros, QuantityAtoms, RatePpm, TokenAtoms, UsdMicros, lamports_to_usd
 from Packages.Opportunity import OpportunitySet
 from Packages.PaperEngine import EntryOutcome, LegFill, PaperAction, PaperPlan, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, action_name, outcome_name, variant_from_name, variant_name
-from Packages.ProtocolContracts import FundingSettlement, MarketSnapshot, OracleStatus, ShadowResult
+from Packages.ProtocolContracts import FundingObservation, FundingSettlement, MarketSnapshot, OracleStatus, ShadowResult, WalletObservation
 from Packages.RiskEngine import margin_ratio_ppm
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
 from Packages.StateMachine import PortfolioState, state_from_name, state_name
@@ -99,6 +99,11 @@ pub struct FundingPersistence do
   inserted_event :: Bool
   payments :: Int
   counterfactual_payments :: Int
+end
+
+pub struct FundingObservationPersistence do
+  inserted :: Bool
+  scan_complete :: Bool
 end
 
 pub type PendingPaperAction do
@@ -795,6 +800,193 @@ pub fn persist_funding_settlement(
   })
 end
 
+pub fn persist_funding_observation(
+  pool :: PoolHandle,
+  event :: FundingObservation,
+  source_max_age_ms :: Int,
+  borrow_source_max_age_ms :: Int
+) -> FundingObservationPersistence ! String do
+  let rows = Pool.query(
+    pool,
+    "WITH applied AS (SELECT record_funding_observation($1::jsonb, $2::bigint) AS result), borrow AS (SELECT record_borrow_snapshot($1::jsonb, $3::bigint) AS recorded FROM applied) SELECT result->>'inserted' AS inserted, result->>'scanComplete' AS scan_complete, recorded::text FROM applied CROSS JOIN borrow",
+    [event.body, "${source_max_age_ms}", "${borrow_source_max_age_ms}"]
+  ) ?
+  if List.length(rows) != 1 do
+    return Err("database returned invalid funding observation result")
+  end
+  let row = List.head(rows)
+  Ok(FundingObservationPersistence {
+    inserted : Map.get(row, "inserted") == "true",
+    scan_complete : Map.get(row, "scan_complete") == "true"
+  })
+end
+
+pub fn persist_wallet_observation(
+  pool :: PoolHandle,
+  event :: WalletObservation,
+  source_max_age_ms :: Int,
+  notional_usd_micros :: Int,
+  modeled_cost_usd_micros :: Int
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT record_wallet_observation($1::jsonb, $2::bigint, $3::bigint, $4::bigint)::text AS body",
+    [
+      event.body,
+      "${source_max_age_ms}",
+      "${notional_usd_micros}",
+      "${modeled_cost_usd_micros}"
+    ]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid wallet observation result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn run_reverse_carry_paper_scan(
+  pool :: PoolHandle,
+  scan_id :: String,
+  now_ms :: Int,
+  funding_source_max_age_ms :: Int,
+  borrow_source_max_age_ms :: Int,
+  notional_usd_micros :: Int,
+  costs_usd_micros :: Int,
+  risk_usd_micros :: Int,
+  hold_hours :: Int,
+  maximum_break_even_hours :: Int,
+  minimum_negative_funding_ppm :: Int,
+  maximum_borrow_utilization_ppm :: Int
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT run_reverse_carry_paper_scan($1, $2::bigint, $3::bigint, $4::bigint, $5::bigint, $6::bigint, $7::bigint, $8::int, $9::int, $10::bigint, $11::bigint)::text AS body",
+    [
+      scan_id,
+      "${now_ms}",
+      "${funding_source_max_age_ms}",
+      "${borrow_source_max_age_ms}",
+      "${notional_usd_micros}",
+      "${costs_usd_micros}",
+      "${risk_usd_micros}",
+      "${hold_hours}",
+      "${maximum_break_even_hours}",
+      "${minimum_negative_funding_ppm}",
+      "${maximum_borrow_utilization_ppm}"
+    ]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid reverse-carry paper result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn run_nav_discount_paper_cycle(
+  pool :: PoolHandle,
+  source_event_id :: String,
+  now_ms :: Int,
+  source_max_age_ms :: Int,
+  minimum_margin_ratio_ppm :: Int,
+  minimum_liquidation_distance_bps :: Int,
+  direct_unstake_fee_ppm :: Int,
+  direct_chain_fees_usd_micros :: Int,
+  direct_hedge_cost_usd_micros :: Int,
+  direct_capital_delay_haircut_usd_micros :: Int,
+  direct_final_hedge_close_cost_usd_micros :: Int,
+  hold_hours :: Int
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT run_nav_discount_paper_cycle($1, $2::bigint, $3::bigint, $4::bigint, $5::bigint, $6::bigint, $7::bigint, $8::bigint, $9::bigint, $10::bigint, $11::int)::text AS body",
+    [
+      source_event_id,
+      "${now_ms}",
+      "${source_max_age_ms}",
+      "${minimum_margin_ratio_ppm}",
+      "${minimum_liquidation_distance_bps}",
+      "${direct_unstake_fee_ppm}",
+      "${direct_chain_fees_usd_micros}",
+      "${direct_hedge_cost_usd_micros}",
+      "${direct_capital_delay_haircut_usd_micros}",
+      "${direct_final_hedge_close_cost_usd_micros}",
+      "${hold_hours}"
+    ]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid NAV-discount paper result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn run_cross_asset_paper_scan(
+  pool :: PoolHandle,
+  scan_id :: String,
+  now_ms :: Int,
+  source_max_age_ms :: Int,
+  notional_usd_micros :: Int,
+  costs_usd_micros :: Int,
+  risk_usd_micros :: Int,
+  hold_hours :: Int
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT run_cross_asset_paper_scan($1, $2::bigint, $3::bigint, $4::bigint, $5::bigint, $6::bigint, $7::int)::text AS body",
+    [
+      scan_id,
+      "${now_ms}",
+      "${source_max_age_ms}",
+      "${notional_usd_micros}",
+      "${costs_usd_micros}",
+      "${risk_usd_micros}",
+      "${hold_hours}"
+    ]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid cross-asset paper result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn run_cross_venue_paper_scan(
+  pool :: PoolHandle,
+  scan_id :: String,
+  now_ms :: Int,
+  source_max_age_ms :: Int,
+  notional_usd_micros :: Int,
+  costs_usd_micros :: Int,
+  risk_usd_micros :: Int,
+  hold_hours :: Int,
+  collateral_usd_micros :: Int,
+  minimum_margin_ratio_ppm :: Int,
+  minimum_liquidation_distance_bps :: Int
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT run_cross_venue_paper_scan($1, $2::bigint, $3::bigint, $4::bigint, $5::bigint, $6::bigint, $7::int, $8::bigint, $9::bigint, $10::bigint)::text AS body",
+    [
+      scan_id,
+      "${now_ms}",
+      "${source_max_age_ms}",
+      "${notional_usd_micros}",
+      "${costs_usd_micros}",
+      "${risk_usd_micros}",
+      "${hold_hours}",
+      "${collateral_usd_micros}",
+      "${minimum_margin_ratio_ppm}",
+      "${minimum_liquidation_distance_bps}"
+    ]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid cross-venue paper result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
 pub fn persist_operator_command(
   pool :: PoolHandle,
   action :: String,
@@ -812,6 +1004,27 @@ pub fn persist_operator_command(
   ]) ?
   if List.length(rows) != 1 do
     Err("database returned an invalid operator command result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn persist_wallet_config(
+  pool :: PoolHandle,
+  idempotency_key :: String,
+  reason :: String,
+  request_hash :: String,
+  wallets_json :: String
+) -> String ! String do
+  let rows = ("SELECT apply_wallet_tracking_config($1, $2, $3, $4::jsonb)::text AS body"
+    |2> Pool.query(pool, [
+      idempotency_key,
+      reason,
+      request_hash,
+      wallets_json
+    ])) ?
+  if List.length(rows) != 1 do
+    Err("database returned an invalid wallet configuration result")
   else
     Ok(Map.get(List.head(rows), "body"))
   end
@@ -879,7 +1092,7 @@ fn rows_to_json(rows, index :: Int, acc :: List<String>) -> String do
 end
 
 pub fn list_opportunities(pool :: PoolHandle) -> String ! String do
-  let rows = Pool.query(pool, "SELECT id, source_event_id, variant::text, observed_at_ms::text, nav_lamports, hedge_lamports, expected_funding_usd_micros, nav_reward_usd_micros, net_carry_usd_micros, eligible::text, reason_code FROM opportunity_decisions ORDER BY observed_at_ms DESC, variant LIMIT 100", []) ?
+  let rows = Pool.query(pool, "WITH items AS (SELECT id, source_event_id, variant::text AS variant, observed_at_ms, nav_lamports, hedge_lamports, expected_funding_usd_micros, nav_reward_usd_micros, net_carry_usd_micros, eligible, reason_code FROM opportunity_decisions UNION ALL SELECT d.id, d.source_event_id, 'cross_asset_funding', n.observed_at_ms, '0', '0', d.expected_funding_usd_micros::text, '0', d.net_carry_usd_micros::text, d.eligible, d.reason_code FROM cross_asset_paper_decisions d JOIN normalized_events n ON n.id = d.source_event_id UNION ALL SELECT d.id, d.source_event_id, 'negative_funding_reverse', n.observed_at_ms, '0', '0', d.expected_funding_usd_micros::text, '0', d.net_carry_usd_micros::text, d.eligible, d.reason_code FROM reverse_carry_paper_decisions d JOIN normalized_events n ON n.id = d.source_event_id UNION ALL SELECT d.id, d.source_event_id, 'jitosol_nav_discount', n.observed_at_ms, d.protocol_nav_lamports::text, d.hedge_lamports::text, d.expected_funding_usd_micros::text, '0', d.net_carry_usd_micros::text, d.eligible, d.reason_code FROM nav_discount_paper_decisions d JOIN normalized_events n ON n.id = d.source_event_id UNION ALL SELECT d.id, d.short_source_event_id, 'cross_venue_funding', n.observed_at_ms, '0', '0', d.expected_funding_usd_micros::text, '0', d.net_carry_usd_micros::text, d.eligible, d.reason_code FROM cross_venue_paper_decisions d JOIN normalized_events n ON n.id = d.short_source_event_id), ranked AS (SELECT *, row_number() OVER (PARTITION BY variant ORDER BY observed_at_ms DESC, id) AS strategy_rank FROM items) SELECT id, source_event_id, variant, observed_at_ms::text, nav_lamports, hedge_lamports, expected_funding_usd_micros, nav_reward_usd_micros, net_carry_usd_micros, eligible::text, reason_code FROM ranked WHERE strategy_rank <= 20 ORDER BY observed_at_ms DESC, variant", []) ?
   Ok(rows |> rows_to_json(0, List.new()))
 end
 
@@ -915,7 +1128,7 @@ pub fn bootstrap_paper_runs(pool :: PoolHandle, code_commit :: String, mesh_comm
       return Err("running paper strategy build does not match pinned release")
     end
   end
-  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 31, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), comparison AS (INSERT INTO comparison_groups (id, strategy_run_id, mode, target_notional_usd_micros, entry_policy_version, exit_policy_version) VALUES ('local-paper-run:independent', 'local-paper-run', 'independent', $4, 'paper-entry-v1', 'paper-exit-v1'), ('local-paper-run:synchronized', 'local-paper-run', 'synchronized', $4, 'paper-entry-v1', 'paper-exit-v1') ON CONFLICT (id) DO UPDATE SET mode = EXCLUDED.mode, target_notional_usd_micros = EXCLUDED.target_notional_usd_micros, entry_policy_version = EXCLUDED.entry_policy_version, exit_policy_version = EXCLUDED.exit_policy_version RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, comparison_group_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'local-paper-run:independent', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'local-paper-run:independent', 'jitosol_carry', 'paper', 1000000000), ('local-sync-sol-control', 'local-paper-run', 'local-paper-run:synchronized', 'sol_control', 'paper', 1000000000), ('local-sync-jitosol-carry', 'local-paper-run', 'local-paper-run:synchronized', 'jitosol_carry', 'paper', 1000000000) ON CONFLICT (id) DO UPDATE SET comparison_group_id = EXCLUDED.comparison_group_id RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios ON CONFLICT (id) DO NOTHING RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash, "${target_notional}"])) ?
+  let applied = ("WITH build AS (INSERT INTO build_manifests (id, code_commit, mesh_commit, schema_version, config_hash) VALUES ('local-paper-build', $1, $2, 39, $3) ON CONFLICT (id) DO UPDATE SET code_commit = EXCLUDED.code_commit, mesh_commit = EXCLUDED.mesh_commit, schema_version = EXCLUDED.schema_version, config_hash = EXCLUDED.config_hash RETURNING id), run AS (INSERT INTO strategy_runs (id, execution_mode, config_hash, build_manifest_id, prng_seed, prng_version) SELECT 'local-paper-run', 'paper', $3, id, 42, 'xorshift64star-v1' FROM build ON CONFLICT (id) DO UPDATE SET config_hash = EXCLUDED.config_hash, build_manifest_id = EXCLUDED.build_manifest_id WHERE strategy_runs.config_hash = repeat('0', 64) RETURNING id), comparison AS (INSERT INTO comparison_groups (id, strategy_run_id, mode, target_notional_usd_micros, entry_policy_version, exit_policy_version) VALUES ('local-paper-run:independent', 'local-paper-run', 'independent', $4, 'paper-entry-v1', 'paper-exit-v1'), ('local-paper-run:synchronized', 'local-paper-run', 'synchronized', $4, 'paper-entry-v1', 'paper-exit-v1') ON CONFLICT (id) DO UPDATE SET mode = EXCLUDED.mode, target_notional_usd_micros = EXCLUDED.target_notional_usd_micros, entry_policy_version = EXCLUDED.entry_policy_version, exit_policy_version = EXCLUDED.exit_policy_version RETURNING id), portfolios AS (INSERT INTO portfolio_runs (id, strategy_run_id, comparison_group_id, variant, execution_mode, initial_capital_usd_micros) VALUES ('local-sol-control', 'local-paper-run', 'local-paper-run:independent', 'sol_control', 'paper', 1000000000), ('local-jitosol-carry', 'local-paper-run', 'local-paper-run:independent', 'jitosol_carry', 'paper', 1000000000), ('local-cross-asset-funding', 'local-paper-run', 'local-paper-run:independent', 'cross_asset_funding', 'paper', 1000000000), ('local-negative-funding-reverse', 'local-paper-run', 'local-paper-run:independent', 'negative_funding_reverse', 'paper', 1000000000), ('local-jitosol-nav-discount', 'local-paper-run', 'local-paper-run:independent', 'jitosol_nav_discount', 'paper', 1000000000), ('local-cross-venue-funding', 'local-paper-run', 'local-paper-run:independent', 'cross_venue_funding', 'paper', 1000000000), ('local-wallet-flow', 'local-paper-run', 'local-paper-run:independent', 'hyperliquid_wallet_flow', 'paper', 1000000000), ('local-wallet-mirror', 'local-paper-run', 'local-paper-run:independent', 'hyperliquid_wallet_mirror', 'paper', 1000000000), ('local-wallet-fade', 'local-paper-run', 'local-paper-run:independent', 'hyperliquid_wallet_fade', 'paper', 1000000000), ('local-sync-sol-control', 'local-paper-run', 'local-paper-run:synchronized', 'sol_control', 'paper', 1000000000), ('local-sync-jitosol-carry', 'local-paper-run', 'local-paper-run:synchronized', 'jitosol_carry', 'paper', 1000000000), ('local-sync-cross-asset-funding', 'local-paper-run', 'local-paper-run:synchronized', 'cross_asset_funding', 'paper', 1000000000), ('local-sync-negative-funding-reverse', 'local-paper-run', 'local-paper-run:synchronized', 'negative_funding_reverse', 'paper', 1000000000), ('local-sync-jitosol-nav-discount', 'local-paper-run', 'local-paper-run:synchronized', 'jitosol_nav_discount', 'paper', 1000000000), ('local-sync-cross-venue-funding', 'local-paper-run', 'local-paper-run:synchronized', 'cross_venue_funding', 'paper', 1000000000), ('local-sync-wallet-flow', 'local-paper-run', 'local-paper-run:synchronized', 'hyperliquid_wallet_flow', 'paper', 1000000000), ('local-sync-wallet-mirror', 'local-paper-run', 'local-paper-run:synchronized', 'hyperliquid_wallet_mirror', 'paper', 1000000000), ('local-sync-wallet-fade', 'local-paper-run', 'local-paper-run:synchronized', 'hyperliquid_wallet_fade', 'paper', 1000000000) ON CONFLICT (id) DO UPDATE SET comparison_group_id = EXCLUDED.comparison_group_id RETURNING id), batches AS (INSERT INTO ledger_batches (id, portfolio_run_id, event_type, event_id, batch_hash) SELECT id || ':opening', id, 'opening_capital', id || ':opening', repeat('0', 64) FROM portfolios ON CONFLICT (id) DO NOTHING RETURNING id, portfolio_run_id) INSERT INTO ledger_entries (ledger_batch_id, account_debit, account_credit, asset, amount_atoms, usd_value_atoms) SELECT id, 'paper_cash', 'paper_equity', 'USDC', '1000000000', '1000000000' FROM batches" |2> Pool.execute(pool, [code_commit, mesh_commit, config_hash, "${target_notional}"])) ?
   let capability_rows = ("SELECT record_language_capability_results($1)::text AS count" |2> Pool.query(pool, ["local-paper-build"])) ?
   if List.length(capability_rows) != 1 || Map.get(List.head(capability_rows), "count") != "23" do
     return Err("database returned an invalid language capability result")

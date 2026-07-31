@@ -1,7 +1,14 @@
+import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
-import type { Variant } from "./api";
+import type { Strategy } from "./catalog";
+import { accentOf, nameOf } from "./catalog";
 
 export type Tone = "ok" | "warn" | "crit" | "mute";
+
+/** The collector's catalog, so identity primitives never take a props tour. */
+const CatalogContext = createContext<Strategy[]>([]);
+export const CatalogProvider = CatalogContext.Provider;
+export const useCatalog = () => useContext(CatalogContext);
 
 // Status is never carried by colour alone: red↔green is indistinguishable
 // under deuteranopia, so every chip pairs a glyph with a word.
@@ -16,36 +23,49 @@ export function Chip({ tone, children }: { tone: Tone; children: ReactNode }) {
   );
 }
 
-export const Key = ({ variant }: { variant: Variant | string }) => (
-  <i className={`key ${variant === "jitosol_carry" ? "k-jito" : "k-sol"}`} aria-hidden="true" />
+/** Series identity: a coloured key beside the name, which is always present. */
+export const Key = ({ id }: { id: string }) => (
+  <i className="key" style={{ background: accentOf(useCatalog(), id) }} aria-hidden="true" />
 );
 
-export const variantName = (v: Variant | string) =>
-  v === "jitosol_carry" ? "JitoSOL carry" : "SOL control";
+export const StrategyName = ({ id }: { id: string }) => <>{nameOf(useCatalog(), id)}</>;
 
+export const reasonName = (reason: string) =>
+  ({
+    entry_gate_failed: "not profitable",
+    non_positive_net_carry: "not profitable after costs",
+  })[reason] ?? reason.replaceAll("_", " ");
+
+/**
+ * A titled block. `note` is the one-line answer to "what am I looking at" —
+ * every section carries one, because a heading like "Attribution" does not
+ * survive first contact with someone who did not write the collector.
+ */
 export function Section({
-  n, title, note, children,
-}: { n: string; title: string; note?: string; children: ReactNode }) {
+  title, note, children,
+}: { title: string; note?: string; children: ReactNode }) {
   return (
-    <section className="rise" style={{ animationDelay: `${Number(n) * 0.05}s` }}>
+    <section className="rise">
       <div className="shead">
-        <span className="n">{n}</span>
         <h2>{title}</h2>
         <div className="rule" />
-        {note && <span className="note">{note}</span>}
       </div>
+      {note && <p className="snote">{note}</p>}
       {children}
     </section>
   );
 }
 
 export const Panel = ({
-  label, aside, children,
-}: { label?: string; aside?: ReactNode; children: ReactNode }) => (
+  label, hint, aside, children,
+}: { label?: string; hint?: string; aside?: ReactNode; children: ReactNode }) => (
   <div className="panel">
     {(label || aside) && (
       <div className="ph">
-        <span className="lbl">{label}</span>
+        <div className="ph-l">
+          <span className="lbl">{label}</span>
+          {hint && <span className="hint">{hint}</span>}
+        </div>
         {aside}
       </div>
     )}
@@ -57,6 +77,24 @@ export const Empty = ({ msg }: { msg: string }) => (
   <div className="empty-state">
     <span className="g" aria-hidden="true">◇</span>
     {msg}
+  </div>
+);
+
+/** The one stat tile. Headline numbers use it big, diagnostics use `sm`. */
+export const Stat = ({
+  label, value, cap, tone, sm, hero,
+}: {
+  label: string;
+  value: ReactNode;
+  cap?: ReactNode;
+  tone?: Tone;
+  sm?: boolean;
+  hero?: boolean;
+}) => (
+  <div className={`stat${sm ? " sm" : ""}${hero ? " hero" : ""}`}>
+    <div className="lbl">{label}</div>
+    <div className="val" style={tone ? { color: `var(--${tone})` } : undefined}>{value}</div>
+    {cap && <div className="cap">{cap}</div>}
   </div>
 );
 

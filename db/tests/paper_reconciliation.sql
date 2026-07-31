@@ -17,7 +17,27 @@ INSERT INTO portfolio_runs (
   initial_capital_usd_micros
 ) VALUES
   ('local-sol-control', 'local-paper-run', 'sol_control', 'paper', 'hedged', 4, 1000000000),
-  ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 'idle', 0, 1000000000);
+  ('local-jitosol-carry', 'local-paper-run', 'jitosol_carry', 'paper', 'idle', 0, 1000000000),
+  ('local-cross-asset-funding', 'local-paper-run', 'cross_asset_funding', 'paper', 'hedged', 1, 1000000000);
+INSERT INTO normalized_events (
+  id, schema_version, event_type, source, observed_at_ms, source_slot,
+  source_sequence, idempotency_key, raw_payload_hash, canonical_payload
+) VALUES (
+  'reconciliation-cross-asset', 1, 'FundingObservation',
+  'reconciliation-test', 1, 1, '1', 'reconciliation-cross-asset',
+  repeat('c', 64), '{}'::jsonb
+);
+INSERT INTO cross_asset_paper_positions (
+  id, portfolio_run_id, venue, asset, instrument, status,
+  quantity_atoms, entry_spot_price_usd_micros,
+  entry_perp_price_usd_micros, opened_at_ms,
+  opened_source_event_id, latest_source_event_id
+) VALUES (
+  'reconciliation-cross-asset-position', 'local-cross-asset-funding',
+  'hyperliquid', 'PURR', 'PURR-PERP', 'open', 1000000000,
+  1000000, 1000000, 1,
+  'reconciliation-cross-asset', 'reconciliation-cross-asset'
+);
 
 DO $$
 DECLARE
@@ -41,6 +61,13 @@ BEGIN
        WHERE id = 'local-sol-control'
          AND state = 'emergency_flatten'
          AND state_version = 5
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM portfolio_runs
+       WHERE id = 'local-cross-asset-funding'
+         AND state = 'hedged'
+         AND state_version = 1
      )
      OR NOT EXISTS (
        SELECT 1

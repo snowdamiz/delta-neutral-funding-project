@@ -1,5 +1,5 @@
 from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
-from Packages.StrategyCore import expected_funding_usd_micros, hedge_lamports, is_entry_eligible, jitosol_nav_lamports, nav_reward_lamports, net_carry_usd_micros
+from Packages.StrategyCore import break_even_within_hours, expected_funding_usd_micros, hedge_lamports, is_entry_eligible, jitosol_nav_lamports, nav_reward_lamports, net_carry_usd_micros, projected_net_carry_usd_micros
 
 describe("fixed-point strategy core") do
   test("prices JitoSOL carry and rejects non-positive short funding") do
@@ -30,6 +30,41 @@ describe("fixed-point strategy core") do
         assert(is_entry_eligible(RatePpm { atoms : 250 }, net))
         assert(is_entry_eligible(RatePpm { atoms : 0 }, net) == false)
       end
+      Err(error) -> assert(false)
+    end
+  end
+end
+
+describe("holding-period carry") do
+  test("projects hourly income and enforces the maximum break-even time") do
+    case projected_net_carry_usd_micros(
+      UsdMicros { atoms : 5000 },
+      UsdMicros { atoms : 0 },
+      UsdMicros { atoms : 200000 },
+      UsdMicros { atoms : 50000 },
+      168
+    ) do
+      Ok(net) -> assert(net.atoms == 590000)
+      Err(error) -> assert(false)
+    end
+    case break_even_within_hours(
+      UsdMicros { atoms : 5000 },
+      UsdMicros { atoms : 0 },
+      UsdMicros { atoms : 200000 },
+      UsdMicros { atoms : 50000 },
+      72
+    ) do
+      Ok(within) -> assert(within)
+      Err(error) -> assert(false)
+    end
+    case break_even_within_hours(
+      UsdMicros { atoms : 498 },
+      UsdMicros { atoms : 0 },
+      UsdMicros { atoms : 200000 },
+      UsdMicros { atoms : 50000 },
+      72
+    ) do
+      Ok(within) -> assert(within == false)
       Err(error) -> assert(false)
     end
   end

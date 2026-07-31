@@ -1,61 +1,173 @@
+import { useEffect, useState } from "react";
+import type { Snapshot } from "./api";
 import { useSnapshot } from "./api";
+import type { Strategy } from "./catalog";
+import { narrow, strategyOf } from "./catalog";
 import { clock } from "./fmt";
-import { Signal } from "./sections/Signal";
-import { Thesis } from "./sections/Thesis";
-import { Book } from "./sections/Book";
+import { health } from "./status";
+import { CatalogProvider, Key, StrategyName } from "./ui";
 import { Attribution } from "./sections/Attribution";
-import { Risk } from "./sections/Risk";
-import { Opportunity } from "./sections/Opportunity";
+import { Benchmark } from "./sections/Benchmark";
+import { Book } from "./sections/Book";
+import { StatusBanner, SystemHealth } from "./sections/Health";
 import { Ledger } from "./sections/Ledger";
+import { Markets } from "./sections/Markets";
+import { Alerts, Overview, Summary } from "./sections/Overview";
+import { Opportunity } from "./sections/Opportunity";
 import { Platform } from "./sections/Platform";
+import { Risk } from "./sections/Risk";
 
-const short = (s: string | undefined) => (s ? s.slice(0, 12) : "—");
+const TABS = [
+  { id: "", label: "Overview", hint: "Money, strategies, alerts" },
+  { id: "markets", label: "Markets", hint: "What the collector can see" },
+  { id: "system", label: "System", hint: "Health, capabilities, config" },
+] as const;
+
+/**
+ * One strategy's detail view: the same section components, fed the snapshot
+ * narrowed to the rows that strategy owns. Nothing here knows which strategy.
+ *
+ * Benchmark is the exception and takes the full snapshot — a comparison needs
+ * the other side of it, which narrowing has by definition removed.
+ */
+function Detail({ snap, strategy }: { snap: Snapshot; strategy: Strategy }) {
+  const mine = narrow(snap, strategy);
+  return (
+    <>
+      <Benchmark snap={snap} strategy={strategy} />
+      <Book snap={mine} />
+      <Attribution snap={mine} />
+      <Opportunity snap={mine} />
+      <Risk snap={mine} />
+      <Ledger snap={mine} />
+    </>
+  );
+}
+
+/**
+ * `#/markets` · `#/system` · `#/s/<strategy-id>` · anything else is the
+ * overview, including the console's old `#<strategy-id>` links.
+ */
+export function parseRoute(hash: string): { tab: string; strategy: string } {
+  const raw = decodeURIComponent(hash.replace(/^#\/?/, ""));
+  if (raw.startsWith("s/")) return { tab: "", strategy: raw.slice(2) };
+  return { tab: TABS.some((t) => t.id === raw) ? raw : "", strategy: "" };
+}
+
+/**
+ * Route lives in the hash, so every tab and every strategy is linkable and the
+ * browser's Back button does the obvious thing.
+ */
+function useRoute(): [string, string, (next: string) => void] {
+  const [hash, setHash] = useState(() => location.hash);
+  useEffect(() => {
+    const sync = () => setHash(location.hash);
+    addEventListener("hashchange", sync);
+    return () => removeEventListener("hashchange", sync);
+  }, []);
+
+  const { tab, strategy } = parseRoute(hash);
+  return [tab, strategy, (next: string) => { location.hash = `/${next}`; }];
+}
 
 export default function App() {
   const snap = useSnapshot();
+  const [tab, openId, go] = useRoute();
+  // An id that is not in the catalog opens nothing — including a stale link.
+  const open = strategyOf(snap.strategies, openId);
+  const h = health(snap);
 
   return (
-    <div className="wrap">
-      <header className="rise">
-        <div>
-          <h1>
+    <CatalogProvider value={snap.strategies}>
+      <header className="topbar">
+        <div className="topbar-in">
+          <button type="button" className="brand" onClick={() => go("")}>
             Delta&#8209;Neutral <em>Funding</em>
-          </h1>
-          <p className="sub">
-            Long spot, short SOL&#8209;PERP. Two variants under simultaneous paper execution — does
-            JitoSOL&apos;s staking yield actually survive the carry?
-          </p>
+          </button>
+
+          <div className="live">
+            <span className={`pill p-${h.tone}`}>
+              <span className={`dot${h.tone === "ok" ? "" : " bad"}`} />
+              {h.word}
+            </span>
+            {h.openAlerts > 0 && (
+              <span className={`pill p-${h.criticalAlerts > 0 ? "crit" : "warn"}`}>
+                {h.openAlerts} open alert{h.openAlerts === 1 ? "" : "s"}
+              </span>
+            )}
+            <span className="micro">{snap.polledAt ? `updated ${clock(snap.polledAt)}` : "connecting"}</span>
+          </div>
         </div>
-        <dl className="meta">
-          <dt>feed</dt>
-          <dd className="live">
-            <span className={`dot${snap.reachable ? "" : " bad"}`} />
-            <span>{snap.polledAt === 0 ? "connecting" : snap.reachable ? "streaming" : "offline"}</span>
-          </dd>
-          <dt>code</dt>
-          <dd>{short(snap.build?.codeCommit)}</dd>
-          <dt>mesh</dt>
-          <dd>{short(snap.build?.meshCommit)}</dd>
-          <dt>config</dt>
-          <dd>{short(snap.build?.configHash)}</dd>
-          <dt>schema</dt>
-          <dd>{snap.build?.schemaVersion ?? "—"}</dd>
-        </dl>
+
+        <nav className="tabs" aria-label="Sections">
+          <div className="tabs-in">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={!open && tab === t.id ? "tab on" : "tab"}
+                aria-current={!open && tab === t.id ? "page" : undefined}
+                onClick={() => go(t.id)}
+              >
+                {t.label}
+                <span className="thint">{t.hint}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
       </header>
 
-      <Signal snap={snap} />
-      <Thesis snap={snap} />
-      <Book snap={snap} />
-      <Attribution snap={snap} />
-      <Risk snap={snap} />
-      <Opportunity snap={snap} />
-      <Ledger snap={snap} />
-      <Platform snap={snap} />
+      <main className="wrap">
+        {open ? (
+          <>
+            <nav className="switch rise">
+              <button type="button" className="back" onClick={() => go("")}>← All strategies</button>
+              <div className="pills">
+                {snap.strategies.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={s.id === open.id ? "spill on" : "spill"}
+                    onClick={() => go(`s/${s.id}`)}
+                  >
+                    <Key id={s.id} />
+                    <StrategyName id={s.id} />
+                  </button>
+                ))}
+              </div>
+            </nav>
 
-      <footer>
-        <span>Paper mode · read-only console · no signer route</span>
-        <span>{snap.polledAt ? `last poll ${clock(snap.polledAt)}` : "—"}</span>
-      </footer>
-    </div>
+            <div className="lede rise">
+              <h1><StrategyName id={open.id} /></h1>
+              <p>
+                <span className="micro">{open.family}</span>
+                {open.legs.join("  ·  ")}
+              </p>
+            </div>
+
+            <Detail snap={snap} strategy={open} />
+          </>
+        ) : tab === "markets" ? (
+          <Markets snap={snap} />
+        ) : tab === "system" ? (
+          <>
+            <SystemHealth snap={snap} />
+            <Platform snap={snap} />
+          </>
+        ) : (
+          <>
+            <StatusBanner snap={snap} />
+            <Summary snap={snap} />
+            <Alerts snap={snap} />
+            <Overview snap={snap} onOpen={(id) => go(`s/${id}`)} />
+          </>
+        )}
+
+        <footer>
+          <span>Paper mode · no signer route · bounded local controls only</span>
+          <span>{snap.polledAt ? `last poll ${clock(snap.polledAt)}` : "—"}</span>
+        </footer>
+      </main>
+    </CatalogProvider>
   );
 }

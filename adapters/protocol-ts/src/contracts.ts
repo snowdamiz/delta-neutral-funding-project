@@ -8,6 +8,7 @@ export type MarketSnapshotPayload = {
   jitosolAtoms: string;
   notionalUsdMicros: string;
   shortReceiptPpm: string;
+  rewardRatePpmPerHour: string;
   solPriceUsdMicros: string;
   priorNavLamports: string;
   costsUsdMicros: string;
@@ -65,7 +66,110 @@ export type FundingSettlementEvent = {
   payload: FundingSettlementPayload;
 };
 
-export type ProtocolEvent = MarketSnapshotEvent | FundingSettlementEvent;
+export type FundingObservationPayload = {
+  scanId: string;
+  scanIndex: string;
+  scanSize: string;
+  venue: string;
+  asset: string;
+  instrument: string;
+  sourceObservedAtMs: string;
+  sourceStatus: "valid" | "invalid";
+  fundingRatePpmPerHour: string;
+  fundingHistory: { observedAtMs: string; ratePpm: string }[];
+  realizedFundingRatePpm: string;
+  realizedFundingAtMs: string;
+  markPriceUsdMicros: string;
+  openInterestUsdMicros: string;
+  spotBidPriceUsdMicros: string;
+  spotAskPriceUsdMicros: string;
+  perpBidPriceUsdMicros: string;
+  perpAskPriceUsdMicros: string;
+  spotExitDepthAtoms: string;
+  perpExitDepthAtoms: string;
+  depthQualified: boolean;
+  marginStatus: "valid" | "unavailable";
+  maintenanceMarginPpm: string;
+  borrowVenue: string;
+  borrowMarket: string;
+  borrowReserve: string;
+  borrowMint: string;
+  borrowSourceObservedAtMs: string;
+  borrowSourceStatus: "valid" | "invalid" | "unavailable";
+  borrowRatePpmPerHour: string;
+  borrowAvailableUsdMicros: string;
+  borrowUtilizationPpm: string;
+};
+
+export type FundingObservationEvent = {
+  schemaVersion: 1;
+  eventId: string;
+  eventType: "FundingObservation";
+  source: string;
+  observedAtMs: string;
+  sourceSlot: string;
+  sourceSequence: string;
+  idempotencyKey: string;
+  rawPayloadHash: string;
+  payload: FundingObservationPayload;
+};
+
+export type WalletPosition = {
+  asset: string;
+  side: "long" | "short";
+  quantityAtoms: string;
+  entryPriceUsdMicros: string;
+  markPriceUsdMicros: string;
+  leveragePpm: string;
+  unrealizedPnlUsdMicros: string;
+};
+
+export type WalletFill = {
+  fillId: string;
+  asset: string;
+  side: "buy" | "sell";
+  direction: "open" | "increase" | "reduce" | "close" | "flip";
+  quantityAtoms: string;
+  leaderPriceUsdMicros: string;
+  copyBidPriceUsdMicros: string;
+  copyAskPriceUsdMicros: string;
+  closedPnlUsdMicros: string;
+  feeUsdMicros: string;
+  filledAtMs: string;
+  copyObservedAtMs: string;
+  copyLatencyMs: string;
+  copyBidDepthQualified: boolean;
+  copyAskDepthQualified: boolean;
+};
+
+export type WalletObservationPayload = {
+  wallet: string;
+  sourceObservedAtMs: string;
+  accountValueUsdMicros: string;
+  totalNotionalUsdMicros: string;
+  apiLatencyMs: string;
+  positions: WalletPosition[];
+  fills: WalletFill[];
+};
+
+export type WalletObservationEvent = {
+  schemaVersion: 1;
+  eventId: string;
+  eventType: "WalletObservation";
+  source: string;
+  observedAtMs: string;
+  sourceSlot: string;
+  sourceSequence: string;
+  idempotencyKey: string;
+  rawPayloadHash: string;
+  payload: WalletObservationPayload;
+};
+
+export type ProtocolEvent =
+  | MarketSnapshotEvent
+  | FundingSettlementEvent
+  | FundingObservationEvent
+  | WalletObservationEvent;
 
 const unsignedInteger = /^(0|[1-9][0-9]*)$/;
 const signedInteger = /^(0|-?[1-9][0-9]*)$/;
@@ -76,6 +180,7 @@ const payloadFields = [
   "jitosolAtoms",
   "notionalUsdMicros",
   "shortReceiptPpm",
+  "rewardRatePpmPerHour",
   "solPriceUsdMicros",
   "priorNavLamports",
   "costsUsdMicros",
@@ -100,6 +205,7 @@ const payloadFields = [
   "unknownRatePpm",
 ] as const;
 const boundedRates = [
+  "rewardRatePpmPerHour",
   "fillRatePpm",
   "slippagePpm",
   "spotFeePpm",
@@ -148,6 +254,293 @@ export function validateEvent(value: unknown): ProtocolEvent {
   }
 
   const payload = record(event.payload, "payload");
+  if (event.eventType === "WalletObservation") {
+    const wallet = string(payload.wallet, "wallet");
+    if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
+      throw new Error("wallet must be a lowercase 0x address");
+    }
+    for (const field of [
+      "sourceObservedAtMs",
+      "accountValueUsdMicros",
+      "totalNotionalUsdMicros",
+      "apiLatencyMs",
+    ] as const) {
+      const raw = string(payload[field], field);
+      if (!unsignedInteger.test(raw)) {
+        throw new Error(`${field} must be an unsigned integer string`);
+      }
+    }
+    if (BigInt(payload.sourceObservedAtMs as string) > BigInt(event.observedAtMs as string)) {
+      throw new Error("sourceObservedAtMs cannot be in the future");
+    }
+    if (!Array.isArray(payload.positions) || !Array.isArray(payload.fills)) {
+      throw new Error("positions and fills must be arrays");
+    }
+    for (const [index, value] of payload.positions.entries()) {
+      const position = record(value, `positions[${index}]`);
+      if (!/^[A-Z0-9:_-]{1,64}$/.test(string(position.asset, "asset"))) {
+        throw new Error("position asset must be an uppercase identifier");
+      }
+      if (position.side !== "long" && position.side !== "short") {
+        throw new Error("position side must be long or short");
+      }
+      for (const field of [
+        "quantityAtoms",
+        "entryPriceUsdMicros",
+        "markPriceUsdMicros",
+        "leveragePpm",
+      ] as const) {
+        const raw = string(position[field], field);
+        if (!unsignedInteger.test(raw) || BigInt(raw) === 0n) {
+          throw new Error(`${field} must be a positive integer string`);
+        }
+      }
+      const pnl = string(position.unrealizedPnlUsdMicros, "unrealizedPnlUsdMicros");
+      if (!signedInteger.test(pnl)) {
+        throw new Error("unrealizedPnlUsdMicros must be an integer string");
+      }
+    }
+    for (const [index, value] of payload.fills.entries()) {
+      const fill = record(value, `fills[${index}]`);
+      string(fill.fillId, "fillId");
+      if (!/^[A-Z0-9:_-]{1,64}$/.test(string(fill.asset, "asset"))) {
+        throw new Error("fill asset must be an uppercase identifier");
+      }
+      if (fill.side !== "buy" && fill.side !== "sell") {
+        throw new Error("fill side must be buy or sell");
+      }
+      if (!["open", "increase", "reduce", "close", "flip"].includes(fill.direction as string)) {
+        throw new Error("unsupported fill direction");
+      }
+      for (const field of [
+        "quantityAtoms",
+        "leaderPriceUsdMicros",
+        "copyBidPriceUsdMicros",
+        "copyAskPriceUsdMicros",
+        "filledAtMs",
+        "copyObservedAtMs",
+        "copyLatencyMs",
+      ] as const) {
+        const raw = string(fill[field], field);
+        if (!unsignedInteger.test(raw)) {
+          throw new Error(`${field} must be an unsigned integer string`);
+        }
+      }
+      for (const field of ["quantityAtoms", "leaderPriceUsdMicros"] as const) {
+        if (BigInt(fill[field] as string) === 0n) {
+          throw new Error(`${field} must be positive`);
+        }
+      }
+      for (const field of ["closedPnlUsdMicros", "feeUsdMicros"] as const) {
+        const raw = string(fill[field], field);
+        const pattern = field === "closedPnlUsdMicros" ? signedInteger : unsignedInteger;
+        if (!pattern.test(raw)) throw new Error(`${field} must be an integer string`);
+      }
+      if (
+        BigInt(fill.filledAtMs as string) > BigInt(event.observedAtMs as string) ||
+        BigInt(fill.copyObservedAtMs as string) !== BigInt(event.observedAtMs as string)
+      ) {
+        throw new Error("fill timing is not bounded by observation time");
+      }
+      if (
+        typeof fill.copyBidDepthQualified !== "boolean" ||
+        typeof fill.copyAskDepthQualified !== "boolean"
+      ) {
+        throw new Error("copy depth qualification must be boolean");
+      }
+      if (
+        (fill.copyBidDepthQualified &&
+          BigInt(fill.copyBidPriceUsdMicros as string) === 0n) ||
+        (fill.copyAskDepthQualified &&
+          BigInt(fill.copyAskPriceUsdMicros as string) === 0n)
+      ) {
+        throw new Error("depth-qualified fill requires an executable side price");
+      }
+    }
+    return value as WalletObservationEvent;
+  }
+  if (event.eventType === "FundingObservation") {
+    const scanId = string(payload.scanId, "scanId");
+    const venue = string(payload.venue, "venue");
+    const asset = string(payload.asset, "asset");
+    string(payload.instrument, "instrument");
+    if (!/^[A-Za-z0-9:_-]{1,200}$/.test(scanId)) {
+      throw new Error("scanId has invalid characters");
+    }
+    if (!/^[a-z0-9_-]{1,32}$/.test(venue)) {
+      throw new Error("venue must be a lowercase identifier");
+    }
+    if (!/^[A-Z0-9]{1,24}$/.test(asset)) {
+      throw new Error("asset must be an uppercase identifier");
+    }
+    for (const field of [
+      "scanIndex",
+      "scanSize",
+      "sourceObservedAtMs",
+      "realizedFundingAtMs",
+      "markPriceUsdMicros",
+      "openInterestUsdMicros",
+      "spotBidPriceUsdMicros",
+      "spotAskPriceUsdMicros",
+      "perpBidPriceUsdMicros",
+      "perpAskPriceUsdMicros",
+      "spotExitDepthAtoms",
+      "perpExitDepthAtoms",
+      "borrowSourceObservedAtMs",
+      "borrowRatePpmPerHour",
+      "borrowAvailableUsdMicros",
+      "borrowUtilizationPpm",
+    ] as const) {
+      const raw = string(payload[field], field);
+      if (!unsignedInteger.test(raw)) {
+        throw new Error(`${field} must be an unsigned integer string`);
+      }
+    }
+    const rate = string(
+      payload.fundingRatePpmPerHour,
+      "fundingRatePpmPerHour",
+    );
+    if (!signedInteger.test(rate)) {
+      throw new Error(
+        "fundingRatePpmPerHour must be a canonical integer string",
+      );
+    }
+    if (BigInt(rate) < -1_000_000n || BigInt(rate) > 1_000_000n) {
+      throw new Error(
+        "fundingRatePpmPerHour must be between -1000000 and 1000000",
+      );
+    }
+    if (!Array.isArray(payload.fundingHistory) || payload.fundingHistory.length === 0) {
+      throw new Error("funding history must contain at least one sample");
+    }
+    let previousHistoryAt = -1n;
+    for (const [index, value] of payload.fundingHistory.entries()) {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        throw new Error(`funding history ${index} must be an object`);
+      }
+      const sample = value as Record<string, unknown>;
+      const at = string(sample.observedAtMs, `funding history ${index} observedAtMs`);
+      const sampleRate = string(sample.ratePpm, `funding history ${index} ratePpm`);
+      if (
+        !unsignedInteger.test(at) ||
+        !signedInteger.test(sampleRate) ||
+        BigInt(sampleRate) < -1_000_000n ||
+        BigInt(sampleRate) > 1_000_000n ||
+        BigInt(at) <= previousHistoryAt ||
+        BigInt(at) > BigInt(event.observedAtMs as string)
+      ) {
+        throw new Error("funding history must be ordered, bounded, and not in the future");
+      }
+      previousHistoryAt = BigInt(at);
+    }
+    const realizedRate = string(
+      payload.realizedFundingRatePpm,
+      "realizedFundingRatePpm",
+    );
+    if (
+      !signedInteger.test(realizedRate) ||
+      BigInt(realizedRate) < -1_000_000n ||
+      BigInt(realizedRate) > 1_000_000n
+    ) {
+      throw new Error(
+        "realizedFundingRatePpm must be between -1000000 and 1000000",
+      );
+    }
+    const marginStatus = string(payload.marginStatus, "marginStatus");
+    const maintenanceMargin = string(
+      payload.maintenanceMarginPpm,
+      "maintenanceMarginPpm",
+    );
+    if (
+      (marginStatus !== "valid" && marginStatus !== "unavailable") ||
+      !unsignedInteger.test(maintenanceMargin) ||
+      BigInt(maintenanceMargin) > 1_000_000n ||
+      (marginStatus === "valid" && BigInt(maintenanceMargin) === 0n) ||
+      (marginStatus === "unavailable" && BigInt(maintenanceMargin) !== 0n)
+    ) {
+      throw new Error("invalid funding margin contract");
+    }
+    const scanIndex = BigInt(payload.scanIndex as string);
+    const scanSize = BigInt(payload.scanSize as string);
+    if (scanSize === 0n || scanIndex >= scanSize) {
+      throw new Error("scanIndex must be less than positive scanSize");
+    }
+    if (
+      payload.sourceStatus !== "valid" &&
+      payload.sourceStatus !== "invalid"
+    ) {
+      throw new Error("sourceStatus must be valid or invalid");
+    }
+    if (typeof payload.depthQualified !== "boolean") {
+      throw new Error("depthQualified must be a boolean");
+    }
+    if (payload.sourceStatus === "invalid" && payload.depthQualified) {
+      throw new Error("invalid source cannot be depth-qualified");
+    }
+    if (payload.sourceStatus === "valid") {
+      for (const field of [
+        "markPriceUsdMicros",
+        "perpBidPriceUsdMicros",
+        "perpAskPriceUsdMicros",
+      ] as const) {
+        if (BigInt(payload[field] as string) === 0n) {
+          throw new Error(`${field} must be positive for a valid source`);
+        }
+      }
+    }
+    if (
+      payload.depthQualified &&
+      [
+        "spotBidPriceUsdMicros",
+        "spotAskPriceUsdMicros",
+        "spotExitDepthAtoms",
+        "perpExitDepthAtoms",
+      ].some((field) => BigInt(payload[field] as string) === 0n)
+    ) {
+      throw new Error("depth-qualified observations require executable spot and perp depth");
+    }
+    const borrowStatus = payload.borrowSourceStatus;
+    if (
+      borrowStatus !== "valid" &&
+      borrowStatus !== "invalid" &&
+      borrowStatus !== "unavailable"
+    ) {
+      throw new Error("borrowSourceStatus must be valid, invalid, or unavailable");
+    }
+    for (const field of [
+      "borrowVenue",
+      "borrowMarket",
+      "borrowReserve",
+      "borrowMint",
+    ] as const) {
+      string(payload[field], field);
+    }
+    const borrowRate = BigInt(payload.borrowRatePpmPerHour as string);
+    const borrowUtilization = BigInt(payload.borrowUtilizationPpm as string);
+    if (borrowRate > 1_000_000n || borrowUtilization > 1_000_000n) {
+      throw new Error("borrow rates must be between zero and one million ppm");
+    }
+    if (borrowStatus === "valid") {
+      if (
+        payload.borrowVenue !== "kamino" ||
+        !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(payload.borrowMarket as string) ||
+        !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(payload.borrowReserve as string) ||
+        !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(payload.borrowMint as string) ||
+        BigInt(payload.borrowSourceObservedAtMs as string) === 0n ||
+        BigInt(payload.borrowSourceObservedAtMs as string) >
+          BigInt(event.observedAtMs as string)
+      ) {
+        throw new Error("valid borrow snapshot has invalid identity or time");
+      }
+    } else if (
+      borrowRate !== 0n ||
+      BigInt(payload.borrowAvailableUsdMicros as string) !== 0n ||
+      borrowUtilization !== 0n
+    ) {
+      throw new Error("unusable borrow snapshot must carry zero economics");
+    }
+    return value as FundingObservationEvent;
+  }
   if (event.eventType === "FundingSettlement") {
     string(payload.venuePaymentId, "venuePaymentId");
     const effectiveAtMs = string(payload.effectiveAtMs, "effectiveAtMs");
@@ -215,6 +608,7 @@ export function buildSyntheticEvent(
     jitosolAtoms: "2000000000",
     notionalUsdMicros: "500000000",
     shortReceiptPpm: "250",
+    rewardRatePpmPerHour: "0",
     solPriceUsdMicros: "150000000",
     priorNavLamports: "1234000000",
     costsUsdMicros: "200000",
@@ -281,4 +675,61 @@ export function buildSyntheticFundingSettlement(
     rawPayloadHash: createHash("sha256").update(JSON.stringify(payload)).digest("hex"),
     payload,
   }) as FundingSettlementEvent;
+}
+
+export function buildSyntheticFundingObservation(
+  sequence: bigint,
+  observedAtMs: bigint,
+  sessionId: string,
+): FundingObservationEvent {
+  const scanId = `synthetic-${sessionId}-${sequence}`;
+  const payload: FundingObservationPayload = {
+    scanId,
+    scanIndex: "0",
+    scanSize: "1",
+    venue: "hyperliquid",
+    asset: "BTC",
+    instrument: "BTC-PERP",
+    sourceObservedAtMs: observedAtMs.toString(),
+    sourceStatus: "valid",
+    fundingRatePpmPerHour: "13",
+    fundingHistory: [{ observedAtMs: observedAtMs.toString(), ratePpm: "13" }],
+    realizedFundingRatePpm: "13",
+    realizedFundingAtMs: observedAtMs.toString(),
+    markPriceUsdMicros: "65000000000",
+    openInterestUsdMicros: "1000000000000",
+    spotBidPriceUsdMicros: "64990000000",
+    spotAskPriceUsdMicros: "65010000000",
+    perpBidPriceUsdMicros: "64995000000",
+    perpAskPriceUsdMicros: "65005000000",
+    spotExitDepthAtoms: "100000000",
+    perpExitDepthAtoms: "100000000",
+    depthQualified: true,
+    marginStatus: "valid",
+    maintenanceMarginPpm: "12500",
+    borrowVenue: "none",
+    borrowMarket: "none",
+    borrowReserve: "none",
+    borrowMint: "none",
+    borrowSourceObservedAtMs: "0",
+    borrowSourceStatus: "unavailable",
+    borrowRatePpmPerHour: "0",
+    borrowAvailableUsdMicros: "0",
+    borrowUtilizationPpm: "0",
+  };
+  const source = "synthetic-funding:BTC";
+  return validateEvent({
+    schemaVersion: 1,
+    eventId: `${scanId}:hyperliquid:BTC`,
+    eventType: "FundingObservation",
+    source,
+    observedAtMs: observedAtMs.toString(),
+    sourceSlot: observedAtMs.toString(),
+    sourceSequence: `${sessionId}:scan-${sequence}`,
+    idempotencyKey: `${source}:${scanId}`,
+    rawPayloadHash: createHash("sha256")
+      .update(JSON.stringify(payload))
+      .digest("hex"),
+    payload,
+  }) as FundingObservationEvent;
 }

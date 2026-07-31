@@ -20,6 +20,7 @@ fn snapshot(oracle_status :: OracleStatus, fill_rate :: Int, reject_rate :: Int)
     jitosol_atoms : TokenAtoms { atoms : 2000000000 },
     notional_usd_micros : UsdMicros { atoms : 500000000 },
     short_receipt_ppm : RatePpm { atoms : 250 },
+    reward_rate_ppm_per_hour : RatePpm { atoms : 0 },
     sol_price_usd_micros : UsdMicros { atoms : 150000000 },
     prior_nav_lamports : Lamports { atoms : 1234000000 },
     costs_usd_micros : UsdMicros { atoms : 10000 },
@@ -113,6 +114,8 @@ describe("paper entry planner") do
 
   test("uses the JitoSOL schedule for both controlled portfolios") do
     let controlled = %{snapshot(OracleValid, 1000000, 0) |
+      short_receipt_ppm : RatePpm { atoms : 1 },
+      reward_rate_ppm_per_hour : RatePpm { atoms : 10 },
       costs_usd_micros : UsdMicros { atoms : 200000 },
       risk_haircut_usd_micros : UsdMicros { atoms : 50000 }
     }
@@ -148,6 +151,8 @@ describe("paper entry planner") do
 
   test("keeps the SOL control open on the shared positive-carry schedule") do
     let controlled = %{snapshot(OracleValid, 1000000, 0) |
+      short_receipt_ppm : RatePpm { atoms : 1 },
+      reward_rate_ppm_per_hour : RatePpm { atoms : 10 },
       costs_usd_micros : UsdMicros { atoms : 200000 },
       risk_haircut_usd_micros : UsdMicros { atoms : 50000 }
     }

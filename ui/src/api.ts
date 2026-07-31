@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import type { Strategy } from "./catalog";
 import type { Fixed } from "./fmt";
 
-export type Variant = "sol_control" | "jitosol_carry";
+// Strategy identity is a plain id everywhere below. The closed `Variant` union
+// this file used to export is gone: the collector's `/v1/strategies` catalog is
+// the only place the universe is enumerated.
 
 export type Status = {
   activePortfolios: string;
@@ -31,6 +34,9 @@ export type Config = Record<string, string | number | boolean> & {
   emitIntervalMs: number;
   liveEnabled: boolean;
   maxSourceAgeMs: number;
+  expectedHoldHours: number;
+  maximumBreakEvenHours: number;
+  jitosolRewardHaircutPpm: number;
   minimumLiquidationDistanceBps: number;
   minimumMarginRatioPpm: number;
   rebalanceDeltaBps: number;
@@ -59,7 +65,8 @@ export type ExecutorStatus = {
 export type Portfolio = {
   id: string;
   state: string;
-  variant: Variant;
+  variant: string;
+  comparisonGroupId: string | null;
   comparisonMode: "independent" | "synchronized";
   initialCapitalUsd: Fixed;
 };
@@ -72,33 +79,27 @@ export type MarginSnapshot = {
 };
 
 export type Position = {
+  asset?: string;
   state: string;
-  variant: Variant;
+  variant: string;
   deltaBps: string;
   netDeltaSol: Fixed;
   perpShortSol: Fixed;
   spotQuantity: Fixed;
-  marginSnapshot: MarginSnapshot;
+  marginSnapshot: MarginSnapshot | null;
   portfolioRunId: string;
 };
 
 export type Pnl = {
-  variant: Variant;
+  variant: string;
   complete: boolean;
   portfolioRunId: string;
   basisPnlUsd: Fixed;
   netRecordedUsd: Fixed;
   tradingFeesUsd: Fixed;
+  borrowInterestUsd: Fixed;
   rewardAccrualUsd: Fixed;
   fundingRealizedUsd: Fixed;
-};
-
-export type Comparison = {
-  mode: "independent" | "synchronized";
-  complete: boolean;
-  solNetRecordedUsd: Fixed;
-  jitosolNetRecordedUsd: Fixed;
-  jitosolIncrementalNetRecordedUsd: Fixed;
 };
 
 export type RiskDecision = {
@@ -123,12 +124,14 @@ export type RiskEvent = {
   createdAt: string;
   resolvedAt: string | null;
   actionTaken: string | null;
+  /** Null for collector-wide events, which belong to no single strategy. */
+  portfolioRunId: string | null;
 };
 
 export type Opportunity = {
   id: string;
   eligible: boolean;
-  variant: Variant;
+  variant: string;
   reasonCode: string;
   observedAtMs: string;
   netCarryUsdMicros: string;
@@ -141,7 +144,7 @@ export type Order = {
   id: string;
   intentId: string;
   intent: { leg?: string; instrument?: string } | null;
-  variant: Variant;
+  variant: string;
   status: string;
   requestedQuantity: Fixed;
   filledQuantity: Fixed;
@@ -151,7 +154,7 @@ export type Order = {
 export type Fill = {
   id: string;
   portfolioRunId: string;
-  variant: Variant;
+  variant: string;
   quantity: Fixed;
   priceUsd: Fixed;
   feeUsd: Fixed;
@@ -168,6 +171,141 @@ export type FundingPayment = {
   realizationStatus: string;
 };
 
+export type FundingRank = {
+  rank: number;
+  venue: string;
+  asset: string;
+  instrument: string;
+  fundingRatePpmPerHour: string;
+  funding24hAveragePpm: string;
+  fundingEmaPpm: string;
+  percentilePpm: string;
+  gateThresholdPpm: string;
+  gateDistancePpm: string;
+  samples24h: number;
+  historyReady: boolean;
+  depthQualified: boolean;
+  eligible: boolean;
+};
+
+export type FundingLeaderboard = {
+  asOfMs: string;
+  historyRequiredHours: string;
+  minimumSamples24h: string;
+  gateThresholdPpm: string;
+  items: FundingRank[];
+};
+
+export type ReverseCarryRank = {
+  rank: number;
+  venue: string;
+  asset: string;
+  instrument: string;
+  observedAtMs: string;
+  fundingRatePpmPerHour: string;
+  funding24hAveragePpm: string;
+  fundingReceiptPpmPerHour: string;
+  borrowVenue: string;
+  borrowMarket: string;
+  borrowReserve: string;
+  borrowMint: string;
+  borrowSourceStatus: string;
+  borrowSourceFresh: boolean;
+  borrowRatePpmPerHour: string;
+  borrowAvailableUsdMicros: string;
+  borrowUtilizationPpm: string;
+  costThresholdPpm: string;
+  gateDistancePpm: string;
+  samples24h: number;
+  historyReady: boolean;
+  depthQualified: boolean;
+  eligible: boolean;
+};
+
+export type ReverseCarryLeaderboard = {
+  asOfMs: string;
+  historyRequiredHours: string;
+  minimumSamples24h: string;
+  minimumNegativeFundingPpm: string;
+  maximumBorrowUtilizationPpm: string;
+  maximumBreakEvenHours: string;
+  costThresholdPpm: string;
+  items: ReverseCarryRank[];
+};
+
+export type CrossVenueRank = {
+  rank: number;
+  scanId: string;
+  asset: string;
+  instrument: string;
+  shortVenue: string;
+  longVenue: string;
+  realizedSpreadPpmPerHour: string;
+  gateDistancePpm: string;
+  historyReady: boolean;
+  shortMarginStatus: string;
+  longMarginStatus: string;
+  shortMarginRatioPpm: string;
+  longMarginRatioPpm: string;
+  eligible: boolean;
+};
+
+export type CrossVenueLeaderboard = {
+  asOfMs: string;
+  historyRequiredHours: string;
+  minimumRealizedSamples24h: string;
+  gateThresholdPpm: string;
+  items: CrossVenueRank[];
+};
+
+export type WalletTracking = {
+  config: {
+    version: string;
+    wallets: string[];
+    maximumWallets: string;
+    updatedAt: string;
+  };
+  scores: {
+    asOfMs: string;
+    minimumDecisions: string;
+    items: {
+      rank: number;
+      wallet: string;
+      closedDecisions: string;
+      netRealizedUsdMicros: string;
+      feesUsdMicros: string;
+      maxDrawdownUsdMicros: string;
+      scorePpm: string;
+      qualified: boolean;
+    }[];
+  };
+  signals: {
+    asset: string;
+    observedAtMs: string;
+    signalPpm: string;
+    qualifiedWallets: string;
+    qualified: boolean;
+  }[];
+  positions: unknown[];
+  decisions: unknown[];
+  assessment: {
+    asOfMs: string;
+    modes: Record<"flow" | "mirror" | "fade", {
+      verdict: "pending" | "go" | "kill";
+      evidenceDays: string;
+      closedDecisions: string;
+      netUsdMicros: string;
+      riskAdjustedReturnPpm: string;
+      minimumDays: string;
+      minimumDecisions: string;
+    }>;
+    benchmarks: Record<"holdingSol" | "phase1", {
+      ready: boolean;
+      riskAdjustedReturnPpm: string;
+    }>;
+  };
+};
+
 export type Capability = {
   id: string;
   status: "implemented" | "project_local" | "deferred" | string;
@@ -180,6 +318,8 @@ export type Reconciliation = {
   completedAt: string;
 } | null;
 
+export type OperatorAction = "pause-all" | "resume";
+
 type Page<T> = { items: T[]; limit: number; offset: number };
 
 export type Snapshot = {
@@ -188,16 +328,20 @@ export type Snapshot = {
   config: Config | null;
   adapter: AdapterStatus | null;
   executor: ExecutorStatus | null;
+  strategies: Strategy[];
   portfolios: Portfolio[];
   positions: Position[];
   pnl: Pnl[];
-  comparison: Comparison[];
   decisions: RiskDecision[];
   events: RiskEvent[];
   opportunities: Opportunity[];
   orders: Order[];
   fills: Fill[];
   funding: FundingPayment[];
+  fundingLeaderboard: FundingLeaderboard | null;
+  reverseCarryLeaderboard: ReverseCarryLeaderboard | null;
+  crossVenueLeaderboard: CrossVenueLeaderboard | null;
+  walletTracking: WalletTracking | null;
   capabilities: Capability[];
   buildManifestId: string;
   reconciliation: Reconciliation;
@@ -207,8 +351,9 @@ export type Snapshot = {
 
 const EMPTY: Snapshot = {
   status: null, build: null, config: null, adapter: null, executor: null,
-  portfolios: [], positions: [], pnl: [], comparison: [], decisions: [], events: [],
-  opportunities: [], orders: [], fills: [], funding: [], capabilities: [],
+  strategies: [], portfolios: [], positions: [], pnl: [], decisions: [], events: [],
+  opportunities: [], orders: [], fills: [], funding: [], fundingLeaderboard: null,
+  reverseCarryLeaderboard: null, crossVenueLeaderboard: null, walletTracking: null, capabilities: [],
   buildManifestId: "", reconciliation: null, reachable: false, polledAt: 0,
 };
 
@@ -228,10 +373,39 @@ async function get<T>(path: string, fallback: T): Promise<T> {
 
 const page = <T,>(p: Page<T> | null): T[] => (Array.isArray(p?.items) ? p.items : []);
 
+/**
+ * `strategy` scopes the control to the card it was pressed from. The signing
+ * proxy carries it into the operator command's reason, so the evidence trail
+ * records which strategy the operator acted on even while the collector's own
+ * pause state is a singleton (`controlScope: "global"` in the catalog).
+ */
+export async function control(action: OperatorAction, strategy?: string): Promise<void> {
+  const query = strategy ? `?strategy=${encodeURIComponent(strategy)}` : "";
+  const response = await fetch(`/operator/${action}${query}`, {
+    method: "POST",
+    headers: { accept: "application/json" },
+  });
+  if (response.ok) return;
+  const error = await response.json().catch(() => null) as { message?: string } | null;
+  throw new Error(error?.message ?? `operator request failed (${response.status})`);
+}
+
+export async function configureWallets(wallets: string[]): Promise<void> {
+  const response = await fetch("/operator/wallets/config", {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ wallets }),
+  });
+  if (response.ok) return;
+  const error = await response.json().catch(() => null) as { message?: string } | null;
+  throw new Error(error?.message ?? `wallet update failed (${response.status})`);
+}
+
 export async function pull(): Promise<Snapshot> {
   const [
-    status, build, config, adapter, executor, portfolios, positions, pnl,
-    comparison, decisions, events, opportunities, orders, fills, funding,
+    status, build, config, adapter, executor, catalog, portfolios, positions, pnl,
+    decisions, events, opportunities, orders, fills, funding, fundingLeaderboard,
+    reverseCarryLeaderboard, crossVenueLeaderboard, walletTracking,
     capabilities, reconciliation,
   ] = await Promise.all([
     get<Status | null>("/v1/status", null),
@@ -239,32 +413,40 @@ export async function pull(): Promise<Snapshot> {
     get<Config | null>("/v1/config", null),
     get<AdapterStatus | null>("/v1/adapter/status", null),
     get<ExecutorStatus | null>("/v1/executor/status", null),
+    get<{ strategies: Strategy[] } | null>("/v1/strategies", null),
     get<Portfolio[]>("/v1/portfolios", []),
     get<Position[]>("/v1/positions", []),
     get<Pnl[]>("/v1/pnl", []),
-    get<Comparison[]>("/v1/pnl/comparison", []),
     get<Page<RiskDecision> | null>("/v1/risk-decisions?limit=25", null),
     get<Page<RiskEvent> | null>("/v1/risk-events?limit=25", null),
-    get<Opportunity[]>("/v1/opportunities?limit=20", []),
+    get<Opportunity[]>("/v1/opportunities", []),
     get<Page<Order> | null>("/v1/orders?limit=12", null),
     get<Page<Fill> | null>("/v1/fills?limit=12", null),
     get<Page<FundingPayment> | null>("/v1/funding?limit=12", null),
+    get<FundingLeaderboard | null>("/v1/funding/leaderboard", null),
+    get<ReverseCarryLeaderboard | null>("/v1/reverse-carry/leaderboard", null),
+    get<CrossVenueLeaderboard | null>("/v1/cross-venue/leaderboard", null),
+    get<WalletTracking | null>("/v1/wallets", null),
     get<{ results: Capability[]; buildManifestId: string } | null>("/v1/capabilities", null),
     get<Reconciliation>("/v1/reconciliations/latest", null),
   ]);
 
   return {
     status, build, config, adapter, executor,
+    strategies: Array.isArray(catalog?.strategies) ? catalog.strategies : [],
     portfolios: Array.isArray(portfolios) ? portfolios : [],
     positions: Array.isArray(positions) ? positions : [],
     pnl: Array.isArray(pnl) ? pnl : [],
-    comparison: Array.isArray(comparison) ? comparison : [],
     decisions: page(decisions),
     events: page(events),
-    opportunities: (Array.isArray(opportunities) ? opportunities : []).slice(0, 20),
+    opportunities: Array.isArray(opportunities) ? opportunities : [],
     orders: page(orders),
     fills: page(fills),
     funding: page(funding),
+    fundingLeaderboard,
+    reverseCarryLeaderboard,
+    crossVenueLeaderboard,
+    walletTracking,
     capabilities: capabilities?.results ?? [],
     buildManifestId: capabilities?.buildManifestId ?? "",
     reconciliation,

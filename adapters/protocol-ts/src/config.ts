@@ -5,8 +5,15 @@ export type AdapterConfig = {
   hmacSecret: string;
   emitIntervalMs: number;
   fundingIntervalEvents: number;
+  fundingScanIntervalMs: number;
+  walletScanIntervalMs: number;
+  walletFillLookbackMs: bigint;
   requestTimeoutMs: number;
   healthPort: number;
+  hyperliquidUrls: string[];
+  kaminoUrls: string[];
+  kaminoLendingMarket: string;
+  kaminoBorrowReserves: { asset: string; reserve: string; mint: string }[];
   phoenixUrls: string[];
   phoenixBearerToken: string;
   solanaRpcUrls: string[];
@@ -20,7 +27,14 @@ export type AdapterConfig = {
   paperCostsUsdMicros: bigint;
   paperRiskHaircutUsdMicros: bigint;
   paperSlippageBps: bigint;
+  jitosolRewardHaircutPpm: bigint;
 };
+
+const defaultKaminoBorrowReserves = [
+  "SOL:d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q:So11111111111111111111111111111111111111112",
+  "JTO:9Ukd2MSw5RvVFaN8jLhWxjHLEGiF1F6Hf7v3Zq5hZsKB:jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL",
+].join(",");
+const publicKey = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 function positiveInteger(
   env: Record<string, string | undefined>,
@@ -75,6 +89,31 @@ function urls(
   return values;
 }
 
+function kaminoBorrowReserves(
+  raw: string,
+): { asset: string; reserve: string; mint: string }[] {
+  const seen = new Set<string>();
+  return raw.split(",").map((entry) => {
+    const [asset, reserve, mint, extra] = entry.trim().split(":");
+    if (
+      extra !== undefined ||
+      !asset ||
+      !/^[A-Z0-9]{1,24}$/.test(asset) ||
+      !reserve ||
+      !publicKey.test(reserve) ||
+      !mint ||
+      !publicKey.test(mint) ||
+      seen.has(asset)
+    ) {
+      throw new Error(
+        "KAMINO_BORROW_RESERVES must contain unique ASSET:reserve:mint entries",
+      );
+    }
+    seen.add(asset);
+    return { asset, reserve, mint };
+  });
+}
+
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
 ): AdapterConfig {
@@ -99,6 +138,12 @@ export function loadConfig(
   if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
     throw new Error("ADAPTER_SESSION_ID must contain only letters, digits, underscores, or hyphens");
   }
+  const kaminoLendingMarket =
+    env.KAMINO_LENDING_MARKET ??
+    "7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF";
+  if (!publicKey.test(kaminoLendingMarket)) {
+    throw new Error("KAMINO_LENDING_MARKET must be a base58 public key");
+  }
 
   const paperSlippageBps = unsignedInteger(
     env,
@@ -109,6 +154,15 @@ export function loadConfig(
   if (paperSlippageBps > 10_000n) {
     throw new Error("PAPER_SLIPPAGE_BPS must be at most 10000");
   }
+  const jitosolRewardHaircutPpm = unsignedInteger(
+    env,
+    "JITOSOL_REWARD_HAIRCUT_PPM",
+    "250000",
+    true,
+  );
+  if (jitosolRewardHaircutPpm > 1_000_000n) {
+    throw new Error("JITOSOL_REWARD_HAIRCUT_PPM must be at most 1000000");
+  }
 
   return {
     mode,
@@ -117,8 +171,37 @@ export function loadConfig(
     hmacSecret,
     emitIntervalMs,
     fundingIntervalEvents: positiveInteger(env, "FUNDING_INTERVAL_EVENTS", 12),
+    fundingScanIntervalMs: positiveInteger(
+      env,
+      "FUNDING_SCAN_INTERVAL_MS",
+      3_600_000,
+    ),
+    walletScanIntervalMs: positiveInteger(
+      env,
+      "WALLET_SCAN_INTERVAL_MS",
+      60_000,
+    ),
+    walletFillLookbackMs: unsignedInteger(
+      env,
+      "WALLET_FILL_LOOKBACK_MS",
+      "86400000",
+    ),
     requestTimeoutMs: positiveInteger(env, "REQUEST_TIMEOUT_MS", 3000),
     healthPort: positiveInteger(env, "HEALTH_PORT", 8090),
+    hyperliquidUrls: urls(
+      env,
+      "HYPERLIQUID_URLS",
+      "https://api.hyperliquid.xyz",
+    ),
+    kaminoUrls: urls(
+      env,
+      "KAMINO_URLS",
+      "https://api.kamino.finance",
+    ),
+    kaminoLendingMarket,
+    kaminoBorrowReserves: kaminoBorrowReserves(
+      env.KAMINO_BORROW_RESERVES?.trim() || defaultKaminoBorrowReserves,
+    ),
     phoenixUrls: urls(
       env,
       "PHOENIX_URLS",
@@ -166,5 +249,6 @@ export function loadConfig(
       true,
     ),
     paperSlippageBps,
+    jitosolRewardHaircutPpm,
   };
 }

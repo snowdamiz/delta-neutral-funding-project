@@ -6,14 +6,23 @@ x-paper-environment: &paper-environment
   ADAPTER_HMAC_SECRET: ${ADAPTER_HMAC_SECRET:-local-paper-only-change-me}
   EMIT_INTERVAL_MS: ${EMIT_INTERVAL_MS:-15000}
   FUNDING_INTERVAL_EVENTS: ${FUNDING_INTERVAL_EVENTS:-12}
+  FUNDING_SCAN_INTERVAL_MS: ${FUNDING_SCAN_INTERVAL_MS:-3600000}
+  WALLET_SCAN_INTERVAL_MS: ${WALLET_SCAN_INTERVAL_MS:-60000}
+  WALLET_FILL_LOOKBACK_MS: ${WALLET_FILL_LOOKBACK_MS:-86400000}
   SOURCE_MAX_SLOT_DRIFT: ${SOURCE_MAX_SLOT_DRIFT:-5000}
   SOURCE_MAX_FUNDING_AGE_MS: ${SOURCE_MAX_FUNDING_AGE_MS:-7200000}
+  SOURCE_MAX_BORROW_AGE_MS: ${SOURCE_MAX_BORROW_AGE_MS:-7200000}
   PAPER_NOTIONAL_USD_MICROS: ${PAPER_NOTIONAL_USD_MICROS:-500000000}
   PAPER_MAX_JITOSOL_ATOMS: ${PAPER_MAX_JITOSOL_ATOMS:-10000000000}
   PAPER_COLLATERAL_USD_MICROS: ${PAPER_COLLATERAL_USD_MICROS:-500000000}
   PAPER_COSTS_USD_MICROS: ${PAPER_COSTS_USD_MICROS:-200000}
   PAPER_RISK_HAIRCUT_USD_MICROS: ${PAPER_RISK_HAIRCUT_USD_MICROS:-50000}
   PAPER_SLIPPAGE_BPS: ${PAPER_SLIPPAGE_BPS:-50}
+  EXPECTED_HOLD_HOURS: ${EXPECTED_HOLD_HOURS:-72}
+  MAXIMUM_BREAK_EVEN_HOURS: ${MAXIMUM_BREAK_EVEN_HOURS:-48}
+  REVERSE_MIN_NEGATIVE_FUNDING_PPM: ${REVERSE_MIN_NEGATIVE_FUNDING_PPM:-10}
+  REVERSE_MAX_BORROW_UTILIZATION_PPM: ${REVERSE_MAX_BORROW_UTILIZATION_PPM:-950000}
+  JITOSOL_REWARD_HAIRCUT_PPM: ${JITOSOL_REWARD_HAIRCUT_PPM:-250000}
   MAX_SOURCE_AGE_MS: ${MAX_SOURCE_AGE_MS:-60000}
   MIN_MARGIN_RATIO_PPM: ${MIN_MARGIN_RATIO_PPM:-1500000}
   MIN_LIQUIDATION_DISTANCE_BPS: ${MIN_LIQUIDATION_DISTANCE_BPS:-1000}
@@ -47,7 +56,7 @@ services:
       timeout: 2s
       retries: 30
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_v38:/var/lib/postgresql/data
     networks:
       - database
     mem_limit: 1g
@@ -90,8 +99,7 @@ services:
         mesh_lang: ../mesh-lang
       args:
         CODE_COMMIT: ${CODE_COMMIT:-development}
-        MESH_COMMIT: bea7d2159572d096eafea2577c2887ef7342ce86
-      sbom: true
+        MESH_COMMIT: c5379f8d00990df18248e4bf2d53bbb1d04868fb
       provenance: mode=max
     depends_on:
       migrate:
@@ -102,7 +110,7 @@ services:
       OPERATOR_HMAC_SECRET: ${OPERATOR_HMAC_SECRET:-local-operator-only-change-me}
       DEPLOYMENT_ENVIRONMENT: local
       INSTANCE_ID: ${INSTANCE_ID:-collector-local-1}
-      LEADER_LEASE_MS: ${LEADER_LEASE_MS:-10000}
+      LEADER_LEASE_MS: ${LEADER_LEASE_MS:-60000}
       LEADER_RENEW_MS: ${LEADER_RENEW_MS:-3000}
       PORT: 8080
     init: true
@@ -131,7 +139,6 @@ services:
       dockerfile: infra/docker/adapter.Dockerfile
       args:
         CODE_COMMIT: ${CODE_COMMIT:-development}
-      sbom: true
       provenance: mode=max
     depends_on:
       collector:
@@ -143,6 +150,10 @@ services:
       HEALTH_PORT: 8090
       PHOENIX_URLS: ${PHOENIX_URLS:-https://perp-api.phoenix.trade}
       PHOENIX_BEARER_TOKEN: ${PHOENIX_BEARER_TOKEN:-}
+      HYPERLIQUID_URLS: ${HYPERLIQUID_URLS:-https://api.hyperliquid.xyz}
+      KAMINO_URLS: ${KAMINO_URLS:-https://api.kamino.finance}
+      KAMINO_LENDING_MARKET: ${KAMINO_LENDING_MARKET:-7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF}
+      KAMINO_BORROW_RESERVES: ${KAMINO_BORROW_RESERVES:-SOL:d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q:So11111111111111111111111111111111111111112,JTO:9Ukd2MSw5RvVFaN8jLhWxjHLEGiF1F6Hf7v3Zq5hZsKB:jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL}
       SOLANA_RPC_URLS: ${SOLANA_RPC_URLS:-https://api.mainnet-beta.solana.com}
       JUPITER_URLS: ${JUPITER_URLS:-https://api.jup.ag/swap/v1}
       JUPITER_API_KEY: ${JUPITER_API_KEY:-}
@@ -206,7 +217,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  # Preserve older paper evidence when a release changes its runtime fingerprint.
+  postgres_data_v38:
   prometheus_data:
   grafana_data:
 

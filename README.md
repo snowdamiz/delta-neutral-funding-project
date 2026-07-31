@@ -3,7 +3,18 @@
 Local-first, Mesh-owned paper and shadow system for comparing:
 
 - long SOL + short SOL-PERP (`SOL_CONTROL`);
-- long JitoSOL + short SOL-PERP (`JITOSOL_CARRY`).
+- long JitoSOL + short SOL-PERP (`JITOSOL_CARRY`);
+- long the top-ranked spot asset + short its perpetual
+  (`CROSS_ASSET_FUNDING`);
+- long the top-ranked asset perpetual + borrowed/sold spot when funding is
+  deeply negative (`NEGATIVE_FUNDING_REVERSE`);
+- buy JitoSOL below protocol NAV, short its NAV-equivalent SOL exposure, and
+  redeem through the better modeled exit (`JITOSOL_NAV_DISCOUNT`);
+- short the higher-realized-funding perpetual and long the lower-funding
+  perpetual for the same asset (`CROSS_VENUE_FUNDING`);
+- aggregate, mirror, or fade configured Hyperliquid wallets
+  (`HYPERLIQUID_WALLET_FLOW`, `HYPERLIQUID_WALLET_MIRROR`,
+  `HYPERLIQUID_WALLET_FADE`).
 
 Paper mode is the default and the only currently approved mode. The repository
 contains no private key and no route from the paper deployment to a signer.
@@ -50,11 +61,59 @@ complete six-request capture cycle. `JUPITER_API_KEY` enables a separately
 managed higher-rate quota. Comma-separated `PHOENIX_URLS`, `SOLANA_RPC_URLS`,
 and `JUPITER_URLS` provide ordered failover.
 
+The Phase 2 paper path also reads pinned Kamino reserve metrics. It subtracts
+live variable borrow APY from negative funding, requires 2× notional in
+available borrow liquidity, and exits on the current observation when borrow
+cost reaches funding. `KAMINO_URLS` provides ordered failover;
+`KAMINO_LENDING_MARKET` and `KAMINO_BORROW_RESERVES` pin identities. See the
+[Kamino qualification](docs/kamino-qualification.md); live borrowing remains
+unapproved.
+
+Opportunity carry is projected across `EXPECTED_HOLD_HOURS` (72 by default)
+and rejected when costs cannot break even inside `MAXIMUM_BREAK_EVEN_HOURS`
+(48 by default). JitoSOL reward carry comes from the stake pool's completed
+epoch exchange-rate growth, reduced by `JITOSOL_REWARD_HAIRCUT_PPM` (250000,
+or 25%); it needs no secret or advertised APY.
+
+The Phase 3 NAV-discount book reuses the same accepted JitoSOL snapshot and
+direct-unstake state machine. It compares executable purchase and instant-exit
+quotes with protocol redemption after the configured withdrawal, chain, hedge,
+delay, funding, and risk costs. Positive funding may improve a real discount
+but cannot create eligibility when the executable ask is at or above NAV.
+
+The Phase 4 cross-venue book selects one asset across two qualified perpetual
+venues from realized funding prints. It sizes equal and opposite legs, charges
+both-leg costs, values mark divergence, maintains each venue's margin
+independently, and emergency-flattens both legs when either exit becomes
+uncertain. Hyperliquid publishes a usable maintenance rate; the current second
+venue remains fail-closed until its margin and executable-depth evidence is
+qualified.
+
+Phase 5 indexes the explicit Hyperliquid cohort configured in the console's
+Markets → Wallet consistency panel. The authenticated update is stored in
+PostgreSQL and the adapter reloads it without a restart; `GET /v1/wallets/config`
+exposes the current internal cohort. It scores only evidence
+available before each decision, records measured API latency and executable
+copy-book slippage, and papers aggregate-flow, mirror, and fade modes at locally
+bounded size. The wallet panel also exposes the 60-day/20-decision gate against
+holding SOL and Phase 1. An empty cohort is valid and keeps all three modes
+pending.
+
 ## Operator console
 
-`ui/` is a React console over the read API — signal state, the JitoSOL-versus-SOL
-comparison, positions against their pinned margin and liquidation floors, risk
-decisions, and the capability matrix.
+`ui/` is a React console over the read API. It is driven by the collector's
+strategy catalog (`GET /v1/strategies`) and enumerates nothing itself: the
+overview shows signal state, one card per registered strategy, forward and
+reverse funding leaderboards, and the capability matrix; opening a card shows
+that strategy against the benchmark it declares, its positions against their
+pinned margin and liquidation floors, attribution, risk decisions,
+opportunities, and ledger. The open strategy lives in the URL fragment
+(`#jitosol_carry`), so a detail view is linkable.
+
+Registering a strategy is a row in the catalog read model
+(`mesh/packages/read_models.mpl`); the console needs no change to render it.
+Adding one with no portfolio runs yet is the intended way to check that — it
+appears as `not registered` with empty evidence rather than a broken card.
 
 ```sh
 cd ui
@@ -66,11 +125,18 @@ npm run dev          # http://127.0.0.1:5173, proxies /v1 to the collector
 build without a Node runtime, `npm run build && python3 serve.py` serves `dist/`
 with the same proxy on port 8081.
 
-The console is strictly read-only: it issues GET requests only, and both proxies
-forward nothing else, so the collector's mutating routes — all POST — are
-unreachable from the browser. They stay with `bin/collector`, which holds the
-operator secret. `npm test` covers the fixed-point conversions, which go through
-BigInt because atoms exceed `Number.MAX_SAFE_INTEGER`.
+The local paper console has Start and Stop controls for resume and pause-all.
+Its localhost proxy signs those two requests with `OPERATOR_HMAC_SECRET`
+(`local-operator-only-change-me` by default), so the secret never reaches the
+browser. Destructive exits, flattening, and resets stay with `bin/collector`.
+
+Controls carry a strategy scope (`/operator/pause-all?strategy=<id>`), which the
+proxy signs into the operator command's reason so the evidence trail records
+which strategy an operator acted on. The collector's pause state is a singleton,
+so the switch itself lives in Signal and cards say so; a strategy that declares
+`controlScope: "strategy"` in the catalog gets its own control with no console
+change. `npm test` covers the catalog contract, scoped control signing, and
+fixed-point conversion and arithmetic.
 
 ## Operator commands
 

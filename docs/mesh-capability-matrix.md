@@ -1,6 +1,6 @@
 # Mesh capability matrix
 
-Candidate runtime commit: `bea7d2159572d096eafea2577c2887ef7342ce86`
+Candidate runtime commit: `c5379f8d00990df18248e4bf2d53bbb1d04868fb`
 
 The pin is a source commit, not an untracked application patch.
 

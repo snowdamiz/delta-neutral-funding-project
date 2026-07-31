@@ -48,11 +48,33 @@ BEGIN
   WHERE strategy_run_id = 'local-paper-run'
   FOR UPDATE;
 
-  WITH balances AS (
+  WITH managed_positions AS (
+    SELECT
+      portfolio_run_id,
+      count(*) FILTER (WHERE status = 'open') AS open_positions,
+      count(*) FILTER (WHERE status = 'exit_blocked') AS blocked_positions
+    FROM (
+      SELECT portfolio_run_id, status FROM cross_asset_paper_positions
+      UNION ALL
+      SELECT portfolio_run_id, status FROM reverse_carry_paper_positions
+      UNION ALL
+      SELECT portfolio_run_id, status FROM nav_discount_paper_positions
+      UNION ALL
+      SELECT portfolio_run_id, status FROM cross_venue_paper_positions
+      UNION ALL
+      SELECT portfolio_run_id, status FROM wallet_paper_positions
+    ) positions
+    WHERE status IN ('open', 'exit_blocked')
+    GROUP BY portfolio_run_id
+  ),
+  balances AS (
     SELECT
       p.id,
+      p.variant,
       p.state,
       p.state_version,
+      COALESCE(mp.open_positions, 0) AS open_positions,
+      COALESCE(mp.blocked_positions, 0) AS blocked_positions,
       COALESCE(sum(CASE
         WHEN ei.leg = 'SPOT' AND ei.intent_json->>'side' = 'BUY'
           THEN f.quantity_atoms::numeric
@@ -71,8 +93,11 @@ BEGIN
     LEFT JOIN fills f ON f.portfolio_run_id = p.id
     LEFT JOIN orders o ON o.id = f.order_id
     LEFT JOIN execution_intents ei ON ei.id = o.intent_id
+    LEFT JOIN managed_positions mp ON mp.portfolio_run_id = p.id
     WHERE p.strategy_run_id = 'local-paper-run'
-    GROUP BY p.id, p.state, p.state_version
+    GROUP BY
+      p.id, p.variant, p.state, p.state_version,
+      mp.open_positions, mp.blocked_positions
   ),
   targets AS (
     SELECT
@@ -80,9 +105,39 @@ BEGIN
       state AS from_state,
       state_version,
       CASE
-        WHEN state = 'idle' AND (spot <> 0 OR perp <> 0)
+        WHEN variant::text IN (
+          'cross_asset_funding', 'negative_funding_reverse',
+          'jitosol_nav_discount', 'cross_venue_funding',
+          'hyperliquid_wallet_flow', 'hyperliquid_wallet_mirror',
+          'hyperliquid_wallet_fade'
+        )
+        AND state = 'idle'
+        AND open_positions + blocked_positions <> 0
           THEN 'emergency_flatten'::portfolio_state
-        WHEN state = 'hedged' AND (spot <= 0 OR perp <= 0)
+        WHEN variant::text IN (
+          'cross_asset_funding', 'negative_funding_reverse',
+          'jitosol_nav_discount', 'cross_venue_funding',
+          'hyperliquid_wallet_flow', 'hyperliquid_wallet_mirror',
+          'hyperliquid_wallet_fade'
+        )
+        AND state = 'hedged'
+        AND (open_positions = 0 OR blocked_positions <> 0)
+          THEN 'emergency_flatten'::portfolio_state
+        WHEN variant::text NOT IN (
+          'cross_asset_funding', 'negative_funding_reverse',
+          'jitosol_nav_discount', 'cross_venue_funding',
+          'hyperliquid_wallet_flow', 'hyperliquid_wallet_mirror',
+          'hyperliquid_wallet_fade'
+        )
+        AND state = 'idle' AND (spot <> 0 OR perp <> 0)
+          THEN 'emergency_flatten'::portfolio_state
+        WHEN variant::text NOT IN (
+          'cross_asset_funding', 'negative_funding_reverse',
+          'jitosol_nav_discount', 'cross_venue_funding',
+          'hyperliquid_wallet_flow', 'hyperliquid_wallet_mirror',
+          'hyperliquid_wallet_fade'
+        )
+        AND state = 'hedged' AND (spot <= 0 OR perp <= 0)
           THEN 'emergency_flatten'::portfolio_state
         WHEN state IN (
           'opening_spot', 'opening_perp', 'rebalancing',
@@ -124,10 +179,32 @@ BEGIN
     FROM fills
     GROUP BY order_id
   ),
+  managed_positions AS (
+    SELECT
+      portfolio_run_id,
+      count(*) FILTER (WHERE status = 'open') AS open_positions,
+      count(*) FILTER (WHERE status = 'exit_blocked') AS blocked_positions
+    FROM (
+      SELECT portfolio_run_id, status FROM cross_asset_paper_positions
+      UNION ALL
+      SELECT portfolio_run_id, status FROM reverse_carry_paper_positions
+      UNION ALL
+      SELECT portfolio_run_id, status FROM nav_discount_paper_positions
+      UNION ALL
+      SELECT portfolio_run_id, status FROM cross_venue_paper_positions
+      UNION ALL
+      SELECT portfolio_run_id, status FROM wallet_paper_positions
+    ) positions
+    WHERE status IN ('open', 'exit_blocked')
+    GROUP BY portfolio_run_id
+  ),
   balances AS (
     SELECT
       p.id,
+      p.variant,
       p.state,
+      COALESCE(mp.open_positions, 0) AS open_positions,
+      COALESCE(mp.blocked_positions, 0) AS blocked_positions,
       COALESCE(sum(CASE
         WHEN ei.leg = 'SPOT' AND ei.intent_json->>'side' = 'BUY'
           THEN f.quantity_atoms::numeric
@@ -146,8 +223,10 @@ BEGIN
     LEFT JOIN fills f ON f.portfolio_run_id = p.id
     LEFT JOIN orders o ON o.id = f.order_id
     LEFT JOIN execution_intents ei ON ei.id = o.intent_id
+    LEFT JOIN managed_positions mp ON mp.portfolio_run_id = p.id
     WHERE p.strategy_run_id = 'local-paper-run'
-    GROUP BY p.id, p.state
+    GROUP BY
+      p.id, p.variant, p.state, mp.open_positions, mp.blocked_positions
   ),
   differences AS (
     SELECT jsonb_build_object(
@@ -296,13 +375,36 @@ BEGIN
       'portfolioRunId', id,
       'state', state::text,
       'spotAtoms', spot::text,
-      'perpAtoms', perp::text
+      'perpAtoms', perp::text,
+      'openManagedPositions', open_positions::text,
+      'blockedManagedPositions', blocked_positions::text
     )
     FROM balances
-    WHERE spot < 0
-       OR perp < 0
-       OR (state = 'idle' AND (spot <> 0 OR perp <> 0))
-       OR (state = 'hedged' AND (spot <= 0 OR perp <= 0))
+    WHERE (
+      variant::text IN (
+        'cross_asset_funding', 'negative_funding_reverse',
+        'jitosol_nav_discount', 'cross_venue_funding',
+        'hyperliquid_wallet_flow', 'hyperliquid_wallet_mirror',
+        'hyperliquid_wallet_fade'
+      )
+      AND (
+        (state = 'idle' AND open_positions + blocked_positions <> 0)
+        OR (state = 'hedged' AND (open_positions = 0 OR blocked_positions <> 0))
+      )
+    ) OR (
+      variant::text NOT IN (
+        'cross_asset_funding', 'negative_funding_reverse',
+        'jitosol_nav_discount', 'cross_venue_funding',
+        'hyperliquid_wallet_flow', 'hyperliquid_wallet_mirror',
+        'hyperliquid_wallet_fade'
+      )
+      AND (
+        spot < 0
+        OR perp < 0
+        OR (state = 'idle' AND (spot <> 0 OR perp <> 0))
+        OR (state = 'hedged' AND (spot <= 0 OR perp <= 0))
+      )
+    )
   )
   SELECT COALESCE(jsonb_agg(item ORDER BY item::text), '[]'::jsonb)
   INTO v_differences

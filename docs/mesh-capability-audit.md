@@ -1,6 +1,6 @@
 # Mesh capability audit
 
-Candidate Mesh pin: `bea7d2159572d096eafea2577c2887ef7342ce86`
+Candidate Mesh pin: `c5379f8d00990df18248e4bf2d53bbb1d04868fb`
 
 This audit records the ownership and exit condition for every language boundary.
 The TypeScript adapter remains the authoritative paper feed until the applicable

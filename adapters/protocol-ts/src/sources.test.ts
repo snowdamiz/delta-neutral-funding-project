@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { test } from "node:test";
 import { loadConfig } from "./config.js";
-import { buildAuthoritativeEvents } from "./sources.js";
+import {
+  buildAuthoritativeEvents,
+  completedEpochRewardRatePpmPerHour,
+} from "./sources.js";
 
 const solMint = "So11111111111111111111111111111111111111112";
 const jitoMint = "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn";
@@ -13,6 +16,29 @@ let expectedJitoQuoteAtoms =
   500_000_000n * billion * billion / (1_234_567_890n * 150_020_000n);
 let expectedSolQuoteAtoms =
   (expectedJitoQuoteAtoms * 1_234_567_890n + billion - 1n) / billion;
+
+test("haircuts completed-epoch NAV growth into an hourly reward rate", () => {
+  assert.equal(
+    completedEpochRewardRatePpmPerHour(
+      1_048_000_000n,
+      1_000_000_000n,
+      1_000_000_000n,
+      1_000_000_000n,
+      250_000n,
+    ),
+    750n,
+  );
+  assert.equal(
+    completedEpochRewardRatePpmPerHour(
+      999_000_000n,
+      1_000_000_000n,
+      1_000_000_000n,
+      1_000_000_000n,
+      250_000n,
+    ),
+    0n,
+  );
+});
 
 function json(response: ServerResponse, value: unknown, status = 200): void {
   response.writeHead(status, { "content-type": "application/json" });
@@ -104,6 +130,10 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         pool.writeBigUInt64LE(12_345_678_900n, 258);
         pool.writeBigUInt64LE(10_000_000_000n, 266);
         pool.writeBigUInt64LE(777n, 274);
+        // Borsh options are compact; with unset authorities/fees these fields
+        // follow the discriminators instead of sitting at the account's max span.
+        pool.writeBigUInt64LE(10_000_000_000n, 419);
+        pool.writeBigUInt64LE(12_300_000_000n, 427);
         const mint = Buffer.alloc(82);
         mint.writeBigUInt64LE(mintSupply, 36);
         mint[44] = 9;
@@ -247,6 +277,7 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
       PAPER_COSTS_USD_MICROS: "200000",
       PAPER_RISK_HAIRCUT_USD_MICROS: "50000",
       PAPER_SLIPPAGE_BPS: "5",
+      JITOSOL_REWARD_HAIRCUT_PPM: "250000",
     });
     const captured = await buildAuthoritativeEvents(
       config,
@@ -262,6 +293,16 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert.equal(captured.snapshot.payload.supplyAtoms, "10000000000");
     assert.equal(captured.snapshot.payload.priorNavLamports, "1234000000");
     assert.equal(captured.snapshot.payload.shortReceiptPpm, "250");
+    assert.equal(
+      captured.snapshot.payload.rewardRatePpmPerHour,
+      completedEpochRewardRatePpmPerHour(
+        12_345_678_900n,
+        10_000_000_000n,
+        12_300_000_000n,
+        10_000_000_000n,
+        250_000n,
+      ).toString(),
+    );
     const solBidOutput = expectedSolQuoteAtoms * 149_950_000n / billion;
     const solAskInput =
       (expectedSolQuoteAtoms * 150_050_000n + billion - 1n) / billion;

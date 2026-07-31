@@ -1,6 +1,7 @@
 import type { Snapshot } from "../api";
+import { ownerOf } from "../catalog";
 import { clock, fmt, shortId } from "../fmt";
-import { Chip, Empty, Key, Panel, Section, type Tone } from "../ui";
+import { Chip, Empty, Key, Panel, Section, useCatalog, type Tone } from "../ui";
 
 const ORDER_TONE: Record<string, Tone> = {
   FILLED: "ok",
@@ -11,21 +12,25 @@ const ORDER_TONE: Record<string, Tone> = {
 
 export function Ledger({ snap }: { snap: Snapshot }) {
   const { orders, fills, funding } = snap;
+  const catalog = useCatalog();
 
   return (
-    <Section n="06" title="Ledger" note="paper execution record">
+    <Section
+      title="Execution record"
+      note="What was submitted, what filled, and what funding settled. Simulated throughout — no order here reached a venue."
+    >
       <div className="cols-3">
-        <Panel label="Orders">
+        <Panel label="Orders" hint="Submitted intents and their fill progress.">
           <div className="feed">
             {orders.length === 0 ? (
-              <Empty msg="no orders — nothing has been submitted" />
+              <Empty msg="Nothing has been submitted." />
             ) : (
               orders.map((o) => (
                 <div className="item" key={o.id}>
                   <Chip tone={ORDER_TONE[o.status] ?? "mute"}>{o.status}</Chip>
                   <div>
                     <div className="t">
-                      <Key variant={o.variant} />
+                      <Key id={o.variant} />
                       {o.intent?.instrument ?? o.intentId}
                     </div>
                     <div className="d">
@@ -39,14 +44,14 @@ export function Ledger({ snap }: { snap: Snapshot }) {
           </div>
         </Panel>
 
-        <Panel label="Fills">
+        <Panel label="Fills" hint="Simulated executions at the modelled price and fee.">
           <div className="feed">
             {fills.length === 0 ? (
-              <Empty msg="no fills recorded" />
+              <Empty msg="No fills recorded." />
             ) : (
               fills.map((f) => (
                 <div className="item" key={f.id}>
-                  <Key variant={f.variant} />
+                  <Key id={f.variant} />
                   <div>
                     <div className="t">
                       {fmt(f.quantity, 4)} @ {fmt(f.priceUsd, 4)}
@@ -62,19 +67,15 @@ export function Ledger({ snap }: { snap: Snapshot }) {
           </div>
         </Panel>
 
-        <Panel label="Funding">
+        <Panel label="Funding settled" hint="The income the whole strategy exists to collect.">
           <div className="feed">
             {funding.length === 0 ? (
-              <Empty msg="no funding settlements yet" />
+              <Empty msg="No funding has settled yet." />
             ) : (
               funding.map((f) => (
-                // funding_payments has no variant column — derive it from the run id
+                // funding_payments has no variant column — the catalog maps the run
                 <div className="item" key={f.id}>
-                  <Key
-                    variant={
-                      /jitosol/.test(f.portfolioRunId) ? "jitosol_carry" : "sol_control"
-                    }
-                  />
+                  <Key id={ownerOf(catalog, f.portfolioRunId)} />
                   <div>
                     <div className="t">
                       {fmt(f.amountUsd, 4, { signed: true })}

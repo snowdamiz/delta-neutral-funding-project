@@ -1,18 +1,16 @@
 import type { Pnl, Snapshot } from "../api";
-import type { Fixed } from "../fmt";
-import { fmt, round, shortId } from "../fmt";
+import { fmt, negate, round, shortId } from "../fmt";
 import { Empty, Key, Panel, Section } from "../ui";
 
 /**
- * The read model computes `net = funding + reward + basis - fees` and reports
- * `tradingFeesUsd` as a positive magnitude. Rendering that magnitude with a `+`
- * would read as a gain, so fees carry `negate` and display as the deduction
- * they are — the row then reads as a sum that arrives at Net.
+ * Costs are positive magnitudes in the read model, so the table negates them
+ * to make every row read as a sum that arrives at Net.
  */
 const COMPONENTS = [
   { k: "fundingRealizedUsd", label: "Funding", color: "var(--ok)", negate: false },
   { k: "basisPnlUsd", label: "Basis", color: "var(--sol)", negate: false },
   { k: "rewardAccrualUsd", label: "Rewards", color: "var(--jito)", negate: false },
+  { k: "borrowInterestUsd", label: "Borrow", color: "var(--warn)", negate: true },
   { k: "tradingFeesUsd", label: "Fees", color: "var(--crit)", negate: true },
 ] as const satisfies ReadonlyArray<{
   k: keyof Pnl;
@@ -20,9 +18,6 @@ const COMPONENTS = [
   color: string;
   negate: boolean;
 }>;
-
-const signed = (fp: Fixed, negate: boolean): Fixed =>
-  negate && fp.atoms !== "0" ? { ...fp, atoms: (-BigInt(fp.atoms)).toString() } : fp;
 
 /** Magnitudes drive the composition bar; sign stays with the numbers. */
 function Composition({ row }: { row: Pnl }) {
@@ -52,16 +47,23 @@ export function Attribution({ snap }: { snap: Snapshot }) {
   );
 
   return (
-    <Section n="03" title="Attribution" note="scope: recorded_attribution_v1">
-      <Panel label="Realised components per portfolio" aside={legend}>
+    <Section
+      title="Where the money came from"
+      note="Realised cash only. Every row adds up to Net: income in, costs out, no mark-to-market on open positions."
+    >
+      <Panel
+        label="Profit and loss by component"
+        hint="Costs are shown negative so each row reads as a sum. The bar under a run name is its composition by magnitude."
+        aside={legend}
+      >
         {rows.length === 0 ? (
-          <Empty msg="no attribution rows" />
+          <Empty msg="No profit or loss recorded yet." />
         ) : (
           <div className="tw">
             <table>
               <thead>
                 <tr>
-                  <th>Portfolio</th>
+                  <th>Run</th>
                   {COMPONENTS.map((c) => (
                     <th className="n" key={c.k}>{c.label} USD</th>
                   ))}
@@ -73,14 +75,14 @@ export function Attribution({ snap }: { snap: Snapshot }) {
                   <tr key={r.portfolioRunId}>
                     <td>
                       <strong>
-                        <Key variant={r.variant} />
+                        <Key id={r.variant} />
                         {shortId(r.portfolioRunId)}
                       </strong>
                       <Composition row={r} />
                     </td>
                     {COMPONENTS.map((c) => (
                       <td className="n" key={c.k}>
-                        {fmt(signed(r[c.k], c.negate), 2, { signed: true })}
+                        {fmt(c.negate ? negate(r[c.k]) : r[c.k], 2, { signed: true })}
                       </td>
                     ))}
                     <td className="n">

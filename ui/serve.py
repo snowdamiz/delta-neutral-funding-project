@@ -4,35 +4,39 @@
 `npm run dev` already does this via Vite's dev proxy; this is the equivalent for
 a production build, with no Node runtime required.
 
-The proxy is deliberately GET-only and its upstream is fixed at startup. Every
-mutating collector route (pause, resume, exit, emergency-flatten, paper reset)
-is a POST and is therefore unreachable from the browser by construction; those
-stay with `bin/collector`, which holds the operator HMAC secret. Nothing here
-ever sees a secret.
+The bounded local paper controls are signed by this localhost server. Destructive
+operator routes remain unreachable from the browser.
 
     python3 ui/serve.py                  # http://127.0.0.1:8081
     PORT=9000 COLLECTOR=http://127.0.0.1:8080 python3 ui/serve.py
 """
 
+import hashlib
+import hmac
+import http.client
 import http.server
+import json
 import os
+import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 
 DIST = Path(__file__).resolve().parent / "dist"
 COLLECTOR = os.environ.get("COLLECTOR", "http://127.0.0.1:8080").rstrip("/")
 PORT = int(os.environ.get("PORT", "8081"))
 TIMEOUT = float(os.environ.get("TIMEOUT_S", "5"))
+OPERATOR_SECRET = os.environ.get("OPERATOR_HMAC_SECRET", "local-operator-only-change-me")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     """Static file server for dist/, with `/v1/*` proxied to the collector.
 
-    Only do_GET is defined, so any other method gets a 501 from the stdlib base
-    class. SimpleHTTPRequestHandler's own path translation handles traversal.
+    SimpleHTTPRequestHandler's own path translation handles traversal.
     """
 
     def __init__(self, *a, **kw):
@@ -40,19 +44,100 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/v1" or self.path.startswith("/v1/"):
-            self.proxy()
+            self.proxy_get()
         else:
             super().do_GET()
 
-    def proxy(self):
+    def do_POST(self):
+        # Mirrors ui/operator.ts, which signs the same controls for the Vite
+        # dev proxy: same bodies, same scope handling, same reason strings.
+        requested = urllib.parse.urlsplit(self.path)
+        if requested.path == "/operator/wallets/config":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > 8192:
+                    self.respond(b'{"error":"request_too_large"}', 413, "application/json")
+                    return
+                incoming = json.loads(self.rfile.read(length))
+                wallets = incoming["wallets"]
+                if set(incoming) != {"wallets"} or not isinstance(wallets, list) or len(wallets) > 50:
+                    raise ValueError
+                wallets = [wallet.strip().lower() for wallet in wallets]
+                if (
+                    any(not re.fullmatch(r"0x[0-9a-f]{40}", wallet) for wallet in wallets)
+                    or len(set(wallets)) != len(wallets)
+                ):
+                    raise ValueError
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                self.respond(b'{"error":"invalid_wallet_config"}', 400, "application/json")
+                return
+            payload = {
+                "reason": "wallet cohort updated from local operator console",
+                "wallets": wallets,
+            }
+            action = "wallets/config"
+        elif requested.path in ("/operator/pause-all", "/operator/resume"):
+            action = requested.path.removeprefix("/operator/")
+            strategy = urllib.parse.parse_qs(requested.query).get("strategy", [""])[0]
+            # `?strategy=` names the card the control was pressed from. The collector's
+            # pause state is a singleton, so it only rides along in the reason, which
+            # the operator command persists. Unrecognised scopes are dropped.
+            scoped = bool(re.fullmatch(r"[a-z0-9_]{1,64}", strategy))
+            verb = "started" if action == "resume" else "stopped"
+            reason = f"{verb} from local operator console"
+            payload = {"reason": f"{reason} (strategy: {strategy})" if scoped else reason}
+            if scoped:
+                payload["strategy"] = strategy
+        else:
+            self.send_error(404)
+            return
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        key = f"console-{int(time.time() * 1000)}-{uuid.uuid4()}"
+        signature = hmac.new(
+            OPERATOR_SECRET.encode(), f"{key}\n".encode() + body, hashlib.sha256
+        ).hexdigest()
+        parts = urllib.parse.urlsplit(COLLECTOR)
+        connection = (
+            http.client.HTTPSConnection if parts.scheme == "https" else http.client.HTTPConnection
+        )(parts.hostname, parts.port, timeout=TIMEOUT)
+        try:
+            connection.request(
+                "POST",
+                f"{parts.path.rstrip('/')}/v1/{action}",
+                body,
+                {
+                    "content-type": "application/json",
+                    "x-idempotency-key": key,
+                    "x-operator-signature": signature,
+                },
+            )
+            upstream = connection.getresponse()
+            self.respond(
+                upstream.read(),
+                upstream.status,
+                upstream.getheader("Content-Type", "application/json"),
+            )
+        except OSError as e:
+            self.respond(
+                b'{"error":"collector_unreachable","message":%s}' % _json_str(str(e)),
+                502,
+                "application/json",
+            )
+        finally:
+            connection.close()
+
+    def proxy_get(self):
         # The upstream base is fixed; only the path and query come from the
         # request, and both are re-quoted rather than pasted through.
         parts = urllib.parse.urlsplit(self.path)
         url = urllib.parse.urlunsplit(
             ("", "", COLLECTOR + urllib.parse.quote(parts.path), parts.query, "")
         )
+        self.forward(urllib.request.Request(url))
+
+    def forward(self, request):
         try:
-            with urllib.request.urlopen(url, timeout=TIMEOUT) as upstream:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as upstream:
                 body, status = upstream.read(), upstream.status
                 ctype = upstream.headers.get("Content-Type", "application/json")
         except urllib.error.HTTPError as e:
@@ -65,6 +150,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             body = b'{"error":"collector_unreachable","message":%s}' % _json_str(str(e))
             status, ctype = 502, "application/json"
 
+        self.respond(body, status, ctype)
+
+    def respond(self, body, status, ctype):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))

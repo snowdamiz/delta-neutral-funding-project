@@ -12,7 +12,7 @@ describe("replay CLI") do
     ]
     case run_replay_command(
       args,
-      "bea7d2159572d096eafea2577c2887ef7342ce86"
+      "c5379f8d00990df18248e4bf2d53bbb1d04868fb"
     ) do
       Ok(output) -> do
         assert(Json.get(output, "bundle_id") == "calm-v1")
@@ -25,7 +25,7 @@ describe("replay CLI") do
     end
     case run_replay_command(
       ["funding-collector", "replay"],
-      "bea7d2159572d096eafea2577c2887ef7342ce86"
+      "c5379f8d00990df18248e4bf2d53bbb1d04868fb"
     ) do
       Ok(report) -> assert(false)
       Err(error) -> assert(error == "usage: funding-collector replay --bundle <path> --config <path>")

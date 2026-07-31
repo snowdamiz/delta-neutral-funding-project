@@ -4,7 +4,7 @@ set -eu
 project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 candidate_image=${CANDIDATE_COLLECTOR_IMAGE:-delta-neutral-funding-collector:latest}
 rollback_image=${ROLLBACK_COLLECTOR_IMAGE:-delta-neutral-funding-collector:1fced7609881ddacf8e3d198adf7d9096f0bd984-728f534}
-candidate_mesh=bea7d2159572d096eafea2577c2887ef7342ce86
+candidate_mesh=c5379f8d00990df18248e4bf2d53bbb1d04868fb
 rollback_mesh=728f534e0500f90a11cbe8184befb711664280de
 rollback_code=1fced7609881ddacf8e3d198adf7d9096f0bd984
 temp_dir=$(mktemp -d)

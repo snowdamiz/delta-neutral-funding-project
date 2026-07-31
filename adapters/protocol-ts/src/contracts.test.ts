@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildSyntheticFundingObservation,
   buildSyntheticEvent,
   buildSyntheticFundingSettlement,
   validateEvent,
@@ -101,5 +102,87 @@ test("builds a signed-rate funding settlement with a session-scoped payment iden
         payload: { ...event.payload, effectiveAtMs: "1785024000001" },
       }),
     /effectiveAtMs/,
+  );
+});
+
+test("builds a depth-qualified per-asset funding observation", () => {
+  const event = buildSyntheticFundingObservation(
+    3n,
+    1_785_024_000_000n,
+    "session-a",
+  );
+
+  assert.equal(event.eventType, "FundingObservation");
+  assert.equal(event.source, "synthetic-funding:BTC");
+  assert.equal(event.sourceSequence, "session-a:scan-3");
+  assert.equal(event.payload.scanId, "synthetic-session-a-3");
+  assert.equal(event.payload.scanIndex, "0");
+  assert.equal(event.payload.scanSize, "1");
+  assert.equal(event.payload.venue, "hyperliquid");
+  assert.equal(event.payload.asset, "BTC");
+  assert.equal(event.payload.fundingRatePpmPerHour, "13");
+  assert.equal(event.payload.depthQualified, true);
+  assert.equal(event.payload.marginStatus, "valid");
+  assert.equal(event.payload.maintenanceMarginPpm, "12500");
+  assert.equal(event.payload.fundingHistory.length, 1);
+  assert.equal(validateEvent(event), event);
+
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: { ...event.payload, scanIndex: "1" },
+      }),
+    /scanIndex/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: { ...event.payload, fundingRatePpmPerHour: "-0" },
+      }),
+    /fundingRatePpmPerHour/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: { ...event.payload, spotExitDepthAtoms: "0" },
+      }),
+    /depth-qualified/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: { ...event.payload, maintenanceMarginPpm: "0" },
+      }),
+    /margin/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: {
+          ...event.payload,
+          sourceStatus: "invalid",
+          depthQualified: true,
+        },
+      }),
+    /invalid source/,
+  );
+  assert.throws(
+    () =>
+      validateEvent({
+        ...event,
+        payload: {
+          ...event.payload,
+          fundingHistory: [
+            { observedAtMs: event.observedAtMs, ratePpm: "1" },
+            { observedAtMs: event.observedAtMs, ratePpm: "2" },
+          ],
+        },
+      }),
+    /funding history/,
   );
 });

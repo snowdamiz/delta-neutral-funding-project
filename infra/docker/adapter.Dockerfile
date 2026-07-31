@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 FROM node:24-alpine AS builder
 WORKDIR /app
 COPY adapters/protocol-ts/package.json adapters/protocol-ts/package-lock.json ./

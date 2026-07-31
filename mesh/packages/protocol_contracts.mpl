@@ -20,6 +20,7 @@ pub struct MarketSnapshot do
   jitosol_atoms :: TokenAtoms
   notional_usd_micros :: UsdMicros
   short_receipt_ppm :: RatePpm
+  reward_rate_ppm_per_hour :: RatePpm
   sol_price_usd_micros :: UsdMicros
   prior_nav_lamports :: Lamports
   costs_usd_micros :: UsdMicros
@@ -58,11 +59,170 @@ pub struct FundingSettlement do
   sol_price_usd_micros :: UsdMicros
 end deriving(Json)
 
+pub struct FundingObservation do
+  body :: String
+  event_id :: String
+  observed_at_ms :: Int
+  scan_id :: String
+  scan_index :: Int
+  scan_size :: Int
+  venue :: String
+  asset :: String
+  source_status :: String
+  funding_rate_ppm_per_hour :: RatePpm
+  depth_qualified :: Bool
+  margin_status :: String
+  maintenance_margin_ppm :: RatePpm
+  borrow_source_status :: String
+  borrow_rate_ppm_per_hour :: RatePpm
+end
+
+pub struct WalletObservation do
+  body :: String
+  event_id :: String
+  observed_at_ms :: Int
+  wallet :: String
+  positions :: Int
+  fills :: Int
+end
+
 pub struct ShadowResult do
   body :: String
   binding_hash :: String
   command_id :: String
   status :: String
+end
+
+fn validate_wallet_positions(
+  values :: Json,
+  index :: Int,
+  total :: Int
+) -> Unit ! String do
+  if index >= total do
+    return Ok(())
+  end
+  let position = ((values |> Json.array_get(index)) ? |> Json.encode)
+  let asset = (position |> required_string("asset", "position.asset")) ?
+  let side = (position |> required_string("side", "position.side")) ?
+  if (Regex.is_match(~r/^[A-Z0-9:_-]{1,64}$/, asset) == false
+    || (side != "long" && side != "short")) do
+    return Err("invalid wallet position identity")
+  end
+  let fields = [
+    "quantityAtoms",
+    "entryPriceUsdMicros",
+    "markPriceUsdMicros",
+    "leveragePpm"
+  ]
+  (fields |> unsigned_fields(position, "position", 0)) ?
+  let quantity = (position
+    |> required_int_field("quantityAtoms", "position.quantityAtoms", false)) ?
+  let entry = (position
+    |> required_int_field(
+      "entryPriceUsdMicros",
+      "position.entryPriceUsdMicros",
+      false
+    )) ?
+  let mark = (position
+    |> required_int_field(
+      "markPriceUsdMicros",
+      "position.markPriceUsdMicros",
+      false
+    )) ?
+  let leverage = (position
+    |> required_int_field("leveragePpm", "position.leveragePpm", false)) ?
+  if quantity <= 0 || entry <= 0 || mark <= 0 || leverage <= 0 do
+    return Err("wallet position economics must be positive")
+  end
+  (position
+    |> required_int_field(
+      "unrealizedPnlUsdMicros",
+      "position.unrealizedPnlUsdMicros",
+      true
+    )) ?
+  values |> validate_wallet_positions(index + 1, total)
+end
+
+fn validate_wallet_fills(
+  values :: Json,
+  index :: Int,
+  total :: Int,
+  observed_at_ms :: Int
+) -> Unit ! String do
+  if index >= total do
+    return Ok(())
+  end
+  let fill = ((values |> Json.array_get(index)) ? |> Json.encode)
+  (fill |> required_string("fillId", "fill.fillId")) ?
+  let asset = (fill |> required_string("asset", "fill.asset")) ?
+  let side = (fill |> required_string("side", "fill.side")) ?
+  let direction = (fill |> required_string("direction", "fill.direction")) ?
+  if (Regex.is_match(~r/^[A-Z0-9:_-]{1,64}$/, asset) == false
+    || (side != "buy" && side != "sell")
+    || (direction != "open"
+      && direction != "increase"
+      && direction != "reduce"
+      && direction != "close"
+      && direction != "flip")) do
+    return Err("invalid wallet fill identity")
+  end
+  let quantity = (fill
+    |> required_int_field("quantityAtoms", "fill.quantityAtoms", false)) ?
+  let leader_price = (fill
+    |> required_int_field(
+      "leaderPriceUsdMicros",
+      "fill.leaderPriceUsdMicros",
+      false
+    )) ?
+  let copy_bid = (fill
+    |> required_int_field(
+      "copyBidPriceUsdMicros",
+      "fill.copyBidPriceUsdMicros",
+      false
+    )) ?
+  let copy_ask = (fill
+    |> required_int_field(
+      "copyAskPriceUsdMicros",
+      "fill.copyAskPriceUsdMicros",
+      false
+    )) ?
+  (fill
+    |> required_int_field(
+      "closedPnlUsdMicros",
+      "fill.closedPnlUsdMicros",
+      true
+    )) ?
+  (fill |> required_int_field("feeUsdMicros", "fill.feeUsdMicros", false)) ?
+  let filled_at_ms = (fill
+    |> required_int_field("filledAtMs", "fill.filledAtMs", false)) ?
+  let copy_observed_at_ms = (fill
+    |> required_int_field(
+      "copyObservedAtMs",
+      "fill.copyObservedAtMs",
+      false
+    )) ?
+  let copy_latency_ms = (fill
+    |> required_int_field("copyLatencyMs", "fill.copyLatencyMs", false)) ?
+  let bid_depth = Json.get(fill, "copyBidDepthQualified")
+  let ask_depth = Json.get(fill, "copyAskDepthQualified")
+  if (Json.is_string(fill, "copyBidDepthQualified")
+    || Json.is_string(fill, "copyAskDepthQualified")
+    || (bid_depth != "true" && bid_depth != "false")
+    || (ask_depth != "true" && ask_depth != "false")) do
+    return Err("copy depth qualification must be JSON booleans")
+  end
+  if (quantity <= 0
+    || leader_price <= 0
+    || filled_at_ms > observed_at_ms
+    || copy_observed_at_ms != observed_at_ms
+    || copy_latency_ms < observed_at_ms - filled_at_ms) do
+    return Err("wallet fill timing is invalid")
+  end
+  if ((bid_depth == "true" && copy_bid <= 0)
+    || (ask_depth == "true" && copy_ask <= 0)) do
+    return Err("qualified wallet fill requires executable side prices")
+  end
+  values |> validate_wallet_fills(index + 1, total, observed_at_ms)
 end
 
 fn required_int(raw :: String, field :: String, allow_negative :: Bool) -> Int ! String do
@@ -158,6 +318,14 @@ fn required_rate_field(body :: String, key :: String, field :: String, allow_neg
   end
 end
 
+fn optional_rate_field(body :: String, key :: String, field :: String) -> RatePpm ! String do
+  if Json.is_string(body, key) do
+    required_rate_field(body, key, field, false)
+  else
+    Ok(RatePpm { atoms : 0 })
+  end
+end
+
 fn required_oracle_status(payload :: String) -> OracleStatus ! String do
   case (payload |> required_string("oracleStatus", "oracleStatus")) ? do
     "valid" -> Ok(OracleValid)
@@ -202,6 +370,7 @@ pub fn parse_market_snapshot(body :: String) -> MarketSnapshot ! String do
         jitosol_atoms : TokenAtoms { atoms : (payload |> required_int_field("jitosolAtoms", "jitosolAtoms", false)) ? },
         notional_usd_micros : UsdMicros { atoms : (payload |> required_int_field("notionalUsdMicros", "notionalUsdMicros", false)) ? },
         short_receipt_ppm : (payload |> required_rate_field("shortReceiptPpm", "shortReceiptPpm", true)) ?,
+        reward_rate_ppm_per_hour : (payload |> optional_rate_field("rewardRatePpmPerHour", "rewardRatePpmPerHour")) ?,
         sol_price_usd_micros : UsdMicros { atoms : (payload |> required_int_field("solPriceUsdMicros", "solPriceUsdMicros", false)) ? },
         prior_nav_lamports : Lamports { atoms : (payload |> required_int_field("priorNavLamports", "priorNavLamports", false)) ? },
         costs_usd_micros : UsdMicros { atoms : (payload |> required_int_field("costsUsdMicros", "costsUsdMicros", false)) ? },
@@ -261,6 +430,275 @@ pub fn parse_funding_settlement(body :: String) -> FundingSettlement ! String do
     effective_at_ms : effective_at_ms,
     realized_short_rate_ppm : (payload |> required_rate_field("realizedShortRatePpm", "realizedShortRatePpm", true)) ?,
     sol_price_usd_micros : UsdMicros { atoms : sol_price }
+  })
+end
+
+pub fn parse_funding_observation(
+  body :: String
+) -> FundingObservation ! String do
+  let _parsed = Json.parse(body) ?
+  if required_int(
+    Json.get(body, "schemaVersion"),
+    "schemaVersion",
+    false
+  ) ? != 1 do
+    return Err("unsupported schema version")
+  end
+  if (body |> required_string("eventType", "eventType")) ? != "FundingObservation" do
+    return Err("unsupported event type")
+  end
+
+  let payload = body |> Json.get("payload")
+  let observed_at_ms = (body
+    |> required_int_field("observedAtMs", "observedAtMs", false)) ?
+  let scan_index = (payload
+    |> required_int_field("scanIndex", "scanIndex", false)) ?
+  let scan_size = (payload
+    |> required_int_field("scanSize", "scanSize", false)) ?
+  if scan_size <= 0 || scan_index >= scan_size do
+    return Err("invalid funding scan position")
+  end
+
+  let venue = (payload |> required_string("venue", "venue")) ?
+  let asset = (payload |> required_string("asset", "asset")) ?
+  let instrument = (payload
+    |> required_string("instrument", "instrument")) ?
+  if Regex.is_match(~r/^[a-z][a-z0-9_-]*$/, venue) == false do
+    return Err("invalid funding instrument identity")
+  end
+  if Regex.is_match(~r/^[A-Z0-9]+$/, asset) == false do
+    return Err("invalid funding instrument identity")
+  end
+  if instrument != "${asset}-PERP" do
+    return Err("invalid funding instrument identity")
+  end
+
+  let source_status = (payload
+    |> required_string("sourceStatus", "sourceStatus")) ?
+  if source_status != "valid" && source_status != "invalid" do
+    return Err("sourceStatus must be valid or invalid")
+  end
+  let mark_price = (payload
+    |> required_int_field("markPriceUsdMicros", "markPriceUsdMicros", false)) ?
+  if source_status == "valid" && mark_price <= 0 do
+    return Err("valid funding mark price must be positive")
+  end
+  let realized_at_ms = (payload
+    |> required_int_field("realizedFundingAtMs", "realizedFundingAtMs", false)) ?
+  (payload
+    |> required_rate_field(
+      "realizedFundingRatePpm",
+      "realizedFundingRatePpm",
+      true
+    )) ?
+  if realized_at_ms > observed_at_ms do
+    return Err("realized funding time cannot be in the future")
+  end
+
+  let spot_bid = (payload
+    |> required_int_field("spotBidPriceUsdMicros", "spotBidPriceUsdMicros", false)) ?
+  let spot_ask = (payload
+    |> required_int_field("spotAskPriceUsdMicros", "spotAskPriceUsdMicros", false)) ?
+  let perp_bid = (payload
+    |> required_int_field("perpBidPriceUsdMicros", "perpBidPriceUsdMicros", false)) ?
+  let perp_ask = (payload
+    |> required_int_field("perpAskPriceUsdMicros", "perpAskPriceUsdMicros", false)) ?
+  let spot_depth = (payload
+    |> required_int_field("spotExitDepthAtoms", "spotExitDepthAtoms", false)) ?
+  let perp_depth = (payload
+    |> required_int_field("perpExitDepthAtoms", "perpExitDepthAtoms", false)) ?
+  let depth_value = Json.get(payload, "depthQualified")
+  if Json.is_string(payload, "depthQualified") do
+    return Err("depthQualified must be a JSON boolean")
+  end
+  if depth_value != "true" && depth_value != "false" do
+    return Err("depthQualified must be a JSON boolean")
+  end
+  let depth_qualified = depth_value == "true"
+  if depth_qualified do
+    if source_status != "valid" do
+      return Err("qualified funding depth must be positive")
+    end
+    if spot_bid <= 0 || spot_ask <= 0 || perp_bid <= 0 || perp_ask <= 0 do
+      return Err("qualified funding depth must be positive")
+    end
+    if spot_depth <= 0 || perp_depth <= 0 do
+      return Err("qualified funding depth must be positive")
+    end
+  end
+
+  let margin_status = (payload
+    |> required_string("marginStatus", "marginStatus")) ?
+  let maintenance_margin = (payload
+    |> required_rate_field(
+      "maintenanceMarginPpm",
+      "maintenanceMarginPpm",
+      false
+    )) ?
+  if ((margin_status != "valid" && margin_status != "unavailable")
+    || (margin_status == "valid" && maintenance_margin.atoms == 0)
+    || (margin_status == "unavailable"
+      && maintenance_margin.atoms != 0)) do
+    return Err("invalid funding margin contract")
+  end
+
+  let borrow_status = (payload
+    |> required_string("borrowSourceStatus", "borrowSourceStatus")) ?
+  if (borrow_status != "valid"
+    && borrow_status != "invalid"
+    && borrow_status != "unavailable") do
+    return Err("borrowSourceStatus must be valid, invalid, or unavailable")
+  end
+  let borrow_venue = (payload
+    |> required_string("borrowVenue", "borrowVenue")) ?
+  let borrow_market = (payload
+    |> required_string("borrowMarket", "borrowMarket")) ?
+  let borrow_reserve = (payload
+    |> required_string("borrowReserve", "borrowReserve")) ?
+  let borrow_mint = (payload
+    |> required_string("borrowMint", "borrowMint")) ?
+  let borrow_observed_at_ms = (payload
+    |> required_int_field(
+      "borrowSourceObservedAtMs",
+      "borrowSourceObservedAtMs",
+      false
+    )) ?
+  let borrow_rate = (payload
+    |> required_rate_field(
+      "borrowRatePpmPerHour",
+      "borrowRatePpmPerHour",
+      false
+    )) ?
+  let borrow_available = (payload
+    |> required_int_field(
+      "borrowAvailableUsdMicros",
+      "borrowAvailableUsdMicros",
+      false
+    )) ?
+  let borrow_utilization = (payload
+    |> required_rate_field(
+      "borrowUtilizationPpm",
+      "borrowUtilizationPpm",
+      false
+    )) ?
+  if borrow_status == "valid" do
+    let public_key = ~r/^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+    if (borrow_venue != "kamino"
+      || Regex.is_match(public_key, borrow_market) == false
+      || Regex.is_match(public_key, borrow_reserve) == false
+      || Regex.is_match(public_key, borrow_mint) == false
+      || borrow_observed_at_ms <= 0
+      || borrow_observed_at_ms > observed_at_ms) do
+      return Err("valid borrow snapshot has invalid identity or time")
+    end
+  else
+    if (borrow_rate.atoms != 0
+      || borrow_available != 0
+      || borrow_utilization.atoms != 0) do
+      return Err("unusable borrow snapshot must carry zero economics")
+    end
+  end
+
+  (body |> required_string("source", "source")) ?
+  (body |> required_int_field("sourceSlot", "sourceSlot", false)) ?
+  (body |> required_string("sourceSequence", "sourceSequence")) ?
+  (body |> required_string("idempotencyKey", "idempotencyKey")) ?
+  required_hash(body) ?
+  (payload |> required_string("scanId", "scanId")) ?
+  (payload
+    |> required_int_field("sourceObservedAtMs", "sourceObservedAtMs", false)) ?
+  (payload
+    |> required_int_field("openInterestUsdMicros", "openInterestUsdMicros", false)) ?
+
+  Ok(FundingObservation {
+    body : body,
+    event_id : (body |> required_string("eventId", "eventId")) ?,
+    observed_at_ms : observed_at_ms,
+    scan_id : (payload |> required_string("scanId", "scanId")) ?,
+    scan_index : scan_index,
+    scan_size : scan_size,
+    venue : venue,
+    asset : asset,
+    source_status : source_status,
+    funding_rate_ppm_per_hour : (payload
+      |> required_rate_field(
+        "fundingRatePpmPerHour",
+        "fundingRatePpmPerHour",
+        true
+      )) ?,
+    depth_qualified : depth_qualified,
+    margin_status : margin_status,
+    maintenance_margin_ppm : maintenance_margin,
+    borrow_source_status : borrow_status,
+    borrow_rate_ppm_per_hour : borrow_rate
+  })
+end
+
+pub fn parse_wallet_observation(
+  body :: String
+) -> WalletObservation ! String do
+  let root = Json.parse(body) ?
+  if required_int(
+    Json.get(body, "schemaVersion"),
+    "schemaVersion",
+    false
+  ) ? != 1 do
+    return Err("unsupported schema version")
+  end
+  let event_type = (body |> required_string("eventType", "eventType")) ?
+  if event_type != "WalletObservation" do
+    return Err("unsupported event type")
+  end
+  let payload = body |> Json.get("payload")
+  let observed_at_ms = (body
+    |> required_int_field("observedAtMs", "observedAtMs", false)) ?
+  let source_observed_at_ms = (payload
+    |> required_int_field(
+      "sourceObservedAtMs",
+      "sourceObservedAtMs",
+      false
+    )) ?
+  if source_observed_at_ms > observed_at_ms do
+    return Err("wallet source time cannot be in the future")
+  end
+  let wallet = (payload |> required_string("wallet", "wallet")) ?
+  if Regex.is_match(~r/^0x[0-9a-f]{40}$/, wallet) == false do
+    return Err("invalid Hyperliquid wallet address")
+  end
+  (body |> required_string("eventId", "eventId")) ?
+  (body |> required_string("source", "source")) ?
+  (body |> required_int_field("sourceSlot", "sourceSlot", false)) ?
+  (body |> required_string("sourceSequence", "sourceSequence")) ?
+  (body |> required_string("idempotencyKey", "idempotencyKey")) ?
+  required_hash(body) ?
+  (payload
+    |> required_int_field(
+      "accountValueUsdMicros",
+      "accountValueUsdMicros",
+      false
+    )) ?
+  (payload
+    |> required_int_field(
+      "totalNotionalUsdMicros",
+      "totalNotionalUsdMicros",
+      false
+    )) ?
+  (payload |> required_int_field("apiLatencyMs", "apiLatencyMs", false)) ?
+
+  let payload_json = (root |> Json.object_get("payload")) ?
+  let positions_json = (payload_json |> Json.object_get("positions")) ?
+  let fills_json = (payload_json |> Json.object_get("fills")) ?
+  let positions = (positions_json |> Json.array_length()) ?
+  let fills = (fills_json |> Json.array_length()) ?
+  (positions_json |> validate_wallet_positions(0, positions)) ?
+  (fills_json |> validate_wallet_fills(0, fills, observed_at_ms)) ?
+  Ok(WalletObservation {
+    body : body,
+    event_id : (body |> required_string("eventId", "eventId")) ?,
+    observed_at_ms : observed_at_ms,
+    wallet : wallet,
+    positions : positions,
+    fills : fills
   })
 end
 

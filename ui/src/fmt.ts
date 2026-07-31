@@ -44,6 +44,25 @@ export function fmt(
   return sign + grouped + (frac ? "." + frac : "");
 }
 
+/** Exact sum of {atoms, scale} pairs, aligned to the widest scale. */
+export function sum(...values: (Fixed | null | undefined)[]): Fixed {
+  const present = values.filter((v): v is Fixed => v != null && v.atoms != null);
+  if (present.length === 0) return { atoms: "0", scale: 0 };
+  const scale = present.reduce((m, v) => Math.max(m, Number(v.scale ?? 0)), 0);
+  const atoms = present.reduce(
+    (total, v) => total + BigInt(v.atoms) * 10n ** BigInt(scale - Number(v.scale ?? 0)),
+    0n,
+  );
+  return { atoms: atoms.toString(), scale };
+}
+
+export const negate = (fp: Fixed | null | undefined): Fixed =>
+  fp && fp.atoms != null ? { ...fp, atoms: (-BigInt(fp.atoms)).toString() } : { atoms: "0", scale: 0 };
+
+/** Exact `a - b`. The benchmark comparison runs through here, so never floats. */
+export const diff = (a: Fixed | null | undefined, b: Fixed | null | undefined): Fixed =>
+  sum(a, negate(b));
+
 /** Numeric value of a fixed-point pair. Display/statistics only — never money math. */
 export function toNumber(fp: Fixed | null | undefined): number {
   const s = toDecimalString(fp);
@@ -74,6 +93,13 @@ export function age(ms: string | number | null | undefined): string {
 
 export const num = (v: unknown): string =>
   v == null ? "—" : Number(v).toLocaleString("en-US");
+
+/** The read API's micro-denominated integers are a {atoms, scale: 6} pair. */
+export const micros = (atoms: string): Fixed => ({ atoms, scale: 6 });
+
+/** Parts-per-million as a percentage — `"2750000"` reads as `275.00%`. */
+export const pct = (ppm: string | number, dp = 2): string =>
+  Number.isFinite(Number(ppm)) ? `${(Number(ppm) / 10_000).toFixed(dp)}%` : "—";
 
 export const clock = (ts: string | number | null | undefined): string =>
   ts ? new Date(ts).toLocaleTimeString("en-GB", { hour12: false }) : "—";

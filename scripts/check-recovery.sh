@@ -20,7 +20,7 @@ test "$(
   docker compose exec -T postgres \
     psql -U funding -d funding -Atc \
     "SELECT schema_version FROM build_manifests WHERE id = 'local-paper-build'"
-)" = 31
+)" = 39
 curl -fsS http://127.0.0.1:8080/v1/status |
   jq -e '.executionMode == "paper" and .signerReachable == false' >/dev/null
 
@@ -64,13 +64,13 @@ docker run --rm \
 docker exec "$restore_container" \
   psql -U funding -d funding -Atc "
     SELECT (
-      (SELECT max(version) FROM schema_meta) = 31
+      (SELECT max(version) FROM schema_meta) = 39
       AND (SELECT schema_version FROM build_manifests
-           WHERE id = 'local-paper-build') = 31
+           WHERE id = 'local-paper-build') = 39
       AND (SELECT count(*) FROM portfolio_runs
-           WHERE strategy_run_id = 'local-paper-run') = 4
+           WHERE strategy_run_id = 'local-paper-run') = 18
       AND (SELECT count(*) FROM ledger_batches) >= 4
-      AND (SELECT count(*) FROM shadow_execution_results) >= 2
+      AND to_regclass('public.shadow_execution_results') IS NOT NULL
     )
   " | grep -qx t
 

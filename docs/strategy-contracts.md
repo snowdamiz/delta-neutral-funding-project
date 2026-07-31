@@ -33,9 +33,82 @@ before retry.
 - Veto entry on invalid pool ownership, NAV mismatch, decreasing unexplained
   NAV, stale epoch state, or insufficient JitoSOL exit depth.
 
+## NEGATIVE_FUNDING_REVERSE
+
+- Select only the top qualified market per venue after seven clean days and a
+  24-hour average below the configured negative-funding threshold.
+- Borrow and sell the spot asset at the executable bid; long the same quantity
+  of its perpetual at the executable ask.
+- Attribute realized long-perp funding, spot/perp basis, trading costs, and
+  variable borrow interest separately.
+- Require a fresh, identity-pinned Kamino snapshot, at least 2× target notional
+  in available borrow liquidity, and utilization below the configured ceiling.
+- Exit on the current observation when borrow APR reaches the absolute funding
+  rate, borrow evidence becomes stale or invalid, or borrow liquidity and
+  utilization breakers fail. Never average a borrow spike away.
+- This contract is paper-only; live use additionally requires on-chain
+  obligation health, collateral/liquidation, oracle, and program-authority
+  checks listed in `kamino-qualification.md`.
+
+## JITOSOL_NAV_DISCOUNT
+
+- Buy only when the executable JitoSOL ask is below protocol NAV and the
+  better of direct redemption and instant exit remains positive after modeled
+  costs and the configured risk haircut.
+- Positive short funding may improve a genuine discount but never makes a
+  zero-discount trade eligible.
+- Hedge the purchased quantity at its protocol-NAV SOL equivalent and require
+  both JitoSOL and perp exit depth for the full hedge.
+- Direct redemption reuses the epoch-aware counterfactual state machine and
+  attributes realized discount basis separately from actual cooldown funding.
+- Invalid oracle state, decreasing NAV, stale source data, insufficient depth,
+  unsafe margin, paused entries, and an unhedged synchronized SOL benchmark
+  veto entry.
+- This contract is paper-only; direct unstake remains unavailable for
+  immediate perp-margin protection and live execution remains unapproved.
+
+## CROSS_VENUE_FUNDING
+
+- Select only the top same-asset pair after seven clean days and at least 24
+  distinct realized funding prints per venue in the latest 24 hours.
+- Short the higher-realized-funding perpetual and long an equal base quantity
+  on the lower-funding venue; predicted rates never create eligibility or P&L.
+- Require fresh executable exit depth and valid maintenance rates on both
+  venues. Track collateral, maintenance, margin ratio, and liquidation distance
+  independently for each leg using the latest venue rate.
+- Attribute each venue's realized funding once, both-leg costs, and mark
+  divergence separately. Exit when the spread no longer covers costs or mark
+  divergence loses more than one week of current carry.
+- If either leg cannot be priced and exited, persist a critical risk event,
+  enter emergency flatten, and close both legs only when both exits are again
+  executable.
+- This contract is paper-only; a second venue must be re-qualified before the
+  strategy can open and the 30-day paper gate remains mandatory.
+
+## HYPERLIQUID_WALLET_TRACKING
+
+- Index only the explicit cohort stored by the authenticated console wallet
+  control; the public API does not enumerate every account. Replacing the
+  cohort is atomic, audited, and picked up by the adapter without a restart.
+  Normalize positions, leverage, fills, realized P&L, and fees through the
+  versioned event boundary.
+- Compute fee- and account-drawdown-adjusted wallet scores from evidence
+  strictly earlier than the copied fill. Twenty closed decisions are required
+  before a wallet can qualify.
+- Price paper copies from the adverse executable Hyperliquid book at the local
+  fixed notional. Persist measured source-to-copy latency, slippage, and depth;
+  never copy the leader's size.
+- Paper three modes independently: qualified aggregate direction as a Phase
+  1–4 shadow filter, mirror positive-consistency wallets, and fade
+  negative-consistency wallets.
+- A mode remains pending until 60 days and 20 closed paper decisions exist and
+  both the holding-SOL and Phase-1 benchmark paths are available. It passes
+  only when its realized return less maximum drawdown beats both benchmark
+  scores. No result authorizes live capital.
+
 ## Fail-closed conditions
 
 Schema mismatch, integer parse failure, overflow, stale data, source gap, invalid
-oracle, leader loss, unbalanced ledger batch, risk actor failure, adapter
-identity mismatch, and executor uncertainty all stop new entries.
-
+oracle, missing or stale borrow evidence, leader loss, unbalanced ledger batch,
+risk actor failure, adapter identity mismatch, and executor uncertainty all
+stop new entries.
