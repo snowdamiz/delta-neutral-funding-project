@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Strategy } from "./catalog";
 import { accentOf, nameOf } from "./catalog";
@@ -65,6 +65,39 @@ export const Spin = ({ on }: { on?: boolean }) => (
  * current and animates; past that it is a plain age. This is the one answer to
  * "is this strategy still being checked, or did it stop?".
  */
+/**
+ * Which rows appeared since the previous read, and when the last arrival
+ * landed. The console polls, so "new" means new to this console — the first
+ * read is never an arrival, or every row would flash on load.
+ */
+export function useArrivals<T>(
+  items: T[],
+  keyOf: (item: T) => string,
+): { fresh: Set<string>; lastAtMs: number } {
+  const seen = useRef<Set<string> | null>(null);
+  const [state, setState] = useState<{ fresh: Set<string>; lastAtMs: number }>(
+    { fresh: new Set(), lastAtMs: 0 },
+  );
+
+  useEffect(() => {
+    const ids = items.map(keyOf);
+    if (seen.current === null) {
+      seen.current = new Set(ids);
+      return;
+    }
+    const previous = seen.current;
+    const fresh = new Set(ids.filter((id) => !previous.has(id)));
+    // Bounded by what the read model still returns, so it cannot grow forever.
+    seen.current = new Set(ids);
+    setState((current) => ({
+      fresh,
+      lastAtMs: fresh.size > 0 ? Date.now() : current.lastAtMs,
+    }));
+  }, [items, keyOf]);
+
+  return state;
+}
+
 export function Since({
   at, verb, freshMs = 30_000,
 }: { at: number; verb: string; freshMs?: number }) {

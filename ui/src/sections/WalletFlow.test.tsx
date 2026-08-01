@@ -5,7 +5,14 @@ import { LiveControl, SolanaWalletConfig, WalletFlow } from "./WalletFlow";
 
 const FLOW: WalletFlowState = {
   cursors: [{ wallet: "11111111111111111111111111111111", captureComplete: true, gapReason: null }],
-  openMints: [],
+  openMints: [{
+    acquisition: { eventId: "acq-1" },
+    snapshotEventId: "snap-1c",
+    snapshotObservedAtMs: "1785023500000",
+    decision: "ENTER",
+    reason: "ELIGIBLE",
+    configId: "solana-wallet-flow-v2",
+  }],
   paperAccount: {
     initialCapitalUsdMicros: "1000000000",
     reserveCapitalUsdMicros: "300000000",
@@ -93,6 +100,29 @@ const FLOW: WalletFlowState = {
 };
 
 describe("wallet flow", () => {
+  it("shows what the stream last delivered and what it is watching", () => {
+    const html = renderToStaticMarkup(
+      <WalletFlow snap={{ walletFlow: FLOW } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,
+    );
+    expect(html).toContain("Stream");
+    expect(html).toContain("Decision");
+    expect(html).toContain("Capture");
+    // Nothing has arrived on a first read, so the strip must not claim it has.
+    expect(html).toContain("idle");
+    expect(html).toContain("1 candidate");
+  });
+
+  it("reports gapped capture ahead of any arrival state", () => {
+    const gapped = {
+      ...FLOW,
+      cursors: [{ wallet: "11111111111111111111111111111111", captureComplete: false, gapReason: "cursor_not_recovered" }],
+    };
+    const html = renderToStaticMarkup(
+      <WalletFlow snap={{ walletFlow: gapped } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,
+    );
+    expect(html).toContain("1 wallet gapped");
+  });
+
   it("renders the account, ladder state, and exit reasons", () => {
     const html = renderToStaticMarkup(
       <WalletFlow snap={{ walletFlow: FLOW } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,

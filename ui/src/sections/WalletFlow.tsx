@@ -8,7 +8,9 @@ import {
   type WalletFlowPosition,
 } from "../api";
 import { age, fmt, micros, ms, pct } from "../fmt";
-import { Chip, Empty, Panel, Section, Since, Spin, Stat, type Tone } from "../ui";
+import {
+  Chip, Empty, Panel, Section, Since, Spin, Stat, useArrivals, useNow, type Tone,
+} from "../ui";
 
 const shortMint = (mint: string) => `${mint.slice(0, 4)}…${mint.slice(-4)}`;
 const shortWallet = (wallet: string) => `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
@@ -186,7 +188,73 @@ export function LiveControl({ mode, strategy }: { mode: "paper" | "live"; strate
   );
 }
 
+const newest = (values: (string | null | undefined)[]): number =>
+  values.reduce<number>((latest, value) => Math.max(latest, ms(value)), 0);
+
+/**
+ * Acquisitions arrive over a socket, so the operator needs to see the stream
+ * itself: what landed, how long ago, and whether capture is still complete.
+ * Every field here is derived from the read model the console already polls.
+ */
+function Stream({ flow }: { flow: WalletFlowState }) {
+  const now = useNow();
+  const arrivals = useArrivals(flow.actions, (action) => action.id);
+  const lastDecisionMs = newest(flow.actions.map((action) => action.processedAtMs));
+  const lastSnapshotMs = newest(
+    flow.openMints.map((mint) => (mint as { snapshotObservedAtMs?: string }).snapshotObservedAtMs),
+  );
+  const lastCaptureMs = newest(flow.cursors.map((cursor) => (cursor as { observedAtMs?: string }).observedAtMs));
+  const gapped = flow.cursors.filter((cursor) => !cursor.captureComplete).length;
+  const receivedMs = Math.max(arrivals.lastAtMs, 0);
+  const receiving = receivedMs > 0 && now - receivedMs < 30_000;
+  const recentDecisions = flow.actions.filter(
+    (action) => now - ms(action.processedAtMs) < 300_000,
+  ).length;
+
+  return (
+    <Panel
+      label="Stream"
+      hint="Followed-wallet acquisitions arrive over a subscription; the sweep and the exit monitor keep their own clocks. These are the last things this console saw land."
+      aside={
+        <Chip tone={gapped > 0 ? "crit" : receiving ? "ok" : "mute"}>
+          {gapped > 0
+            ? `${gapped} wallet${gapped === 1 ? "" : "s"} gapped`
+            : receiving ? "receiving" : "idle"}
+        </Chip>
+      }
+    >
+      <div className="stream">
+        <div className={arrivals.fresh.size > 0 ? "stream-item arrived" : "stream-item"}>
+          <span className="lbl">Decision</span>
+          <Since at={lastDecisionMs} verb="" freshMs={60_000} />
+        </div>
+        <div className="stream-item">
+          <span className="lbl">Snapshot</span>
+          <Since at={lastSnapshotMs} verb="" freshMs={60_000} />
+        </div>
+        <div className="stream-item">
+          <span className="lbl">Capture</span>
+          <Since at={lastCaptureMs} verb="" freshMs={120_000} />
+        </div>
+        <div className="stream-item">
+          <span className="lbl">Last 5 min</span>
+          <span className="stream-count">
+            {recentDecisions} decision{recentDecisions === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="stream-item">
+          <span className="lbl">Watching</span>
+          <span className="stream-count">
+            {flow.openMints.length} candidate{flow.openMints.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function Positions({ flow }: { flow: WalletFlowState }) {
+  const arrivals = useArrivals(flow.positions, (position) => `${position.id}:${position.status}`);
   const open = flow.positions.filter((p) => p.status === "open");
   const closed = flow.positions.filter((p) => p.status === "closed").slice(0, 12);
   const maxSlots = Number(flow.brokerConfig?.values.maxOpenPositions ?? 0) || 0;
@@ -221,7 +289,10 @@ function Positions({ flow }: { flow: WalletFlowState }) {
                   ? (Number(position.remainingQuantityAtoms) * 100) / Number(position.quantityAtoms)
                   : 0;
                 return (
-                  <tr key={position.id}>
+                  <tr
+                    key={position.id}
+                    className={arrivals.fresh.has(`${position.id}:${position.status}`) ? "arrived" : undefined}
+                  >
                     <td><code>{shortMint(position.mint)}</code></td>
                     <td>
                       <Chip tone={position.status === "open" ? (position.recouped ? "ok" : "warn") : "mute"}>
@@ -476,6 +547,7 @@ export function WalletFlow({ snap, strategy }: { snap: Snapshot; strategy: strin
         </div>
       )}
 
+      <Stream flow={flow} />
       <Live flow={flow} strategy={strategy} />
       <Positions flow={flow} />
       <Discovery flow={flow} />
@@ -488,6 +560,14 @@ export function WalletFlow({ snap, strategy }: { snap: Snapshot; strategy: strin
         <SolanaWalletConfig key={cohort.version} config={cohort} />
       </Panel>
 
+      <Decisions flow={flow} />
+    </Section>
+  );
+}
+
+function Decisions({ flow }: { flow: WalletFlowState }) {
+  const arrivals = useArrivals(flow.actions, (action) => action.id);
+  return (
       <Panel
         label="Recent decisions"
         hint="Every snapshot produces exactly one action, including the holds and skips — the evidence trail is complete by construction."
@@ -508,7 +588,7 @@ export function WalletFlow({ snap, strategy }: { snap: Snapshot; strategy: strin
               </thead>
               <tbody>
                 {flow.actions.slice(0, 15).map((action) => (
-                  <tr key={action.id}>
+                  <tr key={action.id} className={arrivals.fresh.has(action.id) ? "arrived" : undefined}>
                     <td>{action.action}</td>
                     <td>
                       <Chip tone={action.status === "FILLED" ? "ok" : action.status === "REJECTED" ? "mute" : "warn"}>
@@ -525,6 +605,5 @@ export function WalletFlow({ snap, strategy }: { snap: Snapshot; strategy: strin
           </div>
         )}
       </Panel>
-    </Section>
   );
 }
