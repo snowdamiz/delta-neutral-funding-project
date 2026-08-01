@@ -92,11 +92,29 @@ end
 pub fn solana_wallet_flow_state(pool :: PoolHandle) -> String ! String do
   let rows = Pool.query(
     pool,
-    "SELECT solana_wallet_flow_read_model()::text AS body",
+    "SELECT (solana_wallet_flow_read_model() || jsonb_build_object('validation', solana_validation_latest_report()))::text AS body",
     []
   ) ?
   if List.length(rows) != 1 do
     Err("database returned invalid Solana wallet-flow state")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn persist_solana_validation(
+  pool :: PoolHandle,
+  operation :: String,
+  body :: String
+) -> String ! String do
+  let query = if operation == "start" do
+    "SELECT start_solana_validation_window($1::jsonb)::text AS body"
+  else
+    "SELECT record_solana_validation_evidence($1::jsonb)::text AS body"
+  end
+  let rows = Pool.query(pool, query, [body]) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid Solana validation result")
   else
     Ok(Map.get(List.head(rows), "body"))
   end

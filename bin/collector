@@ -7,9 +7,10 @@ project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 usage() {
   printf '%s\n' \
     'usage: collector <command> [arguments]' \
-    'read: status | capabilities | adapter-status | portfolios | opportunities | pnl | compare' \
+    'read: status | capabilities | adapter-status | portfolios | opportunities | pnl | compare | solana-wallet-flow' \
     'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
     'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper | paper-reset --initial-usdc <usd> --initial-collateral <usd> --approve-paper-reset' \
+    'validation: solana-validation-start <request.json> | solana-validation-evidence <evidence.json>' \
     'replay: replay --bundle <path> --config <path>' \
     'proof: solana-read | solana-subscribe | solana-inspect-instruction | solana-inspect-jupiter-build | solana-transaction-proof | solana-transaction-burst' \
     'test: alerts-test <reason> | verify-toolchain'
@@ -108,6 +109,7 @@ case "$command" in
   opportunities) read_endpoint /v1/opportunities ;;
   pnl) read_endpoint /v1/pnl ;;
   compare) read_endpoint /v1/pnl/comparison ;;
+  solana-wallet-flow) read_endpoint /v1/solana-wallet-flow ;;
   pause-entries | pause-all | resume | reconcile)
     require_reason "${2:-}"
     mutate "$command" "/v1/$command" "$2"
@@ -168,6 +170,19 @@ case "$command" in
         }'
     )
     signed_post paper-reset /v1/paper/reset "$body"
+    ;;
+  solana-validation-start | solana-validation-evidence)
+    test -n "${2:-}" && test -z "${3:-}" || {
+      usage >&2
+      exit 2
+    }
+    request_path=$(absolute_file "$2")
+    body=$(jq -c . "$request_path")
+    if [ "$command" = 'solana-validation-start' ]; then
+      signed_post "$command" /v1/solana-wallet-flow/validation/start "$body"
+    else
+      signed_post "$command" /v1/solana-wallet-flow/validation/evidence "$body"
+    fi
     ;;
   alerts-test)
     require_reason "${2:-}"

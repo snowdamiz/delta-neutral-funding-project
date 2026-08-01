@@ -9,7 +9,7 @@ from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, Paper
 from Packages.ProtocolContracts import FundingObservation, FundingSettlement, MarketSnapshot, WalletObservation, parse_funding_observation, parse_funding_settlement, parse_market_snapshot, parse_shadow_result, parse_wallet_observation
 from Packages.ReadModels import adapter_status, cross_venue_funding_leaderboard, fills, funding, funding_leaderboard, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, reverse_carry_leaderboard, risk_decisions, risk_events, shadow_results, strategies, wallet_config, wallet_tracking
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
-from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, parse_solana_wallet_flow_event, persist_solana_wallet_flow_event, solana_wallet_flow_state
+from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, parse_solana_wallet_flow_event, persist_solana_validation, persist_solana_wallet_flow_event, solana_wallet_flow_state
 from Packages.StateMachine import PortfolioState
 from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_observation, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans, persist_wallet_config, persist_wallet_observation, run_cross_asset_paper_scan, run_cross_venue_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
@@ -1102,6 +1102,45 @@ fn paper_reset_response(request :: Request) do
   end
 end
 
+fn solana_validation_response(request :: Request, operation :: String) do
+  let body = Request.body(request)
+  let idempotency_key = request_header(request, "x-idempotency-key")
+  if operator_authenticated(request, idempotency_key, body) == false do
+    warn("operator_command_rejected", "{\"action\":\"solana_validation_${operation}\",\"reason\":\"authentication\"}")
+    return error_response(401, "unauthorized", "invalid operator signature")
+  end
+  if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
+    return error_response(400, "invalid_request", "invalid idempotency key")
+  end
+  case lease_held(get_pool()) do
+    Ok(true) -> ()
+    Ok(false) -> do
+      return error_response(409, "leader_required", "validation writes require the writer lease")
+    end
+    Err(reason) -> do
+      return error_response(503, "lease_unavailable", reason)
+    end
+  end
+  case Json.parse(body) do
+    Err(reason) -> error_response(400, "invalid_request", reason)
+    Ok(_parsed) -> case persist_solana_validation(get_pool(), operation, body) do
+      Ok(result) -> do
+        info("operator_command_applied", "{\"action\":\"solana_validation_${operation}\",\"idempotencyKey\":\"${idempotency_key}\"}")
+        HTTP.response(202, result)
+      end
+      Err(reason) -> do
+        if String.contains(reason, "invalid") || String.contains(reason, "must start") do
+          error_response(400, "invalid_request", reason)
+        else if String.contains(reason, "conflict") || String.contains(reason, "duplicate") do
+          error_response(409, "evidence_conflict", reason)
+        else
+          error_response(500, "validation_write_failed", reason)
+        end
+      end
+    end
+  end
+end
+
 pub fn handle_event(request :: Request) -> Response do
   let body = Request.body(request)
   if authenticated(request, body) == false do
@@ -1162,6 +1201,14 @@ pub fn handle_paper_reset(request :: Request) -> Response do
   paper_reset_response(request)
 end
 
+pub fn handle_solana_validation_start(request :: Request) -> Response do
+  solana_validation_response(request, "start")
+end
+
+pub fn handle_solana_validation_evidence(request :: Request) -> Response do
+  solana_validation_response(request, "evidence")
+end
+
 pub fn handle_health(_request :: Request) -> Response do
   case ("SELECT 1 AS ok" |2> Pool.query(get_pool(), [])) do
     Ok(_rows) -> do
@@ -1181,7 +1228,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 45
+      schemaVersion : 46
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end

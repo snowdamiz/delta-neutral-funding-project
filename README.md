@@ -75,7 +75,9 @@ docker compose --profile solana-wallet-flow up --build
 
 It backfills confirmed acquisitions, refreshes WATCH/ENTER candidates, and
 quotes the whole paper position on every exit check. `JUPITER_URL`,
-`JUPITER_API_KEY`, and `SOLANA_RPC_URL` configure its data-only providers.
+`JUPITER_API_KEY`, and `SOLANA_RPC_URL` configure its data-only providers. See
+the [paper validation runbook](docs/runbooks/solana-wallet-flow.md) before
+freezing a 90-day window.
 
 The Phase 2 paper path also reads pinned Kamino reserve metrics. It subtracts
 live variable borrow APY from negative funding, requires 2× notional in

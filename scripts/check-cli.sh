@@ -26,4 +26,19 @@ if [ "$reset_status" -eq 2 ]; then
   exit 1
 fi
 
+validation_request=$(mktemp)
+trap 'rm -f "$validation_request"' EXIT HUP INT TERM
+printf '%s\n' '{"windowId":"dispatch-test"}' >"$validation_request"
+set +e
+COLLECTOR_URL=http://127.0.0.1:9 \
+OPERATOR_HMAC_SECRET=validation-dispatch-test \
+  "$project_dir/bin/collector" solana-validation-start "$validation_request" \
+  >/dev/null 2>&1
+validation_status=$?
+set -e
+if [ "$validation_status" -eq 2 ]; then
+  printf 'solana-validation-start did not reach the signed HTTP path\n' >&2
+  exit 1
+fi
+
 printf 'collector CLI checks passed\n'
