@@ -92,6 +92,39 @@ Evidence is append-only and hash-bound. Reusing an identity with different
 contents is rejected. A failed untouched window stays failed; create a later,
 newly frozen version after training changes instead of modifying this one.
 
+## Realtime capture
+
+Acquisitions arrive over a WebSocket subscription, not a poll. The observer
+opens one socket to the RPC provider and one `logsSubscribe` per followed
+wallet (the `mentions` filter accepts exactly one address; providers allow
+far more subscriptions per connection than this cohort's 100-wallet cap).
+
+Adding a wallet in the console reaches the socket on the next reconcile —
+no provider dashboard, no webhook registration, no restart. That is why
+this is a subscription rather than a provider webhook: webhook address
+lists live on the provider side and cannot be edited from here.
+
+Three safety nets, because a socket is best-effort delivery:
+
+- a `slotSubscribe` heartbeat, since a followed wallet can be silent for
+  hours and quiet logs cannot distinguish a calm cohort from a dead socket;
+  no slot for `45s` forces a reconnect;
+- reconnect with exponential backoff, and a full cursor sweep after every
+  reconnect before the stream is trusted again;
+- a periodic sweep (`SOLANA_WALLET_SWEEP_INTERVAL_MS`, default 60s) that
+  pages `getSignaturesForAddress` from the durable cursor exactly as before.
+
+Gap detection is unchanged and still authoritative: a notification only
+triggers the same cursor-based capture, so the validation gate's
+complete-capture requirement is unaffected by socket delivery.
+
+Endpoints: `SOLANA_RPC_URL` falls back to `SOLANA_RPC_URLS`, so one paid key
+configures the adapter and the observer. `SOLANA_WS_URL` defaults to that
+URL with the `wss` scheme, which is correct for Alchemy and most providers;
+set it explicitly only for a provider that serves the socket elsewhere.
+Exits still run on a clock (`SOLANA_MONITOR_INTERVAL_MS`, default 5s) —
+they depend on fresh quotes, not on wallet events.
+
 ## Live execution (default off)
 
 Two independent switches must both be on before a lamport moves; each alone

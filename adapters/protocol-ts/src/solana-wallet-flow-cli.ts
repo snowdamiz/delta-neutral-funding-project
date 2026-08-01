@@ -10,6 +10,7 @@ import {
   type SolanaWalletAcquisitionEvent,
   type SolanaWalletCursor,
 } from "./solana-wallet-flow.js";
+import { createWalletSubscriber, websocketUrlFrom } from "./solana-wallet-subscriber.js";
 import { signBody } from "./transport.js";
 
 type PollConfig = {
@@ -194,23 +195,16 @@ async function post(
   }
 }
 
-export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResult> {
-  if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs <= 0) {
-    throw new Error("request timeout must be positive");
-  }
-  const stateUrl = new URL("/v1/solana-wallet-flow", config.collectorUrl);
-  const stateResponse = await fetch(stateUrl, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(config.timeoutMs),
-  });
-  if (!stateResponse.ok) throw new Error(`collector state returned ${stateResponse.status}`);
-  const state = await stateResponse.json();
-  const wallets = followedWallets(state);
-  const durableCursors = cursors(state);
-  const openCandidates = openMints(state);
-  const sizes = quoteSizes(state);
+type FlowState = {
+  wallets: string[];
+  cursors: Map<string, SolanaWalletCursor>;
+  openCandidates: ReturnType<typeof openMints>;
+  sizes: { positionUsdMicros: bigint; exitDepthMultiple: bigint };
+};
+
+function rpcClient(config: PollConfig): SolanaRpc {
   let rpcId = 0;
-  const rpc: SolanaRpc = async (method, params) => {
+  return async (method, params) => {
     const response = await fetch(config.rpcUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -224,44 +218,84 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
     }
     return body.result;
   };
-  const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
+}
 
-  for (const [index, wallet] of wallets.entries()) {
-    const capture = await captureSolanaWalletFlow({
-      wallet,
-      observedAtMs: config.observedAtMs,
-      sessionId: `${config.sessionId}-${index}`,
-      rpc,
-      ...(durableCursors.has(wallet) ? { cursor: durableCursors.get(wallet)! } : {}),
-      ...(config.pageSize === undefined ? {} : { pageSize: config.pageSize }),
-      ...(config.maxPages === undefined ? {} : { maxPages: config.maxPages }),
-    });
-    for (const acquisition of capture.acquisitions) {
-      await post(config.collectorUrl, config.hmacSecret, config.timeoutMs, acquisition);
-      result.acquisitions += 1;
-      await post(
-        config.collectorUrl,
-        config.hmacSecret,
-        config.timeoutMs,
-        await snapshotSolanaCandidate({
-          acquisition,
-          observedAtMs: config.observedAtMs,
-          sessionId: `${config.sessionId}-${index}`,
-          rpc,
-          quote: config.quote,
-          cohortWallets: wallets,
-          sanctionedAddresses: config.sanctionedAddresses,
-          positionUsdMicros: sizes.positionUsdMicros,
-          exitDepthMultiple: sizes.exitDepthMultiple,
-        }),
-      );
-      result.snapshots += 1;
-    }
-    await post(config.collectorUrl, config.hmacSecret, config.timeoutMs, capture.checkpoint);
-    result.checkpoints += 1;
-    if (capture.checkpoint.payload.status === "gap") result.gaps += 1;
+export async function fetchFlowState(config: PollConfig): Promise<FlowState> {
+  if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs <= 0) {
+    throw new Error("request timeout must be positive");
   }
-  for (const [index, candidate] of openCandidates.entries()) {
+  const stateUrl = new URL("/v1/solana-wallet-flow", config.collectorUrl);
+  const stateResponse = await fetch(stateUrl, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(config.timeoutMs),
+  });
+  if (!stateResponse.ok) throw new Error(`collector state returned ${stateResponse.status}`);
+  const state = await stateResponse.json();
+  return {
+    wallets: followedWallets(state),
+    cursors: cursors(state),
+    openCandidates: openMints(state),
+    sizes: quoteSizes(state),
+  };
+}
+
+/**
+ * One wallet's durable capture: page its signatures from the recorded cursor,
+ * decode each acquisition, snapshot every acquired mint, then post the
+ * checkpoint. Identical whether a socket notification or the periodic sweep
+ * triggered it, so realtime delivery never bypasses gap detection.
+ */
+export async function captureWallet(
+  config: PollConfig,
+  state: FlowState,
+  wallet: string,
+  index: number,
+  rpc: SolanaRpc,
+  result: PollResult,
+): Promise<void> {
+  const capture = await captureSolanaWalletFlow({
+    wallet,
+    observedAtMs: config.observedAtMs,
+    sessionId: `${config.sessionId}-${index}`,
+    rpc,
+    ...(state.cursors.has(wallet) ? { cursor: state.cursors.get(wallet)! } : {}),
+    ...(config.pageSize === undefined ? {} : { pageSize: config.pageSize }),
+    ...(config.maxPages === undefined ? {} : { maxPages: config.maxPages }),
+  });
+  for (const acquisition of capture.acquisitions) {
+    await post(config.collectorUrl, config.hmacSecret, config.timeoutMs, acquisition);
+    result.acquisitions += 1;
+    await post(
+      config.collectorUrl,
+      config.hmacSecret,
+      config.timeoutMs,
+      await snapshotSolanaCandidate({
+        acquisition,
+        observedAtMs: config.observedAtMs,
+        sessionId: `${config.sessionId}-${index}`,
+        rpc,
+        quote: config.quote,
+        cohortWallets: state.wallets,
+        sanctionedAddresses: config.sanctionedAddresses,
+        positionUsdMicros: state.sizes.positionUsdMicros,
+        exitDepthMultiple: state.sizes.exitDepthMultiple,
+      }),
+    );
+    result.snapshots += 1;
+  }
+  await post(config.collectorUrl, config.hmacSecret, config.timeoutMs, capture.checkpoint);
+  result.checkpoints += 1;
+  if (capture.checkpoint.payload.status === "gap") result.gaps += 1;
+}
+
+/** Re-quote every open candidate so the broker can act on exits. */
+export async function monitorCandidates(
+  config: PollConfig,
+  state: FlowState,
+  rpc: SolanaRpc,
+  result: PollResult,
+): Promise<void> {
+  for (const [index, candidate] of state.openCandidates.entries()) {
     await post(
       config.collectorUrl,
       config.hmacSecret,
@@ -272,10 +306,10 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
         sessionId: `${config.sessionId}-monitor-${index}`,
         rpc,
         quote: config.quote,
-        cohortWallets: wallets,
+        cohortWallets: state.wallets,
         sanctionedAddresses: config.sanctionedAddresses,
-        positionUsdMicros: sizes.positionUsdMicros,
-        exitDepthMultiple: sizes.exitDepthMultiple,
+        positionUsdMicros: state.sizes.positionUsdMicros,
+        exitDepthMultiple: state.sizes.exitDepthMultiple,
         ...(candidate.paperPositionAtoms === undefined
           ? {}
           : { paperPositionAtoms: candidate.paperPositionAtoms }),
@@ -283,6 +317,36 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
     );
     result.snapshots += 1;
   }
+}
+
+/** Full sweep: every wallet plus the monitor pass. The socket's safety net. */
+export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResult> {
+  const state = await fetchFlowState(config);
+  const rpc = rpcClient(config);
+  const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
+  for (const [index, wallet] of state.wallets.entries()) {
+    await captureWallet(config, state, wallet, index, rpc, result);
+  }
+  await monitorCandidates(config, state, rpc, result);
+  return result;
+}
+
+/** A followed wallet just transacted: capture only that wallet, now. */
+export async function captureWalletNow(
+  config: PollConfig,
+  wallet: string,
+): Promise<PollResult> {
+  const state = await fetchFlowState(config);
+  const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
+  if (!state.wallets.includes(wallet)) return result;
+  await captureWallet(
+    config,
+    state,
+    wallet,
+    state.wallets.indexOf(wallet),
+    rpcClient(config),
+    result,
+  );
   return result;
 }
 
@@ -297,13 +361,26 @@ function positiveInteger(value: string | undefined, fallback: number, name: stri
 async function main(): Promise<void> {
   const collectorUrl = process.env.COLLECTOR_URL ?? "http://127.0.0.1:8080/v1/events";
   const rpcUrl = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
+  const wsUrl = process.env.SOLANA_WS_URL ?? websocketUrlFrom(rpcUrl);
   const hmacSecret = process.env.ADAPTER_HMAC_SECRET ?? "";
   const sessionId = process.env.ADAPTER_SESSION_ID ?? `solana-${Date.now()}`;
   const timeoutMs = positiveInteger(process.env.REQUEST_TIMEOUT_MS, 30_000, "REQUEST_TIMEOUT_MS");
-  const intervalMs = positiveInteger(
-    process.env.SOLANA_WALLET_POLL_INTERVAL_MS,
+  // The socket carries acquisition latency, so these cadences only cover
+  // exits (which need fresh quotes on a clock) and completeness.
+  const monitorIntervalMs = positiveInteger(
+    process.env.SOLANA_MONITOR_INTERVAL_MS ?? process.env.SOLANA_WALLET_POLL_INTERVAL_MS,
     5_000,
-    "SOLANA_WALLET_POLL_INTERVAL_MS",
+    "SOLANA_MONITOR_INTERVAL_MS",
+  );
+  const sweepIntervalMs = positiveInteger(
+    process.env.SOLANA_WALLET_SWEEP_INTERVAL_MS,
+    60_000,
+    "SOLANA_WALLET_SWEEP_INTERVAL_MS",
+  );
+  const maxPages = positiveInteger(
+    process.env.SOLANA_WALLET_MAX_BACKFILL_PAGES,
+    10,
+    "SOLANA_WALLET_MAX_BACKFILL_PAGES",
   );
   const quote = createJupiterQuote(
     process.env.JUPITER_URL ?? "https://api.jup.ag/swap/v1",
@@ -316,37 +393,95 @@ async function main(): Promise<void> {
       .map((address) => address.trim())
       .filter(Boolean),
   );
+  const log = (event: string, fields: Record<string, unknown>) =>
+    console.log(JSON.stringify({ timestampMs: Date.now(), event, ...fields }));
+  const fail = (event: string, error: unknown) =>
+    console.error(JSON.stringify({
+      timestampMs: Date.now(),
+      event,
+      reason: error instanceof Error ? error.message : String(error),
+    }));
+  const settings = (): PollConfig => ({
+    collectorUrl,
+    rpcUrl,
+    hmacSecret,
+    sessionId,
+    timeoutMs,
+    observedAtMs: BigInt(Date.now()),
+    quote,
+    sanctionedAddresses,
+    maxPages,
+  });
+
+  // Every capture runs through one chain. Concurrent captures of the same
+  // wallet would race its durable cursor, and concurrent snapshots would
+  // multiply RPC and quote load without producing a better decision.
+  let chain: Promise<unknown> = Promise.resolve();
+  const serial = <T,>(work: () => Promise<T>): Promise<void> =>
+    (chain = chain.then(work, work).then(() => {}, () => {}));
+
+  const dirty = new Set<string>();
+  let sweepDue = true;
+
+  const subscriber = createWalletSubscriber({
+    wsUrl,
+    log: { info: (event, fields) => log(event, fields) },
+    onWallet: (wallet) => {
+      dirty.add(wallet);
+      void serial(async () => {
+        const pendingWallets = [...dirty];
+        dirty.clear();
+        for (const pendingWallet of pendingWallets) {
+          try {
+            const result = await captureWalletNow(settings(), pendingWallet);
+            log("solana_wallet_event_captured", { wallet: pendingWallet, ...result });
+          } catch (error) {
+            // A failed realtime capture is recovered by the next sweep.
+            sweepDue = true;
+            fail("solana_wallet_event_failed", error);
+          }
+        }
+      });
+    },
+    // A socket is best-effort delivery: anything missed while it was down is
+    // recovered by the cursor sweep before the stream is trusted again.
+    onResubscribed: () => { sweepDue = true; },
+  });
+
   let stopping = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.on(signal, () => { stopping = true; });
+    process.on(signal, () => { stopping = true; subscriber.close(); });
   }
+
+  let lastSweepMs = 0;
   while (!stopping) {
-    try {
-      const result = await pollSolanaWalletFlow({
-        collectorUrl,
-        rpcUrl,
-        hmacSecret,
-        sessionId,
-        timeoutMs,
-        observedAtMs: BigInt(Date.now()),
-        quote,
-        sanctionedAddresses,
-        maxPages: positiveInteger(
-          process.env.SOLANA_WALLET_MAX_BACKFILL_PAGES,
-          10,
-          "SOLANA_WALLET_MAX_BACKFILL_PAGES",
-        ),
-      });
-      console.log(JSON.stringify({ timestampMs: Date.now(), event: "solana_wallet_poll", ...result }));
-    } catch (error) {
-      console.error(JSON.stringify({
-        timestampMs: Date.now(),
-        event: "solana_wallet_poll_failed",
-        reason: error instanceof Error ? error.message : String(error),
-      }));
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    await serial(async () => {
+      try {
+        const state = await fetchFlowState(settings());
+        subscriber.reconcile(state.wallets);
+        const config = settings();
+        const rpc = rpcClient(config);
+        const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
+        if (sweepDue || Date.now() - lastSweepMs >= sweepIntervalMs) {
+          for (const [index, wallet] of state.wallets.entries()) {
+            await captureWallet(config, state, wallet, index, rpc, result);
+          }
+          sweepDue = false;
+          lastSweepMs = Date.now();
+        }
+        await monitorCandidates(config, state, rpc, result);
+        log("solana_wallet_tick", {
+          ...result,
+          connected: subscriber.connected(),
+          subscriptions: subscriber.subscribedWallets().length,
+        });
+      } catch (error) {
+        fail("solana_wallet_tick_failed", error);
+      }
+    });
+    await new Promise((resolve) => setTimeout(resolve, monitorIntervalMs));
   }
+  subscriber.close();
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
