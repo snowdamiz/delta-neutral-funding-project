@@ -116,6 +116,75 @@ BEGIN
   IF v_result->>'captureComplete' <> 'false' THEN
     RAISE EXCEPTION 'post-gap acquisition was treated as complete: %', v_result;
   END IF;
+
+  -- An idle wallet reports the same cursor on every sweep. That is the normal
+  -- case, not a stalled stream, and it must not be refused. A second wallet
+  -- keeps this independent of the gap latched above.
+  PERFORM record_solana_wallet_flow_event('{
+    "schemaVersion":1,
+    "eventId":"idle-checkpoint-1",
+    "eventType":"SolanaWalletCheckpoint",
+    "source":"solana-wallet:22222222222222222222222222222222",
+    "observedAtMs":"400000",
+    "sourceSlot":"20",
+    "sourceSequence":"swap-idle",
+    "idempotencyKey":"idle-checkpoint-1",
+    "rawPayloadHash":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "payload":{
+      "wallet":"22222222222222222222222222222222",
+      "status":"complete",
+      "reason":"backfill_complete",
+      "previousSignature":"",
+      "previousSlot":"0",
+      "latestSignature":"swap-idle",
+      "latestSlot":"20"
+    }
+  }'::jsonb);
+  PERFORM record_solana_wallet_flow_event('{
+    "schemaVersion":1,
+    "eventId":"idle-checkpoint-2",
+    "eventType":"SolanaWalletCheckpoint",
+    "source":"solana-wallet:22222222222222222222222222222222",
+    "observedAtMs":"460000",
+    "sourceSlot":"20",
+    "sourceSequence":"swap-idle",
+    "idempotencyKey":"idle-checkpoint-2",
+    "rawPayloadHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "payload":{
+      "wallet":"22222222222222222222222222222222",
+      "status":"complete",
+      "reason":"backfill_complete",
+      "previousSignature":"swap-idle",
+      "previousSlot":"20",
+      "latestSignature":"swap-idle",
+      "latestSlot":"20"
+    }
+  }'::jsonb);
+  IF (SELECT count(*) FROM solana_wallet_checkpoints
+      WHERE event_id IN ('idle-checkpoint-1', 'idle-checkpoint-2')) <> 2 THEN
+    RAISE EXCEPTION 'an idle wallet cursor was refused as a continuity gap';
+  END IF;
+
+  -- The cursor may repeat while idle; it may never go backwards. The payload
+  -- check refuses a regressed cursor before this, so the trigger is exercised
+  -- directly here as the second line of defence it is.
+  BEGIN
+    INSERT INTO normalized_events (
+      id, schema_version, event_type, source, observed_at_ms, source_slot,
+      source_sequence, idempotency_key, raw_payload_hash, canonical_payload
+    ) VALUES (
+      'regressed-checkpoint', 1, 'SolanaWalletCheckpoint',
+      'solana-wallet:22222222222222222222222222222222', 500000, 5,
+      'swap-older', 'regressed-checkpoint', repeat('e', 64), '{}'::jsonb
+    );
+    RAISE EXCEPTION 'a cursor regression was accepted';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM NOT LIKE 'source sequence gap or regression%' THEN
+        RAISE;
+      END IF;
+  END;
+
 END;
 $$;
 

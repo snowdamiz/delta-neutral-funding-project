@@ -144,3 +144,30 @@ test("marks a reconnect gap and emits no acquisitions past the cursor slot", asy
   assert.equal(capture.checkpoint.payload.reason, "cursor_not_recovered");
   assert.equal(capture.acquisitions.length, 0);
 });
+
+test("baselines a newly followed wallet instead of paging its history", async () => {
+  const calls: { method: string; params: unknown[] }[] = [];
+  const rpc: SolanaRpc = async (method, params) => {
+    calls.push({ method, params });
+    if (method === "getSignaturesForAddress") {
+      return [{ signature: "newest", slot: 900, err: null, confirmationStatus: "confirmed", blockTime: 500 }];
+    }
+    throw new Error(`a baseline must not call ${method}`);
+  };
+
+  const capture = await captureSolanaWalletFlow({
+    wallet: "11111111111111111111111111111111",
+    observedAtMs: 200_000n,
+    sessionId: "baseline",
+    rpc,
+  });
+
+  // A wallet deeper than the page budget would otherwise latch gapped, and
+  // its historical swaps are not tradeable.
+  assert.equal(capture.checkpoint.payload.status, "complete");
+  assert.equal(capture.checkpoint.payload.previousSignature, "");
+  assert.equal(capture.checkpoint.payload.latestSignature, "newest");
+  assert.deepEqual(capture.acquisitions, []);
+  assert.deepEqual(calls.map((call) => call.method), ["getSignaturesForAddress"]);
+  assert.equal((calls[0]?.params[1] as { limit: number }).limit, 1);
+});

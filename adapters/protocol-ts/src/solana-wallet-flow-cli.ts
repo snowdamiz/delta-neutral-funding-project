@@ -420,11 +420,17 @@ function positiveInteger(value: string | undefined, fallback: number, name: stri
 }
 
 async function main(): Promise<void> {
-  const collectorUrl = process.env.COLLECTOR_URL ?? "http://127.0.0.1:8080/v1/events";
-  const rpcUrl = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
-  const wsUrl = process.env.SOLANA_WS_URL ?? websocketUrlFrom(rpcUrl);
+  // Compose passes unset optional variables as an empty string, which `??`
+  // happily accepts — an empty socket URL then fails as an invalid URL.
+  const setting = (name: string, fallback: string): string => {
+    const value = process.env[name];
+    return value === undefined || value.trim() === "" ? fallback : value;
+  };
+  const collectorUrl = setting("COLLECTOR_URL", "http://127.0.0.1:8080/v1/events");
+  const rpcUrl = setting("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com");
+  const wsUrl = setting("SOLANA_WS_URL", websocketUrlFrom(rpcUrl));
   const hmacSecret = process.env.ADAPTER_HMAC_SECRET ?? "";
-  const sessionId = process.env.ADAPTER_SESSION_ID ?? `solana-${Date.now()}`;
+  const sessionId = setting("ADAPTER_SESSION_ID", `solana-${Date.now()}`);
   const timeoutMs = positiveInteger(process.env.REQUEST_TIMEOUT_MS, 30_000, "REQUEST_TIMEOUT_MS");
   // The socket carries acquisition latency, so these cadences only cover
   // exits (which need fresh quotes on a clock) and completeness.
@@ -444,7 +450,7 @@ async function main(): Promise<void> {
     "SOLANA_WALLET_MAX_BACKFILL_PAGES",
   );
   const quote = createJupiterQuote(
-    process.env.JUPITER_URL ?? "https://api.jup.ag/swap/v1",
+    setting("JUPITER_URL", "https://api.jup.ag/swap/v1"),
     process.env.JUPITER_API_KEY ?? "",
     timeoutMs,
   );

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bring up the local paper stack and run the operator console against it.
 #
-# No process juggling: `docker compose up --wait` supervises the six services
+# No process juggling: `docker compose up --wait` supervises the services
 # detached and blocks until their healthchecks pass, so the console is the only
 # foreground process. One set of logs, and Ctrl-C means one obvious thing.
 set -euo pipefail
@@ -72,7 +72,12 @@ start_stack() {
   # --wait blocks until postgres, collector and adapter report healthy and the
   # migration job exits 0. Without it the console would poll a collector that
   # has not applied its migrations yet.
-  if ! docker compose up -d ${build:+"$build"} --wait; then
+  #
+  # The wallet-flow observer is profiled but started here: it is the only
+  # source of followed-wallet acquisitions, so a stack without it serves a
+  # console whose stream never moves. The live executor stays profiled and
+  # off — that one needs a signer and an explicit decision.
+  if ! docker compose --profile solana-wallet-flow up -d ${build:+"$build"} --wait; then
     printf '\ndev.sh: the stack did not come up healthy\n\n' >&2
     docker compose ps >&2 || true
     printf '\n--- collector ---\n' >&2

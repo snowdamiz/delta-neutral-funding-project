@@ -24,11 +24,11 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
           updatedAt: "2026-08-01T00:00:00Z",
         }, cursors: [{
           wallet,
-          latestSignature: "",
-          latestSlot: "0",
+          latestSignature: "swap-0",
+          latestSlot: "9",
           observedAtMs: "150000",
-          captureComplete: false,
-          gapReason: "backfill_limit_reached",
+          captureComplete: true,
+          gapReason: null,
         }], openMints: [{
           decision: "WATCH",
           snapshotEventId: "snapshot-old",
@@ -82,6 +82,9 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
             confirmationStatus: "confirmed",
             blockTime: 100,
           }];
+        } else if (call.method === "getSignatureStatuses") {
+          // The durable cursor is still on chain, so capture stays complete.
+          result = { value: [{ err: null, confirmationStatus: "confirmed" }] };
         } else if (call.method === "getAccountInfo") {
           result = { value: {
             owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",

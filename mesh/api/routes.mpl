@@ -870,7 +870,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 53
+      schemaVersion : 54
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -1106,7 +1106,7 @@ pub fn handle_config(_request :: Request) -> Response do
       directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
       directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
       protocolSchemaVersion : 1,
-      databaseSchemaVersion : 53,
+      databaseSchemaVersion : 54,
       liveEnabled : false
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)

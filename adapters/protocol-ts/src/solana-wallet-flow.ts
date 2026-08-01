@@ -251,6 +251,47 @@ export async function captureSolanaWalletFlow(input: {
     throw new Error("backfill bounds are invalid");
   }
 
+  // No durable cursor yet: establish a baseline at the newest signature
+  // instead of paging a wallet's whole history. Nothing before the moment a
+  // wallet is followed is tradeable, and a wallet with more history than the
+  // page budget would otherwise latch gapped forever — which is every real
+  // trader. A baseline is identifiable in the evidence by its empty previous
+  // signature.
+  if (!input.cursor) {
+    const values = array(
+      await input.rpc("getSignaturesForAddress", [input.wallet, {
+        commitment: "confirmed",
+        limit: 1,
+      }]),
+      "signature history",
+    ).map(signatureRow);
+    const baseline = values[0];
+    const baselinePayload: SolanaWalletCheckpointEvent["payload"] = {
+      wallet: input.wallet,
+      status: "complete",
+      reason: "backfill_complete",
+      previousSignature: "",
+      previousSlot: "0",
+      latestSignature: baseline?.signature ?? "",
+      latestSlot: String(baseline?.slot ?? 0),
+    };
+    return {
+      acquisitions: [],
+      checkpoint: {
+        schemaVersion: 1,
+        eventId: `${input.sessionId}:solana-checkpoint:${input.wallet}:${input.observedAtMs}`,
+        eventType: "SolanaWalletCheckpoint",
+        source: `solana-wallet:${input.wallet}`,
+        observedAtMs: input.observedAtMs.toString(),
+        sourceSlot: baselinePayload.latestSlot,
+        sourceSequence: baselinePayload.latestSignature || input.observedAtMs.toString(),
+        idempotencyKey: `${input.sessionId}:solana-checkpoint:${input.wallet}:${input.observedAtMs}`,
+        rawPayloadHash: hash(JSON.stringify(baselinePayload)),
+        payload: baselinePayload,
+      },
+    };
+  }
+
   const rows: SignatureRow[] = [];
   let before: string | undefined;
   let exhausted = false;
