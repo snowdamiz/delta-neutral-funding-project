@@ -44,6 +44,10 @@ require() {
   }
 }
 
+stop_stack() {
+  docker compose --profile '*' down --remove-orphans
+}
+
 start_stack() {
   require docker
   docker info >/dev/null 2>&1 || {
@@ -107,7 +111,7 @@ reset_database() {
     fi
   fi
 
-  docker compose down
+  stop_stack
   if docker volume inspect "$volume" >/dev/null 2>&1; then
     docker volume rm "$volume" >/dev/null
     printf 'deleted %s; its paper data cannot be recovered\n' "$volume"
@@ -163,7 +167,7 @@ case ${1:-up} in
   down)
     # Never -v: the paper ledger, soak evidence and Prometheus history live in
     # named volumes and a dev script has no business deleting them.
-    docker compose down
+    stop_stack
     ;;
   reset-db)
     shift

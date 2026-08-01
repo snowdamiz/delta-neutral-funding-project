@@ -3,7 +3,19 @@ set -eu
 
 project_dir=$(CDPATH='' cd -- "$(dirname "$0")/.." && pwd)
 output=$(mktemp)
-trap 'rm -f "$output"' EXIT HUP INT TERM
+fake_bin=$(mktemp -d)
+docker_args="$fake_bin/docker-args"
+trap 'rm -f "$output"; rm -rf "$fake_bin"' EXIT HUP INT TERM
+
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf "%s\n" "$*" >>"$DEV_TEST_DOCKER_ARGS"' \
+  >"$fake_bin/docker"
+chmod +x "$fake_bin/docker"
+
+PATH="$fake_bin:$PATH" DEV_TEST_DOCKER_ARGS="$docker_args" \
+  "$project_dir/dev.sh" down
+grep -Fxq 'compose --profile * down --remove-orphans' "$docker_args"
 
 "$project_dir/dev.sh" help | grep -Fq \
   'reset-db --approve-paper-reset'
