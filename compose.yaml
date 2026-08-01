@@ -56,7 +56,7 @@ services:
       timeout: 2s
       retries: 30
     volumes:
-      - postgres_data_v47:/var/lib/postgresql/data
+      - postgres_data_v48:/var/lib/postgresql/data
     networks:
       - database
     mem_limit: 1g
@@ -253,7 +253,7 @@ services:
 
 volumes:
   # Preserve older paper evidence when a release changes its runtime fingerprint.
-  postgres_data_v47:
+  postgres_data_v48:
   prometheus_data:
   grafana_data:
 
