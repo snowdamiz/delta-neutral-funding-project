@@ -8,7 +8,6 @@ project_commit=$(git -C "$project_dir" rev-parse HEAD)
 mesh_tag=$(printf '%.7s' "$expected_mesh")
 collector=delta-neutral-funding-collector:latest
 adapter=delta-neutral-funding-adapter:latest
-executor=delta-neutral-funding-executor:latest
 trivy=aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
 work_dir=$(mktemp -d)
 trivy_cache=dnf-trivy-cache-$$
@@ -28,6 +27,7 @@ jq -e '
   (.services.collector.environment.EXECUTION_MODE == "paper") and
   (.services.collector.environment.DEPLOYMENT_ENVIRONMENT == "local") and
   (.services | has("executor") | not) and
+  (.services | has("solana-live-executor") | not) and
   all(.services.collector, .services.adapter;
     .read_only and
     (.cap_drop | index("ALL") != null) and
@@ -42,10 +42,22 @@ jq -e '
   )
 ' "$work_dir/compose.json" >/dev/null
 
+# The live executor exists only behind its explicit profile, stays off the
+# default stack, and carries the same hardening as the other containers.
+docker compose --project-directory "$project_dir" --file "$project_dir/compose.yaml" \
+  --profile solana-live config --format json >"$work_dir/compose-live.json"
+jq -e '
+  .services."solana-live-executor" |
+  (.profiles == ["solana-live"]) and
+  .read_only and
+  (.cap_drop | index("ALL") != null) and
+  (.security_opt | index("no-new-privileges:true") != null) and
+  (.networks | keys == ["ingest"])
+' "$work_dir/compose-live.json" >/dev/null
+
 test "$(docker image inspect --format '{{.Config.User}}' "$collector")" = "collector:collector"
 test "$(docker image inspect --format '{{.Config.User}}' "$adapter")" = "65532:65532"
-test "$(docker image inspect --format '{{.Config.User}}' "$executor")" = "65532:65532"
-for image in "$collector" "$adapter" "$executor"; do
+for image in "$collector" "$adapter"; do
   test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$project_commit"
 done
 test "$(docker image inspect --format '{{index .Config.Labels "org.mesh-lang.revision"}}' "$collector")" = "$expected_mesh"
@@ -57,9 +69,8 @@ if docker image inspect \
 fi
 docker image inspect "delta-neutral-funding-collector:$project_commit-$mesh_tag" >/dev/null
 docker image inspect "delta-neutral-funding-adapter:$project_commit" >/dev/null
-docker image inspect "delta-neutral-funding-executor:$project_commit" >/dev/null
 
-for image in "$collector" "$adapter" "$executor"; do
+for image in "$collector" "$adapter"; do
   name=${image%%:*}
   docker scout sbom "local://$image" --format cyclonedx --output "$work_dir/$name.cdx.json"
   jq -e '.bomFormat == "CycloneDX" and (.components | length > 0)' \

@@ -42,6 +42,39 @@ describe("operator proxy request", () => {
     );
   });
 
+  it("signs live arm and disarm with the generated approval literal", () => {
+    const arm = operatorRequest(
+      "/operator/strategies/solana_wallet_flow_quant/arm-live",
+      "operator-secret",
+      "console-arm",
+    );
+
+    expect(JSON.parse(arm?.body ?? "{}")).toEqual({
+      mode: "live",
+      approval: "ARM LIVE TRADING",
+      reason: "armed live trading from local operator console (strategy: solana_wallet_flow_quant)",
+    });
+    expect(arm?.forwardPath).toBe("/v1/strategies/solana_wallet_flow_quant/mode");
+    expect(arm?.headers["x-operator-signature"]).toBe(
+      signature("console-arm", arm?.body ?? ""),
+    );
+
+    const disarm = operatorRequest(
+      "/operator/strategies/solana_wallet_flow_quant/disarm-live",
+      "operator-secret",
+      "console-disarm",
+    );
+    expect(JSON.parse(disarm?.body ?? "{}")).toEqual({
+      mode: "paper",
+      reason: "disarmed live trading from local operator console (strategy: solana_wallet_flow_quant)",
+    });
+    expect(operatorRequest(
+      "/v1/strategies/solana_wallet_flow_quant/mode",
+      "operator-secret",
+      "console-direct-mode",
+    )).toBeNull();
+  });
+
   it("rejects malformed strategy control paths", () => {
     for (const url of [
       "/operator/strategies//stop",

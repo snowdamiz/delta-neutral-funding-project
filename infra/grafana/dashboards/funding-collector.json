@@ -1,120 +1,159 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": false,
   "panels": [
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 0 },
-      "id": 1,
-      "targets": [{ "expr": "funding_received_usd_micros / 1e6", "legendFormat": "{{portfolio}}", "refId": "A" }],
-      "title": "Funding",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 0 },
-      "id": 2,
-      "targets": [{ "expr": "jitosol_reward_accrual_usd_micros / 1e6", "legendFormat": "{{portfolio}}", "refId": "A" }],
-      "title": "JitoSOL reward",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 0 },
-      "id": 3,
-      "targets": [{ "expr": "jitosol_basis_pnl_usd_micros / 1e6", "legendFormat": "{{portfolio}}", "refId": "A" }],
-      "title": "JitoSOL basis",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
-      "id": 4,
-      "targets": [{ "expr": "position_net_delta_sol_atoms / 1e9", "legendFormat": "{{portfolio}}", "refId": "A" }],
-      "title": "Net delta",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 7
+      },
       "id": 5,
-      "targets": [{ "expr": "margin_ratio_ppm / 1e6", "refId": "A" }],
+      "targets": [
+        {
+          "expr": "margin_ratio_ppm / 1e6",
+          "refId": "A"
+        }
+      ],
       "title": "Margin",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 7
+      },
       "id": 6,
-      "targets": [{ "expr": "jitosol_exit_depth_usd_micros / 1e6", "refId": "A" }],
+      "targets": [
+        {
+          "expr": "jitosol_exit_depth_usd_micros / 1e6",
+          "refId": "A"
+        }
+      ],
       "title": "Exit liquidity",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 14 },
-      "id": 7,
-      "targets": [{ "expr": "net_pnl_usd_micros / 1e6", "legendFormat": "{{portfolio}}", "refId": "A" }],
-      "title": "Net P&L",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "max": 1, "min": 0 }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 14 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 14
+      },
       "id": 8,
-      "targets": [{ "expr": "adapter_connected", "legendFormat": "{{adapter}}", "refId": "A" }],
+      "targets": [
+        {
+          "expr": "adapter_connected",
+          "legendFormat": "{{adapter}}",
+          "refId": "A"
+        }
+      ],
       "title": "Adapter health",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 14 },
-      "id": 9,
-      "targets": [{ "expr": "shadow_executor_results", "legendFormat": "{{status}}", "refId": "A" }],
-      "title": "Shadow executor",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "max": 1, "min": 0 }, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 21 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 21
+      },
       "id": 10,
-      "targets": [{ "expr": "min(mesh_runtime_up, leader_lease_held)", "refId": "A" }],
+      "targets": [
+        {
+          "expr": "min(mesh_runtime_up, leader_lease_held)",
+          "refId": "A"
+        }
+      ],
       "title": "Mesh runtime",
       "type": "stat"
     },
     {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 21 },
-      "id": 11,
-      "targets": [{ "expr": "orders_total", "legendFormat": "{{leg}} {{status}}", "refId": "A" }],
-      "title": "Orders",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 21 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
       "id": 12,
-      "targets": [{ "expr": "funding_collector_build_info", "legendFormat": "{{app_commit}} / {{mesh_runtime_commit}}", "refId": "A" }],
+      "targets": [
+        {
+          "expr": "funding_collector_build_info",
+          "legendFormat": "{{app_commit}} / {{mesh_runtime_commit}}",
+          "refId": "A"
+        }
+      ],
       "title": "Build identity",
       "type": "stat"
     }
   ],
   "schemaVersion": 41,
-  "tags": ["funding", "paper"],
-  "templating": { "list": [] },
-  "time": { "from": "now-1h", "to": "now" },
+  "tags": [
+    "funding",
+    "paper"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timezone": "browser",
   "title": "Delta-Neutral Funding Collector",
   "uid": "funding-collector",

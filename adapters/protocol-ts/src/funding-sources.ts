@@ -501,11 +501,6 @@ async function hyperliquidRows(
       spotExitDepthAtoms: spotDepth.toString(),
       perpExitDepthAtoms: perpDepth.toString(),
       depthQualified,
-      marginStatus: "valid",
-      maintenanceMarginPpm: ceilDiv(
-        million,
-        maxLeverage * 2n,
-      ).toString(),
       raw: `${perpsResponse.raw}\n${spotsResponse.raw}\n${depthRaw}`,
     };
   }));

@@ -12,6 +12,12 @@
 **Live policy:** One live experiment at a time, first live notional capped at $500 per leg and $700 total capital consumed, only after its own paper and shadow gates pass
 **First implementation step:** Phase 0 — generalize the operator console so every later phase lands in it without rework
 **Prepared:** July 30, 2026
+**Disposition (2026-08-01):** Phases 0-5 were reviewed against the operator's
+capital and jurisdiction. The Phoenix carry pair, Phase 4, and Phase 5 were
+retired and removed from the platform (`implementation-status.md`); the
+Solana wallet-flow strategy (`us-accessible-strategy-research.md`) became the
+centerpiece with a rebuilt exit engine, wallet discovery, and a default-off
+live path. This document is retained as the reasoning of record.
 
 > **Risk notice:** Every strategy in this document can lose money, including the "market-neutral" ones. Funding can reverse, borrow rates can spike past collected funding, an LST can depeg below its protocol NAV for longer than an unstake epoch, two perp venues can diverge, a copied wallet's edge can be unmirrorable at any latency, and keeper income can be competed to zero. Paper results are not guarantees of live performance. Venue eligibility and applicable laws must be checked before live trading; access restrictions must not be bypassed.
 

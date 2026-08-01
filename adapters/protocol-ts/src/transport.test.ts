@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { buildSyntheticEvent } from "./contracts.js";
-import { fetchWalletConfig, postEvent, signBody } from "./transport.js";
+import { postEvent, signBody } from "./transport.js";
 
 test("authenticates and posts the canonical body unchanged", async () => {
   const event = buildSyntheticEvent(9n, 1_785_024_000_000n, "transport-test");
@@ -40,30 +40,3 @@ test("authenticates and posts the canonical body unchanged", async () => {
   }
 });
 
-test("loads the current wallet cohort from the collector", async () => {
-  const wallets = [
-    "0x1111111111111111111111111111111111111111",
-    "0x2222222222222222222222222222222222222222",
-  ];
-  const server = createServer((request, response) => {
-    assert.equal(request.method, "GET");
-    assert.equal(request.url, "/v1/wallets/config");
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ version: "7", wallets, maximumWallets: "50" }));
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  assert(address && typeof address !== "string");
-
-  try {
-    assert.deepEqual(
-      await fetchWalletConfig(
-        `http://127.0.0.1:${address.port}/v1/events`,
-        1000,
-      ),
-      { version: "7", wallets },
-    );
-  } finally {
-    server.close();
-  }
-});

@@ -112,6 +112,8 @@ test("snapshots token control, concentration, cluster inventory, and round trip"
     quote,
     cohortWallets: [wallet, clusterWallet],
     sanctionedAddresses: new Set(),
+    positionUsdMicros: 10_000_000n,
+    exitDepthMultiple: 10n,
     paperPositionAtoms: 100_000n,
   });
 
@@ -144,6 +146,8 @@ test("persists a no-round-trip reject instead of throwing", async () => {
     quote: async () => { throw new Error("no route"); },
     cohortWallets: [wallet],
     sanctionedAddresses: new Set(),
+  positionUsdMicros: 10_000_000n,
+  exitDepthMultiple: 10n,
   });
   assert.equal(event.payload.snapshotStatus, "rejected");
   assert.equal(event.payload.rejectReason, "REJECT_NO_ROUND_TRIP");
@@ -204,6 +208,8 @@ test("applies the active Token-2022 transfer fee in both directions", async () =
     quote,
     cohortWallets: [wallet],
     sanctionedAddresses: new Set(),
+  positionUsdMicros: 10_000_000n,
+  exitDepthMultiple: 10n,
   });
 
   assert.equal(event.payload.snapshotStatus, "complete");
@@ -253,6 +259,8 @@ test("derives confirmed post-trigger organic flow and cluster sells", async () =
     quote,
     cohortWallets: [wallet, clusterWallet],
     sanctionedAddresses: new Set(),
+  positionUsdMicros: 10_000_000n,
+  exitDepthMultiple: 10n,
   });
 
   assert.equal(event.payload.flowCoverageComplete, true);

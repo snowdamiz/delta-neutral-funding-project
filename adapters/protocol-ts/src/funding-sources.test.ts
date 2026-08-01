@@ -171,8 +171,6 @@ test("captures every venue market and depth-qualifies only executable spot pairs
       spotExitDepthAtoms: "0",
       perpExitDepthAtoms: "1000000000000",
       depthQualified: false,
-      marginStatus: "valid",
-      maintenanceMarginPpm: "50000",
       raw: "phoenix-kpepe",
     };
     const observations = await captureFundingObservations(
@@ -213,10 +211,6 @@ test("captures every venue market and depth-qualifies only executable spot pairs
       observedAtMs: "1785020400000",
       ratePpm: "10",
     });
-    assert.equal(observations[0]?.payload.marginStatus, "valid");
-    assert.equal(observations[0]?.payload.maintenanceMarginPpm, "12500");
-    assert.equal(observations[1]?.payload.marginStatus, "valid");
-    assert.equal(observations[1]?.payload.maintenanceMarginPpm, "100000");
     assert.equal(observations[1]?.payload.depthQualified, false);
     assert.equal(observations[1]?.payload.perpExitDepthAtoms, "1000000000000");
     assert.equal(observations[1]?.payload.realizedFundingRatePpm, "20");

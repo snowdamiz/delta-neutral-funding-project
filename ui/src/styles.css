@@ -41,7 +41,83 @@ body::after {
   content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
   background:radial-gradient(ellipse 90% 55% at 50% -10%,#12433a2e,transparent 70%);
 }
-.wrap { position:relative; z-index:1; max-width:1560px; margin:0 auto; padding:0 var(--pad) 7rem }
+
+/* ─── shell: a persistent rail, one content pane ──────────────────────────
+   The console used to run two navigations that did not compose — three top
+   tabs that never named a strategy, plus a pill bar that only existed once you
+   were already inside one. The rail is the only navigation now: every
+   strategy, both system pages, and the current net, always on screen. */
+.shell { position:relative; z-index:1; display:grid; grid-template-columns:clamp(214px,17vw,264px) minmax(0,1fr) }
+.rail {
+  position:sticky; top:0; align-self:start; height:100vh; z-index:20;
+  display:flex; flex-direction:column; gap:1.1rem; padding:1.15rem .9rem 1rem;
+  border-right:1px solid var(--line); background:#050807ee; backdrop-filter:blur(14px);
+}
+.rail-top { display:flex; flex-direction:column; align-items:flex-start; gap:.55rem; padding:0 .55rem }
+.rail-nav { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:.9rem }
+.rgroup { display:flex; flex-direction:column; gap:1px }
+.rgroup > .lbl { padding:0 .55rem .3rem }
+.rlink {
+  display:flex; align-items:flex-start; width:100%; text-align:left; cursor:pointer;
+  background:none; border:0; border-left:2px solid transparent; border-radius:0 2px 2px 0;
+  padding:.44rem .55rem; color:var(--ink2); font:400 12.5px/1.35 var(--mono); letter-spacing:.01em;
+}
+/* names wrap rather than truncate: "Hyperliquid wallet mirror" and
+   "…fade" are indistinguishable at one ellipsised line */
+.rlink .key { margin-top:.3rem }
+.rlink:hover { background:#ffffff06; color:var(--ink1) }
+.rlink.on { background:var(--s2); color:var(--ink1); border-left-color:var(--ok) }
+.rlink:focus-visible { outline:2px solid var(--ok); outline-offset:-2px }
+.rlink.all { font-weight:500; color:var(--ink1) }
+.rname { flex:1; min-width:0; overflow-wrap:anywhere }
+.rnet { margin-left:.7rem; font-size:11.5px; font-variant-numeric:tabular-nums lining-nums; color:var(--ink4); white-space:nowrap }
+.rail-foot { display:flex; flex-direction:column; gap:1px; padding-top:.7rem; border-top:1px solid var(--line) }
+.rail-meta { display:flex; align-items:center; gap:.5rem; padding:.7rem .55rem 0; font:10px var(--mono); letter-spacing:.1em; color:var(--ink4) }
+.rail-meta .pill { padding:.16rem .42rem; font-size:9px; gap:0 }
+.explain {
+  margin-left:auto; width:20px; height:20px; flex:none; cursor:pointer;
+  border:1px solid var(--line-hi); border-radius:50%; background:transparent;
+  color:var(--ink3); font:500 11px var(--mono); line-height:1;
+}
+.explain[aria-pressed="true"] { color:var(--ok); border-color:#2bc4a055; background:#2bc4a012 }
+.explain:hover { color:var(--ink1) }
+.explain:focus-visible { outline:2px solid var(--ok); outline-offset:2px }
+
+.pane { min-width:0; padding:1.5rem var(--pad) 6rem }
+
+/* the rail becomes a horizontal strip before it becomes a squeeze */
+@media (max-width:860px) {
+  .shell { grid-template-columns:minmax(0,1fr) }
+  .rail { position:static; height:auto; min-width:0; border-right:0; border-bottom:1px solid var(--line) }
+  /* min-width:0 or the scroller stops clipping and widens the whole document */
+  .rail-nav { flex-direction:row; align-items:center; min-width:0; overflow-x:auto; gap:1.25rem; padding-bottom:.35rem }
+  .rail-nav > .rlink, .rgroup { flex:none }
+  .rgroup { flex-direction:row; align-items:center; gap:.35rem }
+  .rgroup > .lbl { padding:0 }
+  .rlink { width:auto; align-items:center; border-left:0; border-bottom:2px solid transparent; border-radius:2px 2px 0 0 }
+  .rlink .key { margin-top:0 }
+  .rlink.on { border-left:0; border-bottom-color:var(--ok) }
+  .rname { flex:none; white-space:nowrap }
+  .rail-foot { flex-direction:row; align-items:center; gap:.35rem }
+  .rail-meta { margin-left:auto; padding-top:0 }
+}
+
+/* ─── strategy head: name, legs, and the switch that starts it ─────────── */
+.head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:1.25rem 2rem }
+.head h1 { font-family:var(--serif); font-weight:400; font-size:clamp(1.7rem,3.2vw,2.4rem); line-height:1; letter-spacing:-.015em }
+.head p { margin-top:.55rem }
+
+.subs { display:flex; margin-top:1.4rem; border-bottom:1px solid var(--line); overflow-x:auto }
+.sub {
+  background:none; border:0; border-bottom:2px solid transparent; margin-bottom:-1px; cursor:pointer;
+  padding:.55rem .95rem; color:var(--ink3); white-space:nowrap;
+  font:500 11.5px var(--mono); letter-spacing:.14em; text-transform:uppercase; transition:color .14s ease;
+}
+.sub:first-child { padding-left:0 }
+.sub:hover { color:var(--ink2) }
+.sub.on { color:var(--ink1); border-bottom-color:var(--ok) }
+.sub:focus-visible { outline:2px solid var(--ok); outline-offset:-2px }
+.subs + section { margin-top:2rem }
 
 /* ─── typography primitives ─────────────────────────────────────────── */
 .num { font-family:var(--mono); font-variant-numeric:tabular-nums lining-nums; font-weight:400; letter-spacing:-.01em }
@@ -51,25 +127,14 @@ body::after {
 .unit { font-size:.5em; color:var(--ink3); letter-spacing:.06em; margin-left:.35em }
 .pad { padding:1.15rem }
 
-/* ─── sticky masthead: identity, state, and navigation, always reachable ── */
-.topbar {
-  position:sticky; top:0; z-index:20;
-  background:#050807ee; backdrop-filter:blur(14px);
-  border-bottom:1px solid var(--line);
-}
-.topbar-in {
-  max-width:1560px; margin:0 auto; padding:1rem var(--pad) .85rem;
-  display:flex; flex-wrap:wrap; gap:1rem; align-items:center; justify-content:space-between;
-}
 .brand {
   background:none; border:0; padding:0; cursor:pointer; text-align:left;
-  font-family:var(--serif); font-weight:400; font-size:clamp(1.35rem,2.4vw,1.7rem);
-  line-height:1; letter-spacing:-.015em; color:var(--ink1);
+  font-family:var(--serif); font-weight:400; font-size:clamp(1.15rem,1.7vw,1.4rem);
+  line-height:1.05; letter-spacing:-.015em; color:var(--ink1);
 }
 .brand em { font-style:italic; color:var(--ink2) }
 .brand:focus-visible { outline:2px solid var(--ok); outline-offset:4px }
 
-.live { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap }
 .pill {
   display:inline-flex; align-items:center; gap:.5rem;
   font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:.12em; text-transform:uppercase;
@@ -152,23 +217,9 @@ body::after {
   .flash, .sweep { display:none }
 }
 
-/* ─── tabs: the top-level structure the console never used to have ────── */
-.tabs { border-top:1px solid var(--line) }
-.tabs-in { max-width:1560px; margin:0 auto; padding:0 var(--pad); display:flex; gap:0; overflow-x:auto }
-.tab {
-  background:none; border:0; border-bottom:2px solid transparent; cursor:pointer;
-  padding:.7rem 1.15rem .6rem; color:var(--ink3); text-align:left; white-space:nowrap;
-  font:500 12.5px var(--mono); letter-spacing:.04em; transition:color .14s ease;
-}
-.tab:first-child { padding-left:0 }
-.tab .thint { display:block; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink4); margin-top:.18rem }
-.tab:hover { color:var(--ink2) }
-.tab.on { color:var(--ink1); border-bottom-color:var(--ok) }
-.tab:focus-visible { outline:2px solid var(--ok); outline-offset:-2px }
-
 /* ─── status banner: one word, one sentence, one control ─────────────── */
 .banner {
-  margin-top:2.25rem; display:flex; flex-wrap:wrap; gap:1.5rem 2rem; align-items:center; justify-content:space-between;
+  margin-top:.5rem; display:flex; flex-wrap:wrap; gap:1.5rem 2rem; align-items:center; justify-content:space-between;
   background:var(--s1); border:1px solid var(--line); border-left:3px solid var(--st,var(--ink3));
   border-radius:3px; padding:1.6rem 1.75rem;
 }
@@ -189,6 +240,7 @@ body::after {
 .controls button:focus-visible { outline:2px solid var(--ok); outline-offset:3px }
 .controls button:disabled { cursor:wait; opacity:.55 }
 .controls span { color:var(--ink3); font:10.5px/1.5 var(--mono); max-width:34ch }
+.controls span:empty { display:none }
 
 .database-reset { display:grid; gap:.7rem; padding:1.15rem }
 .database-reset label, .database-reset > span { color:var(--ink3); font:10.5px/1.5 var(--mono) }
@@ -227,8 +279,10 @@ section { margin-top:3.25rem }
 .stat.sm .cap { font-size:11px; color:var(--ink4); margin-top:.35rem }
 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:1px; background:var(--line) }
 .grid > .stat { background:var(--s1) }
-@media (max-width:1040px) { .stats { grid-template-columns:1fr 1fr } }
-@media (max-width:560px)  { .stats { grid-template-columns:1fr } }
+/* breakpoints are on the viewport but the pane is a rail narrower, so they
+   trip earlier than the raw numbers suggest */
+@media (max-width:1240px) { .stats { grid-template-columns:1fr 1fr } }
+@media (max-width:700px)  { .stats { grid-template-columns:1fr } }
 
 /* status chips — glyph + word, never colour alone */
 .chip { display:inline-flex; align-items:center; gap:.4rem; font-family:var(--mono); font-size:10.5px; font-weight:500; letter-spacing:.11em; text-transform:uppercase; padding:.2rem .5rem .2rem .42rem; border-radius:2px; border:1px solid; white-space:nowrap }
@@ -237,12 +291,6 @@ section { margin-top:3.25rem }
 .c-warn { color:var(--warn); border-color:#d2992240; background:#d2992212 }
 .c-crit { color:var(--crit); border-color:#e6676740; background:#e6676714 }
 .c-mute { color:var(--ink3); border-color:var(--line-hi); background:#ffffff05 }
-
-/* ─── strategy facets: nine cards read as a wall, three groups read as a book ── */
-.facet + .facet { margin-top:2rem }
-.fhead { display:flex; align-items:center; gap:.7rem; margin-bottom:.75rem }
-.fhead h3 { font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--ink1) }
-.fhead .micro { margin-left:auto }
 
 .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:3px }
 .card { position:relative; overflow:hidden; background:var(--s1); display:flex; flex-direction:column; transition:background .16s ease }
@@ -269,27 +317,12 @@ section { margin-top:3.25rem }
 .manage-wallets:focus-visible { outline:2px solid var(--ok); outline-offset:3px }
 .card .controls { margin-top:1rem }
 
-/* ─── detail: switch strategy without going back ─────────────────────── */
-.switch { display:flex; align-items:center; flex-wrap:wrap; gap:.9rem; margin-top:2rem; padding-bottom:1rem; border-bottom:1px solid var(--line) }
-.back, .spill {
-  border:1px solid var(--line-hi); border-radius:2px; background:transparent; color:var(--ink2);
-  padding:.4rem .75rem; font:500 10.5px var(--mono); letter-spacing:.1em; cursor:pointer; white-space:nowrap;
-}
-.back { text-transform:uppercase }
-.back:hover, .spill:hover { color:var(--ink1); border-color:var(--ink4) }
-.back:focus-visible, .spill:focus-visible { outline:2px solid var(--ok); outline-offset:2px }
-.pills { display:flex; flex-wrap:wrap; gap:.4rem }
-.spill { display:inline-flex; align-items:center; border-color:transparent }
-.spill.on { color:var(--ink1); border-color:var(--line-hi); background:var(--s2) }
-
-.lede { margin-top:2rem }
-.lede h1 { font-family:var(--serif); font-weight:400; font-size:clamp(1.8rem,3.6vw,2.6rem); line-height:1; letter-spacing:-.015em }
-.lede p { margin-top:.6rem; color:var(--ink2); font-family:var(--mono); font-size:12px; display:flex; flex-wrap:wrap; align-items:center; gap:.9rem }
-
 /* ─── tables ─────────────────────────────────────────────────────────── */
-.tw { overflow-x:auto }
+/* a long scan scrolls inside its own panel, like `.feed` already does: the
+   funding leaderboard is 233 ranked rows and made this page a 24,000px scroll */
+.tw { overflow:auto; max-height:min(70vh,560px) }
 table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px; font-variant-numeric:tabular-nums lining-nums }
-th { text-align:left; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink4); font-weight:500; padding:.7rem 1rem; border-bottom:1px solid var(--line); white-space:nowrap; background:var(--s1) }
+th { position:sticky; top:0; z-index:1; text-align:left; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink4); font-weight:500; padding:.7rem 1rem; border-bottom:1px solid var(--line); white-space:nowrap; background:var(--s1) }
 td { padding:.72rem 1rem; border-bottom:1px solid var(--line); white-space:nowrap; color:var(--ink2) }
 tbody tr:last-child td { border-bottom:0 }
 tbody tr { transition:background .14s ease }
@@ -374,9 +407,10 @@ details.cfg summary:hover { color:var(--ink1) }
 .empty-state code { color:var(--ink2); background:#ffffff08; padding:.1rem .38rem; border-radius:2px }
 
 /* ─── layout helpers ─────────────────────────────────────────────────── */
+.pane > :first-child { margin-top:0 }
 .cols { display:grid; grid-template-columns:1fr 1fr; gap:1.1rem }
 .cols-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:1.1rem }
-@media (max-width:1040px) { .cols, .cols-3 { grid-template-columns:1fr } }
+@media (max-width:1240px) { .cols, .cols-3 { grid-template-columns:1fr } }
 
 /* ─── entrance: one orchestrated load, staggered by position ─────────── */
 @media (prefers-reduced-motion:no-preference) {
@@ -387,8 +421,22 @@ details.cfg summary:hover { color:var(--ink1) }
   main > .rise:nth-child(n+5) { animation-delay:.2s }
   @keyframes rise { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:none } }
 }
-footer { margin-top:4rem; padding-top:1.5rem; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:1rem; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--ink4); letter-spacing:.06em }
 ::-webkit-scrollbar { width:9px; height:9px }
 ::-webkit-scrollbar-track { background:var(--s0) }
 ::-webkit-scrollbar-thumb { background:var(--line-hi); border-radius:5px }
 ::selection { background:#2bc4a033 }
+
+/* Live-mode switch: the arm path is deliberately heavier than the disarm. */
+.live-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 0 10px;
+}
+.live-control [role="alert"] { color: var(--crit); font-size: 12px; }
+button.danger {
+  background: var(--crit);
+  color: var(--bg0, #fff);
+  border-color: var(--crit);
+}

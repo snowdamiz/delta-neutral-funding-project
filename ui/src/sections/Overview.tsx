@@ -1,9 +1,9 @@
 import type { Snapshot } from "../api";
 import type { Strategy } from "../catalog";
-import { benchmarkRows, familiesOf, netOf } from "../catalog";
+import { benchmarkRows, netOf } from "../catalog";
 import { fmt, micros, ms, sum, toNumber } from "../fmt";
 import { freshLimit } from "../status";
-import { Chip, Empty, Key, Panel, reasonName, Section, Since, Stat, StrategyName, type Tone } from "../ui";
+import { Chip, Empty, Key, Panel, reasonName, Section, Since, Stat, StrategyName, useVerbose, type Tone } from "../ui";
 import { Control } from "./Health";
 import { EventFeed } from "./Risk";
 
@@ -78,33 +78,25 @@ function Card({
   snap,
   strategy,
   onOpen,
-  onManageWallets,
 }: {
   snap: Snapshot;
   strategy: Strategy;
   onOpen: () => void;
-  onManageWallets: () => void;
 }) {
   const s = snap.status;
+  const verbose = useVerbose();
   const latest = snap.opportunities.find((o) => o.variant === strategy.id);
   const unavailable =
-    strategy.id === "cross_venue_funding" &&
-      (snap.crossVenueLeaderboard?.items.length ?? 0) === 0
-      ? "venue unavailable"
-      : strategy.id.startsWith("hyperliquid_wallet_") &&
-          (snap.walletTracking?.config?.wallets.length ?? 0) === 0
-        ? "wallets not configured"
-        : strategy.id === "solana_wallet_flow_quant" &&
-            (snap.solanaWalletConfig?.wallets.length ?? 0) === 0
-          ? "wallets not configured"
-        : "";
+    strategy.id === "solana_wallet_flow_quant" &&
+      (snap.solanaWalletConfig?.wallets.length ?? 0) === 0
+      ? "wallets not configured"
+      : "";
   const lead = benchmarkRows(snap, strategy)[0];
   const net = netOf(snap, strategy);
   const controllable =
     !!s && s.deploymentEnvironment === "local" && s.executionMode === "paper" &&
     strategy.runState !== "unregistered" && strategy.controlScope === "strategy";
-  const walletDependent =
-    strategy.id.startsWith("hyperliquid_wallet_") || strategy.id === "solana_wallet_flow_quant";
+  const walletDependent = strategy.id === "solana_wallet_flow_quant";
   const startBlocked = !strategy.enabled && walletDependent && unavailable === "wallets not configured";
 
   const checkedAt = ms(latest?.observedAtMs);
@@ -130,18 +122,20 @@ function Card({
           {fmt(net, 2, { signed: true })}
           <span className="unit">USD</span>
         </div>
-        <div className="cap">
-          {lead ? (
-            <>
-              {fmt(lead.incremental, 2, { signed: true })} USD versus{" "}
-              <StrategyName id={strategy.benchmarkStrategyId ?? ""} />
-            </>
-          ) : strategy.benchmarkStrategyId ? (
-            <>Benchmark <StrategyName id={strategy.benchmarkStrategyId} /> — not yet paired</>
-          ) : (
-            "The standing benchmark other strategies are measured against"
-          )}
-        </div>
+        {(lead || strategy.benchmarkStrategyId || verbose) && (
+          <div className="cap">
+            {lead ? (
+              <>
+                {fmt(lead.incremental, 2, { signed: true })} USD versus{" "}
+                <StrategyName id={strategy.benchmarkStrategyId ?? ""} />
+              </>
+            ) : strategy.benchmarkStrategyId ? (
+              <>Benchmark <StrategyName id={strategy.benchmarkStrategyId} /> — not yet paired</>
+            ) : (
+              "The standing benchmark other strategies are measured against"
+            )}
+          </div>
+        )}
 
         <div className="card-row">
           <Chip tone={RUN_TONE[strategy.runState] ?? "mute"}>
@@ -168,7 +162,7 @@ function Card({
         </div>
 
         {walletDependent && (
-          <button type="button" className="manage-wallets" onClick={onManageWallets}>
+          <button type="button" className="manage-wallets" onClick={onOpen}>
             Manage wallets →
           </button>
         )}
@@ -185,20 +179,18 @@ function Card({
 }
 
 /**
- * Faceted by family. Nine flat cards read as a wall; three groups of three
- * read as a portfolio — and family is the axis the hue already encodes.
+ * One flat grid. The family facet headings this used to carry are now the
+ * rail's grouping, and repeating them here only added a heading layer over
+ * two or three cards.
  */
 export function Overview({
   snap,
   onOpen,
-  onManageWallets,
 }: {
   snap: Snapshot;
   onOpen: (id: string) => void;
-  onManageWallets: () => void;
 }) {
   const catalog = snap.strategies;
-  const families = familiesOf(catalog);
 
   return (
     <Section
@@ -210,31 +202,16 @@ export function Overview({
           <Empty msg="The collector registered no strategies — /v1/strategies is empty or unreachable." />
         </Panel>
       ) : (
-        families.map((family) => {
-          const members = catalog.filter((s) => s.family === family);
-          return (
-            <div className="facet" key={family}>
-              <div className="fhead">
-                <Key id={members[0]!.id} />
-                <h3>{family}</h3>
-                <span className="micro">
-                  {members.length} {members.length === 1 ? "strategy" : "strategies"}
-                </span>
-              </div>
-              <div className="cards">
-                {members.map((s) => (
-                  <Card
-                    key={s.id}
-                    snap={snap}
-                    strategy={s}
-                    onOpen={() => onOpen(s.id)}
-                    onManageWallets={onManageWallets}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })
+        <div className="cards">
+          {catalog.map((s) => (
+            <Card
+              key={s.id}
+              snap={snap}
+              strategy={s}
+              onOpen={() => onOpen(s.id)}
+            />
+          ))}
+        </div>
       )}
     </Section>
   );

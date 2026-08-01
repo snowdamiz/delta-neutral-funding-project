@@ -38,8 +38,6 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     && cargo test --locked -q -p meshc --test e2e_actors gc_bounded_memory \
     && cargo test --locked -q -p meshc --test e2e_supervisors supervisor_restarts_crashed_permanent_child
 COPY mesh /workspace/project/mesh
-COPY replay /workspace/project/replay
-COPY tests/vectors /workspace/project/tests/vectors
 ARG CODE_COMMIT=development
 ARG MESH_COMMIT=c5379f8d00990df18248e4bf2d53bbb1d04868fb
 RUN sed -i \

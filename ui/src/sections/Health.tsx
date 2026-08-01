@@ -3,7 +3,7 @@ import { DATABASE_RESET_APPROVAL } from "../../reset";
 import { control, resetDatabase, type Snapshot } from "../api";
 import { age, fmt, latest, ms, num } from "../fmt";
 import { freshLimit, health } from "../status";
-import { Chip, Panel, Section, Since, Spin, Stat } from "../ui";
+import { Chip, Panel, Section, Since, Spin, Stat, useVerbose } from "../ui";
 
 /**
  * One button serves the collector-wide emergency switch and each independent
@@ -21,6 +21,13 @@ export function Control({
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
   const scoped = strategy !== undefined;
+  const verbose = useVerbose();
+  // What the button does is legible from its own label, and this line repeated
+  // once per strategy card. A blocked start is different — that one says why.
+  const blocked = paused ? disabledReason : undefined;
+  const idle = paused
+    ? scoped ? "Allows this strategy to open positions." : "Resumes opening new positions."
+    : "Halts new positions; open ones keep settling.";
 
   const press = async () => {
     setBusy(true);
@@ -52,9 +59,7 @@ export function Control({
       <span role="status">
         {busy
           ? `Waiting for the collector to acknowledge ${paused ? "start" : "stop"}…`
-          : feedback || (paused
-            ? scoped ? disabledReason || "Allows this strategy to open positions." : "Resumes opening new positions."
-            : "Halts new positions; open ones keep settling.")}
+          : feedback || blocked || (verbose ? idle : "")}
       </span>
     </div>
   );
@@ -120,7 +125,6 @@ export function Activity({ snap }: { snap: Snapshot }) {
   const scans = [
     snap.fundingLeaderboard?.asOfMs,
     snap.reverseCarryLeaderboard?.asOfMs,
-    snap.crossVenueLeaderboard?.asOfMs,
   ];
 
   return (
@@ -147,6 +151,7 @@ export function Activity({ snap }: { snap: Snapshot }) {
  */
 export function StatusBanner({ snap }: { snap: Snapshot }) {
   const h = health(snap);
+  const verbose = useVerbose();
   return (
     <>
       <div className="banner rise" style={{ ["--st" as string]: `var(--${h.tone})` }}>
@@ -154,7 +159,7 @@ export function StatusBanner({ snap }: { snap: Snapshot }) {
           <div className="state">{h.word}</div>
           <div>
             <p className="state-sub">{h.detail}</p>
-            {h.extra && <p className="state-extra">{h.extra}</p>}
+            {h.extra && verbose && <p className="state-extra">{h.extra}</p>}
           </div>
         </div>
         {h.controllable && <Control paused={h.paused} />}

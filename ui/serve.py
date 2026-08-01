@@ -133,6 +133,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     f"from local operator console (strategy: {strategy})"
                 )
             }
+        elif strategy_mode := re.fullmatch(
+            r"/operator/strategies/([a-z0-9_]{1,64})/(arm-live|disarm-live)",
+            requested.path,
+        ):
+            strategy, verb = strategy_mode.groups()
+            live = verb == "arm-live"
+            action = f"strategies/{strategy}/mode"
+            payload = {"mode": "live" if live else "paper"}
+            if live:
+                payload["approval"] = "ARM LIVE TRADING"
+            payload["reason"] = (
+                f"{'armed live trading' if live else 'disarmed live trading'} "
+                f"from local operator console (strategy: {strategy})"
+            )
         elif requested.path in ("/operator/pause-all", "/operator/resume"):
             action = requested.path.removeprefix("/operator/")
             verb = "started" if action == "resume" else "stopped"

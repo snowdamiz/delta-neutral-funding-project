@@ -91,3 +91,36 @@ OPERATOR_HMAC_SECRET=... \
 Evidence is append-only and hash-bound. Reusing an identity with different
 contents is rejected. A failed untouched window stays failed; create a later,
 newly frozen version after training changes instead of modifying this one.
+
+## Live execution (default off)
+
+Two independent switches must both be on before a lamport moves; each alone
+does nothing.
+
+1. **Arm** — console: open the Solana wallet-flow strategy and use the
+   two-step "Arm live trading" control. The localhost proxy signs the
+   request and generates the `ARM LIVE TRADING` approval literal itself.
+   Preconditions enforced by the database: an active frozen live config, a
+   non-empty followed cohort, and a started strategy. Stopping the strategy
+   or emptying the cohort disarms automatically; disarm is always accepted.
+2. **Executor** — start the profile with a signer directory containing
+   `id.json` (a standard 64-byte Solana keypair array):
+
+   ```sh
+   SOLANA_SIGNER_KEYPAIR_DIR=/path/to/keydir \
+     docker compose --profile solana-live up -d solana-live-executor
+   ```
+
+   The executor refuses to start without a key, signs only single-signer
+   transactions whose fee payer is its own public key, bounds slippage to
+   the intent's frozen cap, and reports authoritative fills from the
+   confirmed transaction.
+
+While armed, every FILLED paper action mirrors into a live intent bounded by
+the frozen per-trade and daily caps with a 60-second TTL; without the
+executor running, intents expire visibly in the console. A report of
+`CONFIRMATION_TIMEOUT:<signature>` means the outcome is unknown — reconcile
+that signature by hand before rearming.
+
+Kill switch, fastest first: stop the strategy (disarms and halts entries),
+`docker compose stop solana-live-executor`, or remove the signer directory.

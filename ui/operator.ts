@@ -59,6 +59,21 @@ export function operatorRequest(
     }), secret, key);
   }
 
+  // Live arm/disarm: the proxy generates the entire body, including the
+  // approval literal, so the browser can neither weaken nor invent it.
+  const strategyMode = path?.match(
+    /^\/operator\/strategies\/([a-z0-9_]{1,64})\/(arm-live|disarm-live)$/,
+  );
+  if (strategyMode) {
+    const [, strategy, action] = strategyMode;
+    const live = action === "arm-live";
+    return signed(JSON.stringify({
+      mode: live ? "live" : "paper",
+      ...(live ? { approval: "ARM LIVE TRADING" } : {}),
+      reason: `${live ? "armed live trading" : "disarmed live trading"} from local operator console (strategy: ${strategy})`,
+    }), secret, key, `/v1/strategies/${strategy}/mode`);
+  }
+
   const action =
     path === "/operator/pause-all" || path === "/v1/pause-all"
       ? "pause-all"
@@ -74,9 +89,10 @@ export function operatorRequest(
   return signed(body, secret, key);
 }
 
-function signed(body: string, secret: string, key: string) {
+function signed(body: string, secret: string, key: string, forwardPath?: string) {
   return {
     body,
+    ...(forwardPath === undefined ? {} : { forwardPath }),
     headers: {
       "content-type": "application/json",
       "content-length": Buffer.byteLength(body).toString(),

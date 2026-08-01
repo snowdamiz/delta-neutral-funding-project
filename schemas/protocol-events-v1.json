@@ -16,47 +16,47 @@
     "payload"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "eventId": { "type": "string", "minLength": 1 },
-    "eventType": { "enum": ["MarketSnapshot", "FundingSettlement", "FundingObservation", "WalletObservation"] },
-    "source": { "type": "string", "minLength": 1 },
-    "observedAtMs": { "$ref": "#/$defs/unsignedInteger" },
-    "sourceSlot": { "$ref": "#/$defs/unsignedInteger" },
-    "sourceSequence": { "type": "string", "minLength": 1 },
-    "idempotencyKey": { "type": "string", "minLength": 1 },
-    "rawPayloadHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "payload": { "type": "object" }
-  },
-  "allOf": [
-    {
-      "oneOf": [
-        {
-          "properties": {
-            "eventType": { "const": "MarketSnapshot" },
-            "payload": { "$ref": "#/$defs/marketSnapshotPayload" }
-          }
-        },
-        {
-          "properties": {
-            "eventType": { "const": "FundingSettlement" },
-            "payload": { "$ref": "#/$defs/fundingSettlementPayload" }
-          }
-        },
-        {
-          "properties": {
-            "eventType": { "const": "FundingObservation" },
-            "payload": { "$ref": "#/$defs/fundingObservationPayload" }
-          }
-        },
-        {
-          "properties": {
-            "eventType": { "const": "WalletObservation" },
-            "payload": { "$ref": "#/$defs/walletObservationPayload" }
-          }
-        }
+    "schemaVersion": {
+      "const": 1
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "eventType": {
+      "enum": [
+        "MarketSnapshot",
+        "FundingSettlement",
+        "FundingObservation"
       ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observedAtMs": {
+      "$ref": "#/$defs/unsignedInteger"
+    },
+    "sourceSlot": {
+      "$ref": "#/$defs/unsignedInteger"
+    },
+    "sourceSequence": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rawPayloadHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "payload": {
+      "type": "object"
     }
-  ],
+  },
+  "allOf": [],
   "additionalProperties": true,
   "$defs": {
     "unsignedInteger": {
@@ -105,39 +105,100 @@
         "unknownRatePpm"
       ],
       "properties": {
-        "epoch": { "$ref": "#/$defs/unsignedInteger" },
-        "oracleStatus": { "enum": ["valid", "invalid"] },
-        "totalPoolLamports": { "$ref": "#/$defs/unsignedInteger" },
-        "supplyAtoms": { "$ref": "#/$defs/unsignedInteger" },
-        "jitosolAtoms": { "$ref": "#/$defs/unsignedInteger" },
-        "notionalUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "shortReceiptPpm": { "$ref": "#/$defs/signedRatePpm" },
-        "rewardRatePpmPerHour": { "$ref": "#/$defs/unsignedInteger" },
-        "solPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "priorNavLamports": { "$ref": "#/$defs/unsignedInteger" },
-        "costsUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "riskHaircutUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "collateralUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
+        "epoch": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "oracleStatus": {
+          "enum": [
+            "valid",
+            "invalid"
+          ]
+        },
+        "totalPoolLamports": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "supplyAtoms": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "jitosolAtoms": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "notionalUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "shortReceiptPpm": {
+          "$ref": "#/$defs/signedRatePpm"
+        },
+        "rewardRatePpmPerHour": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "solPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "priorNavLamports": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "costsUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "riskHaircutUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "collateralUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
         "maintenanceRequirementUsdMicros": {
           "type": "string",
           "pattern": "^[1-9][0-9]*$"
         },
-        "liquidationDistanceBps": { "$ref": "#/$defs/unsignedInteger" },
-        "solSpotBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "solSpotAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "jitosolSpotBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "jitosolSpotAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "perpBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "perpAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "solExitDepthLamports": { "$ref": "#/$defs/unsignedInteger" },
-        "jitosolExitDepthLamports": { "$ref": "#/$defs/unsignedInteger" },
-        "perpExitDepthLamports": { "$ref": "#/$defs/unsignedInteger" },
-        "fillRatePpm": { "$ref": "#/$defs/ratePpm" },
-        "slippagePpm": { "$ref": "#/$defs/ratePpm" },
-        "spotFeePpm": { "$ref": "#/$defs/ratePpm" },
-        "perpFeePpm": { "$ref": "#/$defs/ratePpm" },
-        "rejectRatePpm": { "$ref": "#/$defs/ratePpm" },
-        "unknownRatePpm": { "$ref": "#/$defs/ratePpm" }
+        "liquidationDistanceBps": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "solSpotBidPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "solSpotAskPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "jitosolSpotBidPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "jitosolSpotAskPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "perpBidPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "perpAskPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "solExitDepthLamports": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "jitosolExitDepthLamports": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "perpExitDepthLamports": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "fillRatePpm": {
+          "$ref": "#/$defs/ratePpm"
+        },
+        "slippagePpm": {
+          "$ref": "#/$defs/ratePpm"
+        },
+        "spotFeePpm": {
+          "$ref": "#/$defs/ratePpm"
+        },
+        "perpFeePpm": {
+          "$ref": "#/$defs/ratePpm"
+        },
+        "rejectRatePpm": {
+          "$ref": "#/$defs/ratePpm"
+        },
+        "unknownRatePpm": {
+          "$ref": "#/$defs/ratePpm"
+        }
       },
       "additionalProperties": true
     },
@@ -150,104 +211,19 @@
         "solPriceUsdMicros"
       ],
       "properties": {
-        "venuePaymentId": { "type": "string", "minLength": 1 },
-        "effectiveAtMs": { "$ref": "#/$defs/unsignedInteger" },
-        "realizedShortRatePpm": { "$ref": "#/$defs/signedRatePpm" },
+        "venuePaymentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effectiveAtMs": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "realizedShortRatePpm": {
+          "$ref": "#/$defs/signedRatePpm"
+        },
         "solPriceUsdMicros": {
           "type": "string",
           "pattern": "^[1-9][0-9]*$"
-        }
-      },
-      "additionalProperties": true
-    },
-    "walletObservationPayload": {
-      "type": "object",
-      "required": [
-        "wallet",
-        "sourceObservedAtMs",
-        "accountValueUsdMicros",
-        "totalNotionalUsdMicros",
-        "apiLatencyMs",
-        "positions",
-        "fills"
-      ],
-      "properties": {
-        "wallet": { "type": "string", "pattern": "^0x[0-9a-f]{40}$" },
-        "sourceObservedAtMs": { "$ref": "#/$defs/unsignedInteger" },
-        "accountValueUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "totalNotionalUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "apiLatencyMs": { "$ref": "#/$defs/unsignedInteger" },
-        "positions": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "asset",
-              "side",
-              "quantityAtoms",
-              "entryPriceUsdMicros",
-              "markPriceUsdMicros",
-              "leveragePpm",
-              "unrealizedPnlUsdMicros"
-            ],
-            "properties": {
-              "asset": { "type": "string", "pattern": "^[A-Z0-9:_-]{1,64}$" },
-              "side": { "enum": ["long", "short"] },
-              "quantityAtoms": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-              "entryPriceUsdMicros": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-              "markPriceUsdMicros": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-              "leveragePpm": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-              "unrealizedPnlUsdMicros": {
-                "type": "string",
-                "pattern": "^(0|-?[1-9][0-9]*)$"
-              }
-            },
-            "additionalProperties": true
-          }
-        },
-        "fills": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "fillId",
-              "asset",
-              "side",
-              "direction",
-              "quantityAtoms",
-              "leaderPriceUsdMicros",
-              "copyBidPriceUsdMicros",
-              "copyAskPriceUsdMicros",
-              "closedPnlUsdMicros",
-              "feeUsdMicros",
-              "filledAtMs",
-              "copyObservedAtMs",
-              "copyLatencyMs",
-              "copyBidDepthQualified",
-              "copyAskDepthQualified"
-            ],
-            "properties": {
-              "fillId": { "type": "string", "minLength": 1 },
-              "asset": { "type": "string", "pattern": "^[A-Z0-9:_-]{1,64}$" },
-              "side": { "enum": ["buy", "sell"] },
-              "direction": { "enum": ["open", "increase", "reduce", "close", "flip"] },
-              "quantityAtoms": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-              "leaderPriceUsdMicros": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-              "copyBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-              "copyAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-              "closedPnlUsdMicros": {
-                "type": "string",
-                "pattern": "^(0|-?[1-9][0-9]*)$"
-              },
-              "feeUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-              "filledAtMs": { "$ref": "#/$defs/unsignedInteger" },
-              "copyObservedAtMs": { "$ref": "#/$defs/unsignedInteger" },
-              "copyLatencyMs": { "$ref": "#/$defs/unsignedInteger" },
-              "copyBidDepthQualified": { "type": "boolean" },
-              "copyAskDepthQualified": { "type": "boolean" }
-            },
-            "additionalProperties": true
-          }
         }
       },
       "additionalProperties": true
@@ -284,56 +260,135 @@
         "perpAskPriceUsdMicros",
         "spotExitDepthAtoms",
         "perpExitDepthAtoms",
-        "depthQualified",
-        "marginStatus",
-        "maintenanceMarginPpm"
+        "depthQualified"
       ],
       "properties": {
-        "scanId": { "type": "string", "minLength": 1 },
-        "scanIndex": { "$ref": "#/$defs/unsignedInteger" },
-        "scanSize": { "type": "string", "pattern": "^[1-9][0-9]*$" },
-        "venue": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
-        "asset": { "type": "string", "pattern": "^[A-Z0-9]+$" },
-        "instrument": { "type": "string", "pattern": "^[A-Z0-9]+-PERP$" },
-        "sourceObservedAtMs": { "$ref": "#/$defs/unsignedInteger" },
-        "sourceStatus": { "enum": ["valid", "invalid"] },
-        "borrowVenue": { "type": "string", "minLength": 1 },
-        "borrowMarket": { "type": "string", "minLength": 1 },
-        "borrowReserve": { "type": "string", "minLength": 1 },
-        "borrowMint": { "type": "string", "minLength": 1 },
-        "borrowSourceObservedAtMs": { "$ref": "#/$defs/unsignedInteger" },
-        "borrowSourceStatus": { "enum": ["valid", "invalid", "unavailable"] },
-        "borrowRatePpmPerHour": { "$ref": "#/$defs/ratePpm" },
-        "borrowAvailableUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "borrowUtilizationPpm": { "$ref": "#/$defs/ratePpm" },
-        "fundingRatePpmPerHour": { "$ref": "#/$defs/signedRatePpm" },
+        "scanId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scanIndex": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "scanSize": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "venue": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "asset": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]+$"
+        },
+        "instrument": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]+-PERP$"
+        },
+        "sourceObservedAtMs": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "sourceStatus": {
+          "enum": [
+            "valid",
+            "invalid"
+          ]
+        },
+        "borrowVenue": {
+          "type": "string",
+          "minLength": 1
+        },
+        "borrowMarket": {
+          "type": "string",
+          "minLength": 1
+        },
+        "borrowReserve": {
+          "type": "string",
+          "minLength": 1
+        },
+        "borrowMint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "borrowSourceObservedAtMs": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "borrowSourceStatus": {
+          "enum": [
+            "valid",
+            "invalid",
+            "unavailable"
+          ]
+        },
+        "borrowRatePpmPerHour": {
+          "$ref": "#/$defs/ratePpm"
+        },
+        "borrowAvailableUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "borrowUtilizationPpm": {
+          "$ref": "#/$defs/ratePpm"
+        },
+        "fundingRatePpmPerHour": {
+          "$ref": "#/$defs/signedRatePpm"
+        },
         "fundingHistory": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/fundingRateSample" }
+          "items": {
+            "$ref": "#/$defs/fundingRateSample"
+          }
         },
-        "realizedFundingRatePpm": { "$ref": "#/$defs/signedRatePpm" },
-        "realizedFundingAtMs": { "$ref": "#/$defs/unsignedInteger" },
-        "markPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "openInterestUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "spotBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "spotAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "perpBidPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "perpAskPriceUsdMicros": { "$ref": "#/$defs/unsignedInteger" },
-        "spotExitDepthAtoms": { "$ref": "#/$defs/unsignedInteger" },
-        "perpExitDepthAtoms": { "$ref": "#/$defs/unsignedInteger" },
-        "depthQualified": { "type": "boolean" },
-        "marginStatus": { "enum": ["valid", "unavailable"] },
-        "maintenanceMarginPpm": { "$ref": "#/$defs/ratePpm" }
+        "realizedFundingRatePpm": {
+          "$ref": "#/$defs/signedRatePpm"
+        },
+        "realizedFundingAtMs": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "markPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "openInterestUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "spotBidPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "spotAskPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "perpBidPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "perpAskPriceUsdMicros": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "spotExitDepthAtoms": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "perpExitDepthAtoms": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "depthQualified": {
+          "type": "boolean"
+        }
       },
       "additionalProperties": true
     },
     "fundingRateSample": {
       "type": "object",
-      "required": ["observedAtMs", "ratePpm"],
+      "required": [
+        "observedAtMs",
+        "ratePpm"
+      ],
       "properties": {
-        "observedAtMs": { "$ref": "#/$defs/unsignedInteger" },
-        "ratePpm": { "$ref": "#/$defs/signedRatePpm" }
+        "observedAtMs": {
+          "$ref": "#/$defs/unsignedInteger"
+        },
+        "ratePpm": {
+          "$ref": "#/$defs/signedRatePpm"
+        }
       },
       "additionalProperties": false
     }

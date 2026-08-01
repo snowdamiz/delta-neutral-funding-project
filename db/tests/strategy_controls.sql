@@ -6,24 +6,7 @@ DECLARE
   v_result jsonb;
 BEGIN
   UPDATE strategy_controls SET enabled = false;
-  DELETE FROM wallet_tracking_wallets;
   DELETE FROM solana_followed_wallets;
-
-  BEGIN
-    PERFORM apply_strategy_control(
-      'hyperliquid_wallet_mirror',
-      true,
-      'strategy-control:missing-hyperliquid-wallet',
-      'must reject an empty cohort',
-      repeat('e', 64)
-    );
-    RAISE EXCEPTION 'Hyperliquid wallet strategy started without wallets';
-  EXCEPTION
-    WHEN raise_exception THEN
-      IF SQLERRM <> 'strategy requires at least one configured Hyperliquid wallet' THEN
-        RAISE;
-      END IF;
-  END;
 
   BEGIN
     PERFORM apply_strategy_control(
@@ -40,21 +23,6 @@ BEGIN
         RAISE;
       END IF;
   END;
-
-  INSERT INTO wallet_tracking_wallets(wallet, ordinal)
-  VALUES ('0x0000000000000000000000000000000000000000', 0);
-  PERFORM apply_strategy_control(
-    'hyperliquid_wallet_mirror',
-    true,
-    'strategy-control:configured-hyperliquid-wallet',
-    'start with a configured cohort',
-    repeat('1', 64)
-  );
-  DELETE FROM wallet_tracking_wallets;
-  UPDATE wallet_tracking_config_state SET version = version + 1 WHERE singleton;
-  IF strategy_enabled('hyperliquid_wallet_mirror') THEN
-    RAISE EXCEPTION 'Hyperliquid wallet strategy remained enabled with an empty cohort';
-  END IF;
 
   INSERT INTO solana_followed_wallets(wallet, ordinal)
   VALUES ('11111111111111111111111111111111', 0);
@@ -77,30 +45,28 @@ BEGIN
        pg_get_functiondef('run_reverse_carry_paper_scan'::regproc)) = 0
      OR position('strategy_enabled(''jitosol_nav_discount'')' IN
        pg_get_functiondef('run_nav_discount_paper_cycle'::regproc)) = 0
-     OR position('strategy_enabled(''cross_venue_funding'')' IN
-       pg_get_functiondef('run_cross_venue_paper_scan'::regproc)) = 0
-     OR position('strategy_enabled(v_variant)' IN
-       pg_get_functiondef('process_wallet_paper_fill'::regproc)) = 0 THEN
+     OR position('strategy_enabled(''solana_wallet_flow_quant'')' IN
+       pg_get_functiondef('plan_solana_paper_action'::regproc)) = 0 THEN
     RAISE EXCEPTION 'one or more strategy entry gates are missing';
   END IF;
 
   v_result := apply_strategy_control(
-    'jitosol_carry',
+    'cross_asset_funding',
     true,
     'strategy-control:start',
     'started from contract test',
     repeat('a', 64)
   );
   IF v_result->>'status' <> 'applied'
-     OR v_result->>'strategy' <> 'jitosol_carry'
+     OR v_result->>'strategy' <> 'cross_asset_funding'
      OR NOT (v_result->>'enabled')::boolean
-     OR NOT strategy_enabled('jitosol_carry')
-     OR strategy_enabled('sol_control') THEN
+     OR NOT strategy_enabled('cross_asset_funding')
+     OR strategy_enabled('negative_funding_reverse') THEN
     RAISE EXCEPTION 'strategy start was not isolated: %', v_result;
   END IF;
 
   v_result := apply_strategy_control(
-    'jitosol_carry',
+    'cross_asset_funding',
     true,
     'strategy-control:start',
     'started from contract test',
@@ -112,7 +78,7 @@ BEGIN
 
   BEGIN
     PERFORM apply_strategy_control(
-      'jitosol_carry',
+      'cross_asset_funding',
       false,
       'strategy-control:start',
       'conflicting retry',
@@ -127,25 +93,25 @@ BEGIN
   END;
 
   v_result := apply_strategy_control(
-    'jitosol_carry',
+    'cross_asset_funding',
     false,
     'strategy-control:stop',
     'stopped from contract test',
     repeat('c', 64)
   );
-  IF (v_result->>'enabled')::boolean OR strategy_enabled('jitosol_carry') THEN
+  IF (v_result->>'enabled')::boolean OR strategy_enabled('cross_asset_funding') THEN
     RAISE EXCEPTION 'strategy stop did not persist: %', v_result;
   END IF;
 
   BEGIN
     PERFORM apply_strategy_control(
-      'not_a_strategy',
+      'jitosol_carry',
       true,
-      'strategy-control:invalid',
-      'invalid target',
+      'strategy-control:retired',
+      'retired strategies stay unknown',
       repeat('d', 64)
     );
-    RAISE EXCEPTION 'unknown strategy was accepted';
+    RAISE EXCEPTION 'retired strategy was accepted';
   EXCEPTION
     WHEN raise_exception THEN
       IF SQLERRM <> 'unknown strategy' THEN

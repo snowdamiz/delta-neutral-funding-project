@@ -88,8 +88,6 @@ export type FundingObservationPayload = {
   spotExitDepthAtoms: string;
   perpExitDepthAtoms: string;
   depthQualified: boolean;
-  marginStatus: "valid" | "unavailable";
-  maintenanceMarginPpm: string;
   borrowVenue: string;
   borrowMarket: string;
   borrowReserve: string;
@@ -114,62 +112,10 @@ export type FundingObservationEvent = {
   payload: FundingObservationPayload;
 };
 
-export type WalletPosition = {
-  asset: string;
-  side: "long" | "short";
-  quantityAtoms: string;
-  entryPriceUsdMicros: string;
-  markPriceUsdMicros: string;
-  leveragePpm: string;
-  unrealizedPnlUsdMicros: string;
-};
-
-export type WalletFill = {
-  fillId: string;
-  asset: string;
-  side: "buy" | "sell";
-  direction: "open" | "increase" | "reduce" | "close" | "flip";
-  quantityAtoms: string;
-  leaderPriceUsdMicros: string;
-  copyBidPriceUsdMicros: string;
-  copyAskPriceUsdMicros: string;
-  closedPnlUsdMicros: string;
-  feeUsdMicros: string;
-  filledAtMs: string;
-  copyObservedAtMs: string;
-  copyLatencyMs: string;
-  copyBidDepthQualified: boolean;
-  copyAskDepthQualified: boolean;
-};
-
-export type WalletObservationPayload = {
-  wallet: string;
-  sourceObservedAtMs: string;
-  accountValueUsdMicros: string;
-  totalNotionalUsdMicros: string;
-  apiLatencyMs: string;
-  positions: WalletPosition[];
-  fills: WalletFill[];
-};
-
-export type WalletObservationEvent = {
-  schemaVersion: 1;
-  eventId: string;
-  eventType: "WalletObservation";
-  source: string;
-  observedAtMs: string;
-  sourceSlot: string;
-  sourceSequence: string;
-  idempotencyKey: string;
-  rawPayloadHash: string;
-  payload: WalletObservationPayload;
-};
-
 export type ProtocolEvent =
   | MarketSnapshotEvent
   | FundingSettlementEvent
-  | FundingObservationEvent
-  | WalletObservationEvent;
+  | FundingObservationEvent;
 
 const unsignedInteger = /^(0|[1-9][0-9]*)$/;
 const signedInteger = /^(0|-?[1-9][0-9]*)$/;
@@ -254,111 +200,6 @@ export function validateEvent(value: unknown): ProtocolEvent {
   }
 
   const payload = record(event.payload, "payload");
-  if (event.eventType === "WalletObservation") {
-    const wallet = string(payload.wallet, "wallet");
-    if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
-      throw new Error("wallet must be a lowercase 0x address");
-    }
-    for (const field of [
-      "sourceObservedAtMs",
-      "accountValueUsdMicros",
-      "totalNotionalUsdMicros",
-      "apiLatencyMs",
-    ] as const) {
-      const raw = string(payload[field], field);
-      if (!unsignedInteger.test(raw)) {
-        throw new Error(`${field} must be an unsigned integer string`);
-      }
-    }
-    if (BigInt(payload.sourceObservedAtMs as string) > BigInt(event.observedAtMs as string)) {
-      throw new Error("sourceObservedAtMs cannot be in the future");
-    }
-    if (!Array.isArray(payload.positions) || !Array.isArray(payload.fills)) {
-      throw new Error("positions and fills must be arrays");
-    }
-    for (const [index, value] of payload.positions.entries()) {
-      const position = record(value, `positions[${index}]`);
-      if (!/^[A-Z0-9:_-]{1,64}$/.test(string(position.asset, "asset"))) {
-        throw new Error("position asset must be an uppercase identifier");
-      }
-      if (position.side !== "long" && position.side !== "short") {
-        throw new Error("position side must be long or short");
-      }
-      for (const field of [
-        "quantityAtoms",
-        "entryPriceUsdMicros",
-        "markPriceUsdMicros",
-        "leveragePpm",
-      ] as const) {
-        const raw = string(position[field], field);
-        if (!unsignedInteger.test(raw) || BigInt(raw) === 0n) {
-          throw new Error(`${field} must be a positive integer string`);
-        }
-      }
-      const pnl = string(position.unrealizedPnlUsdMicros, "unrealizedPnlUsdMicros");
-      if (!signedInteger.test(pnl)) {
-        throw new Error("unrealizedPnlUsdMicros must be an integer string");
-      }
-    }
-    for (const [index, value] of payload.fills.entries()) {
-      const fill = record(value, `fills[${index}]`);
-      string(fill.fillId, "fillId");
-      if (!/^[A-Z0-9:_-]{1,64}$/.test(string(fill.asset, "asset"))) {
-        throw new Error("fill asset must be an uppercase identifier");
-      }
-      if (fill.side !== "buy" && fill.side !== "sell") {
-        throw new Error("fill side must be buy or sell");
-      }
-      if (!["open", "increase", "reduce", "close", "flip"].includes(fill.direction as string)) {
-        throw new Error("unsupported fill direction");
-      }
-      for (const field of [
-        "quantityAtoms",
-        "leaderPriceUsdMicros",
-        "copyBidPriceUsdMicros",
-        "copyAskPriceUsdMicros",
-        "filledAtMs",
-        "copyObservedAtMs",
-        "copyLatencyMs",
-      ] as const) {
-        const raw = string(fill[field], field);
-        if (!unsignedInteger.test(raw)) {
-          throw new Error(`${field} must be an unsigned integer string`);
-        }
-      }
-      for (const field of ["quantityAtoms", "leaderPriceUsdMicros"] as const) {
-        if (BigInt(fill[field] as string) === 0n) {
-          throw new Error(`${field} must be positive`);
-        }
-      }
-      for (const field of ["closedPnlUsdMicros", "feeUsdMicros"] as const) {
-        const raw = string(fill[field], field);
-        const pattern = field === "closedPnlUsdMicros" ? signedInteger : unsignedInteger;
-        if (!pattern.test(raw)) throw new Error(`${field} must be an integer string`);
-      }
-      if (
-        BigInt(fill.filledAtMs as string) > BigInt(event.observedAtMs as string) ||
-        BigInt(fill.copyObservedAtMs as string) !== BigInt(event.observedAtMs as string)
-      ) {
-        throw new Error("fill timing is not bounded by observation time");
-      }
-      if (
-        typeof fill.copyBidDepthQualified !== "boolean" ||
-        typeof fill.copyAskDepthQualified !== "boolean"
-      ) {
-        throw new Error("copy depth qualification must be boolean");
-      }
-      if (
-        (fill.copyBidDepthQualified &&
-          BigInt(fill.copyBidPriceUsdMicros as string) === 0n) ||
-        (fill.copyAskDepthQualified &&
-          BigInt(fill.copyAskPriceUsdMicros as string) === 0n)
-      ) {
-        throw new Error("depth-qualified fill requires an executable side price");
-      }
-    }
-    return value as WalletObservationEvent;
-  }
   if (event.eventType === "FundingObservation") {
     const scanId = string(payload.scanId, "scanId");
     const venue = string(payload.venue, "venue");
@@ -445,20 +286,6 @@ export function validateEvent(value: unknown): ProtocolEvent {
       throw new Error(
         "realizedFundingRatePpm must be between -1000000 and 1000000",
       );
-    }
-    const marginStatus = string(payload.marginStatus, "marginStatus");
-    const maintenanceMargin = string(
-      payload.maintenanceMarginPpm,
-      "maintenanceMarginPpm",
-    );
-    if (
-      (marginStatus !== "valid" && marginStatus !== "unavailable") ||
-      !unsignedInteger.test(maintenanceMargin) ||
-      BigInt(maintenanceMargin) > 1_000_000n ||
-      (marginStatus === "valid" && BigInt(maintenanceMargin) === 0n) ||
-      (marginStatus === "unavailable" && BigInt(maintenanceMargin) !== 0n)
-    ) {
-      throw new Error("invalid funding margin contract");
     }
     const scanIndex = BigInt(payload.scanIndex as string);
     const scanSize = BigInt(payload.scanSize as string);
@@ -705,8 +532,6 @@ export function buildSyntheticFundingObservation(
     spotExitDepthAtoms: "100000000",
     perpExitDepthAtoms: "100000000",
     depthQualified: true,
-    marginStatus: "valid",
-    maintenanceMarginPpm: "12500",
     borrowVenue: "none",
     borrowMarket: "none",
     borrowReserve: "none",

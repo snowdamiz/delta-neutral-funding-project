@@ -9,7 +9,7 @@ usage() {
     'usage: collector <command> [arguments]' \
     'read: status | capabilities | adapter-status | portfolios | opportunities | pnl | compare | solana-wallet-flow' \
     'control: pause-entries <reason> | pause-all <reason> | resume <reason> | reconcile <reason>' \
-    'paper: exit <portfolio> <reason> --approve-paper | flatten <reason> --approve-paper | paper-reset --initial-usdc <usd> --initial-collateral <usd> --approve-paper-reset' \
+    'paper: flatten <reason> --approve-paper | paper-reset --initial-usdc <usd> --initial-collateral <usd> --approve-paper-reset' \
     'validation: solana-validation-start <request.json> | solana-validation-evidence <evidence.json>' \
     'replay: replay --bundle <path> --config <path>' \
     'proof: solana-read | solana-subscribe | solana-inspect-instruction | solana-inspect-jupiter-build | solana-transaction-proof | solana-transaction-burst' \
@@ -108,32 +108,10 @@ case "$command" in
   portfolios) read_endpoint /v1/portfolios ;;
   opportunities) read_endpoint /v1/opportunities ;;
   pnl) read_endpoint /v1/pnl ;;
-  compare) read_endpoint /v1/pnl/comparison ;;
   solana-wallet-flow) read_endpoint /v1/solana-wallet-flow ;;
   pause-entries | pause-all | resume | reconcile)
     require_reason "${2:-}"
     mutate "$command" "/v1/$command" "$2"
-    ;;
-  exit)
-    test "${4:-}" = '--approve-paper' || {
-      printf 'paper exit requires --approve-paper\n' >&2
-      exit 2
-    }
-    require_reason "${3:-}"
-    case "${2:-}" in
-      sol-control) portfolio=local-sol-control ;;
-      jitosol-carry) portfolio=local-jitosol-carry ;;
-      sync-sol-control) portfolio=local-sync-sol-control ;;
-      sync-jitosol-carry) portfolio=local-sync-jitosol-carry ;;
-      local-sol-control | local-jitosol-carry | local-sync-sol-control | local-sync-jitosol-carry)
-        portfolio=$2
-        ;;
-      *)
-        printf 'unknown paper portfolio\n' >&2
-        exit 2
-        ;;
-    esac
-    mutate exit "/v1/portfolios/$portfolio/exit" "$3"
     ;;
   flatten)
     test "${3:-}" = '--approve-paper' || {
@@ -194,26 +172,6 @@ case "$command" in
       exit 2
     }
     exec "$project_dir/scripts/check-toolchain.sh"
-    ;;
-  replay)
-    test "${2:-}" = '--bundle' && test "${4:-}" = '--config' && test -z "${6:-}" || {
-      usage >&2
-      exit 2
-    }
-    bundle_path=$(absolute_file "${3:-}")
-    config_path=$(absolute_file "${5:-}")
-    image=$(collector_image)
-    docker run --rm \
-      --network none \
-      --read-only \
-      --cap-drop ALL \
-      --security-opt no-new-privileges \
-      --volume "$bundle_path:/replay/bundle.jsonl:ro" \
-      --volume "$config_path:/replay/config.json:ro" \
-      "$image" replay \
-      --bundle /replay/bundle.jsonl \
-      --config /replay/config.json |
-      jq .
     ;;
   solana-read)
     test -z "${2:-}" || {

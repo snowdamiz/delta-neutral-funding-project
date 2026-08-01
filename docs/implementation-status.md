@@ -1,39 +1,71 @@
 # Implementation status
 
-| Milestone | State | Evidence |
+## 2026-08-01 refocus
+
+The platform was refocused on the strategies that can actually reach real
+money at the operator's capital and jurisdiction. Four strategies were
+retired and their decision logic, registrations, routes, and UI removed
+(historical evidence tables are preserved; schema 53):
+
+| Retired | Why |
+|---|---|
+| `sol_control` / `jitosol_carry` (Phoenix SOL carry pair) | Phoenix's 2026-07-27 terms bar US/CA/UK persons; the trade opened zero of 1,722 recorded gates and its best case was ~$180/year |
+| `cross_venue_funding` | Requires two live perp venues; Phoenix is read-only and restricted, Hyperliquid is restricted, Drift is paused mid-reboot |
+| `hyperliquid_wallet_flow` / `_mirror` / `_fade` | The venue is closed to the operator, so no mode could ever monetize |
+
+The MarketSnapshot ingest (Phoenix + JitoSOL + Jupiter capture) survives:
+the cross-asset scanner uses the Phoenix funding row as its SOL venue and
+the NAV-discount strategy consumes the JitoSOL snapshot and the epoch-aware
+direct-unstake counterfactual ledger. FundingSettlement events now feed only
+that counterfactual ledger.
+
+## Registered strategies
+
+| Strategy | State | Evidence |
 |---|---|---|
-| 0. Contracts and qualification | Complete for paper scope | Phoenix is selected for read-only paper data, JitoSOL identities and mechanics are documented, schema v1 and strategy contracts are frozen, and every required Mesh capability has a probe or explicit bridge/defer decision |
-| 1. Financial correctness and Mesh slice | Complete | Checked fixed-point math, cross-boundary parsers, native Solana read and transaction-inspection packages, runtime telemetry, tests, and a compiled collector candidate are pinned to Mesh `bea7d21` |
-| 2. Production-like Mesh foundation | Complete | Local Docker services, generation-fenced writer acquisition and renewal with fail-closed expiry and graceful release, accepted-request drain, database-authoritative startup reconciliation, pre-allocation HTTP request limits, bounded-delivery overload/concurrency and GC probes, runtime-native and DB-backed bounded-cardinality metrics, Prometheus-tested safety alerts, twelve Grafana panels, health, structured logs, database pooling, memory/PID caps, restart policies, and bounded local logs are present |
-| 3. Read-only adapter and recorder | Complete for paper scope | HMAC-authenticated synthetic and keyless Phoenix/Solana/Jupiter paper captures are normalized to integer atoms with TLS-only remote endpoints, a pinned Phoenix SOL market, size-tiered maintenance at the adverse perp price, ordered provider failover, coherent-slot checks, idempotent funding records, gap resnapshot, and independent 1×/2× exact-size quote ladders; credentialed access remains a live gate |
-| 4. Paper broker and accounting | Complete | Independent and synchronized entries, fills, rehedging, exits, realized multi-book funding, ledger-backed JitoSOL valuation, and a separate epoch-aware direct-unstake counterfactual with actual cooldown funding are implemented |
-| 5. State machines, opportunity, and risk | Complete for paper scope | Fail-closed lifecycles, durable per-snapshot risk decisions, source-gap/staleness and authoritative margin/liquidation breakers, verified startup/operator reconciliation, authenticated controls, durable exits, emergency flattening, an atomic fail-closed paper reset, and a guarded CLI are implemented |
-| 6. Replay and differential validation | Complete for local deterministic scope | The exact Docker adoption gate covers clean Git/Mesh pins, generation-fenced lease-expiry rehearsal, commit-qualified rollback tags, generated parser mutations, bounded-delivery/concurrency/GC/supervisor probes, adapter tests, Rust tests/Clippy, shared vectors, six exact replay traces including doubled execution costs, attested SBOMs, fixed high/critical image scans, and native-Mesh/adapter JitoSOL NAV comparison; elapsed calibration remains milestone 7 evidence |
-| 7. 30-day paper soak | Corrected release restart required | The schema-28 gap failure and schema-31 run beginning at `1785193575453` remain preserved. The latter exposed that Phoenix's 50% maintenance factor had been applied directly to notional instead of tiered initial margin, so it cannot qualify the corrected model. A new forward-timed run must begin only after project `2b90471` or its verified descendant is frozen |
-| 8. Shadow and P1 Mesh expansion | In progress | `mesh-solana` 0.2 now builds and inspects legacy/v0/ALT messages, recent blockhash requests, compute-budget and SPL/ATA instructions, unsigned simulation requests, and simulation responses; the networkless collector proof compiles its high-level instructions rather than assembling account indexes and exposes no signing/submission path. Strict simulation-only SOL spot, JitoSOL spot, and SOL-perp fixtures pass the independent Rust policy dry-run, which binds market/mint/leg/variant identities and verifies account-delta direction and atomic bounds. Native JitoSOL read/WSS proofs remain green, and all six replay bundles pass the exact candidate/prior rollback rehearsal. Credentialed exact Jupiter/perp construction, live RPC/venue differential simulation, sustained feed soak, and authoritative calibration remain gated |
-| 9. Locked executor | Gated before live integration | The independent Rust shadow policy revalidates canonical intents, command identity, allowlists, notional/price/fee/compute caps, simulation deltas, its kill switch, and signer isolation; remote signer and submission paths are deliberately absent pending soak, operator, and security gates |
-| 10. Live canary | Not approved | Requires every go-live gate and explicit operator approval |
+| `solana_wallet_flow_quant` (centerpiece) | v2 implemented; frozen 90-day validation not started | Schema 50 replaces the v1 broker's amputated exit path (15-minute hard stop, no profit-taking, exit-on-migration, exit-on-one-bad-print) with a recoup-then-ride engine: $100 positions, up to 3 slots, take-profit ladder that recoups cost at 2×, trailing stop on the executable quote's high-water mark, hard stop-loss, flat-only time stop, debounced flow-collapse and no-liquidity exits, and hold-through-migration with the crossing recorded. Schema 51 adds wallet discovery: every candidate snapshot persists its earliest unlinked buyers, and wallets repeatedly early into mints that later ran are nominated in the read model — promotion is the existing audited cohort mutation. Schema 52 adds default-off live execution (below). `db/tests/solana_paper_broker.sql`, `wallet_discovery.sql`, `solana_live_mode.sql`, adapter and UI tests are executable evidence |
+| `cross_asset_funding` | Implemented; 30-day paper gate not yet passed | Hourly Hyperliquid all-perp capture plus the Phoenix SOL row; schema 33 gates on 24h averages, clean history, and 2× exit depth. Live execution requires a US-accessible perp venue that does not currently exist |
+| `negative_funding_reverse` | Implemented; paper gate not yet passed | Kamino borrow economics against deeply negative funding; the borrow-rate spike breaker exits immediately. Same live-venue constraint as the scanner |
+| `jitosol_nav_discount` | Implemented; 30-day paper gate not yet passed | Schema 35 gates each JitoSOL snapshot on executable ask vs protocol NAV net of all costs; direct cycles reuse the epoch-aware unstake ledger. The only carry-family strategy whose venues (Jupiter, the Jito stake pool) are accessible to the operator |
 
-Expansion roadmap (`strategy-roadmap.md`) phases are tracked separately:
+Benchmark declarations were removed with `sol_control`; strategies stand on
+their own recorded net. The synchronized comparison books ended with it, and
+the surviving scanners' synchronized gates were patched out in schema 53.
 
-| Phase | State | Evidence |
-|---|---|---|
-| 0. Multi-strategy operator console | Complete | `GET /v1/strategies` is the collector's registry — identity, family, legs, declared benchmark, mode, control scope, and a run state joined from the portfolios each strategy owns. The console enumerates no strategy: the closed `Variant` union is gone, identity and accent come from catalog order, benchmark comparison is computed from `/v1/pnl` paired through `/v1/portfolios`, and detail views are the existing sections fed a narrowed snapshot. Verified by registering a synthetic third strategy in a dev build — it rendered card, chips, legs, benchmark, and empty evidence with no console change — and by `scripts/check-read-api.sh`, `scripts/check-operator-api.sh`, and `npm test`. Read-only addition: no migration, no schema bump, no strategy-logic change |
-| 1. Cross-asset funding scanner | Implemented; 30-day paper gate not yet passed | Hourly Hyperliquid all-perp capture uses the v1 per-asset event contract; qualified spot/perp books record exact adverse prices and 2× exit depth, and the existing Phoenix SOL capture contributes independent realized funding, perp depth, and tiered maintenance evidence for cross-venue paper evaluation. Schema 33 persists current and realized funding, 24h averages, EMA, percentile, clean-history state, and gate distance. The registry now includes independent and SOL-controlled cross-asset paper portfolios; only the top eligible market can open after seven clean days, realized prints and modeled costs feed recorded P&L, and the Phase 0 leaderboard renders the ranking. `funding_scanner.sql`, adapter tests, Mesh contract tests, and the read API gate are the executable evidence |
-| 2. Negative-funding reverse carry | Implemented; paper gate not yet passed | Pinned Kamino SOL/JTO reserve metrics add live variable borrow APY, utilization, and available liquidity to each funding observation. Schema 34 ranks deeply negative 24h funding net of borrow and bounded costs, opens independent and SOL-controlled paper portfolios with a borrowed-spot/long-perp book, attributes realized long funding, basis, fees, and borrow interest, and immediately exits on a current borrow-rate/liquidity/utilization breaker. The read API and console expose the borrow economics. `reverse_carry.sql`, adapter/Mesh contract tests, the read API gate, and `kamino-qualification.md` are the executable and qualification evidence |
-| 3. JitoSOL NAV discount arbitrage | Implemented; 30-day paper gate not yet passed | Schema 35 turns each accepted JitoSOL snapshot into independent and SOL-controlled NAV-discount decisions. The gate uses the executable ask, protocol NAV, exact-size depth, margin and source health, compares direct redemption with instant exit after all configured costs, and refuses to let positive funding manufacture a missing discount. Direct cycles reuse the epoch-aware unstake ledger, retain the NAV-equivalent SOL hedge through cooldown, and record realized discount basis separately from actual funding. The strategy registry, positions, opportunities, and P&L read models require no UI-specific branch. `nav_discount.sql`, the Mesh workspace tests/build, and the read API gate are executable evidence |
-| 4. Cross-venue funding arbitrage | Implemented for paper; history and 30-day gates not yet passed | Schema 40 feeds the qualified read-only Phoenix SOL market into the same hourly scan as Hyperliquid, backfills each venue's realized history, and qualifies each perp leg from its own executable depth rather than requiring an unrelated spot route. Schema 41 journals and backfills each realized cross-venue funding payment atomically. Schema 36 ranks the pair, opens equal short/long quantities only after seven clean days and 24 realized prints per venue, charges both-leg costs, records funding once, values mark divergence, and maintains independent margin breakers. Live execution remains unavailable. `cross_venue_funding.sql`, adapter/Mesh tests, and the read API/UI leaderboard are executable evidence |
-| 5. Hyperliquid wallet tracking | Implemented; 60-day paper gate not yet passed | Schema 39 stores the console-configured Hyperliquid wallet cohort and its audited revisions; the adapter reloads it without a restart. Schema 38 indexes positions, leverage, realized fills, fees, and account drawdown, hydrates executable funding markets from authoritative hourly history at startup, and selects the best eligible route rather than blindly selecting raw rank one. Scores use only pre-decision evidence; aggregate-flow, mirror, and fade portfolios record executable-book slippage and measured API latency at locally bounded size. Mode (a) is attached to Phase 1–4 decisions as a shadow filter until its independent gate passes. `/v1/wallets`, `/v1/wallets/config`, and the console expose the cohort, signals, decisions, and an exact 60-day/20-decision verdict that cannot pass without beating both holding SOL and Phase 1 on the pinned drawdown-adjusted return metric. Adapter, database, Mesh contract, and UI tests are executable evidence |
-| 6. Drift keeper and liquidator | Not started | See `strategy-roadmap.md` |
+## Live execution
 
-Live execution is intentionally unavailable. The local deployment has no
-executor service or host-published database, uses segmented networks and
-non-root read-only application containers, and rejects non-paper startup.
-Completing local code does not complete the 30-day soak or authorize a
-transaction.
+The collector remains a paper system: `EXECUTION_MODE` stays `paper`, CI
+still asserts a live-mode boot fails, and the paper broker trades every
+decision regardless of mode. Live trading for `solana_wallet_flow_quant` is
+a default-off mirror with two independent switches:
 
-The effective paper policy is parsed once through a shared strict Mesh contract
-and deterministically fingerprinted. A changed application commit, Mesh commit,
-or policy cannot attach to an existing strategy run or mutate its
-build/comparison metadata. Application and Mesh revisions are compiled into the
-collector rather than accepted from overridable runtime environment variables.
+1. **The arm switch** (`POST /v1/strategies/solana_wallet_flow_quant/mode`)
+   is HMAC-signed, requires the literal approval `ARM LIVE TRADING`, an
+   active frozen live config, a configured cohort, and a started strategy.
+   Stopping the strategy or emptying the cohort disarms automatically.
+   While armed, every FILLED paper action enqueues a live intent capped by
+   the frozen per-trade ($250) and daily ($1,000) limits with a 60-second
+   TTL.
+2. **The executor** (`solana-live-executor` compose profile, off by
+   default) holds the only signing key, claims intents over the
+   adapter-HMAC surface, executes them through Jupiter with the configured
+   slippage bound, and reports authoritative fills back. It refuses to
+   start without a keypair, only signs single-signer transactions whose fee
+   payer is its own key, and treats expiry, failed preflight, and expired
+   blockhashes as terminal failures.
+
+Unexecuted intents expire visibly; live fills, positions, spend, and
+failures are all in the read model and console. Confirmation-timeout
+outcomes are reported with the signature for manual reconciliation.
+<!-- ponytail: no automatic live reconciler yet; add one before scaling past
+     the frozen caps. -->
+
+## Validation gates (unchanged in spirit)
+
+The frozen 90-day wallet-flow validation window (schema 46) still requires
+100 eligible entries, a positive lower 95% bootstrap bound, positive net
+after removing the best three trades, drawdown inside the declared limit,
+beating both raw-copy and quant-only controls, separate pump/established
+cohort passes, and all four stress scenarios. The v2 broker keeps exact
+per-position realized P&L semantics, so the gate machinery is unchanged.
+Live caps are intentionally small until that gate passes.

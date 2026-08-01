@@ -4,8 +4,7 @@ COPY adapters/protocol-ts/package.json adapters/protocol-ts/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY adapters/protocol-ts/tsconfig.json ./
 COPY adapters/protocol-ts/src ./src
-COPY tests/vectors /tests/vectors
-RUN CONFORMANCE_VECTOR_DIR=/tests/vectors npm test
+RUN npm test
 
 FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:af85d11ce7ef10172855a6e3649e3e8125b1b9e3ca41849ec2918036f05cb212 AS runtime
 ARG CODE_COMMIT=development

@@ -64,12 +64,12 @@ BEGIN
       "marketAgeSlots":"12",
       "migrationStatus":"pre_migration",
       "routeLabels":["Pump.fun"],
-      "buyInputUsdMicros":"10000000",
-      "buyOutputAtoms":"250000",
-      "sellOutputUsdMicros":"9500000",
+      "buyInputUsdMicros":"100000000",
+      "buyOutputAtoms":"2500000",
+      "sellOutputUsdMicros":"95000000",
       "entryPriceImpactBps":"100",
       "roundTripLossBps":"500",
-      "exitDepthUsdMicros":"100000000",
+      "exitDepthUsdMicros":"1000000000",
       "exitDepthImpactBps":"900",
       "quoteContextSlot":"13",
       "flowCoverageComplete":true,
@@ -103,7 +103,7 @@ BEGIN
   END IF;
   IF (SELECT evidence FROM solana_candidate_decisions
       WHERE snapshot_event_id = 'solana-snapshot-a')
-      <> evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v1') THEN
+      <> evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v2') THEN
     RAISE EXCEPTION 'historical candidate replay changed its decision';
   END IF;
   IF record_solana_candidate_snapshot(v_snapshot)->>'inserted' <> 'false' THEN
@@ -113,7 +113,7 @@ BEGIN
   UPDATE solana_candidate_snapshots
   SET unlinked_buyer_count = 9
   WHERE event_id = 'solana-snapshot-a';
-  v_result := evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v1');
+  v_result := evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v2');
   IF v_result->>'decision' <> 'WATCH'
      OR v_result->>'reason' <> 'WATCH_INDEPENDENT_CONFIRMATION' THEN
     RAISE EXCEPTION 'incomplete confirmation was not watched: %', v_result;
@@ -121,7 +121,7 @@ BEGIN
   UPDATE solana_candidate_snapshots
   SET entry_price_impact_bps = 201
   WHERE event_id = 'solana-snapshot-a';
-  v_result := evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v1');
+  v_result := evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v2');
   IF v_result->>'decision' <> 'REJECT' OR v_result->>'reason' <> 'ENTRY_IMPACT' THEN
     RAISE EXCEPTION 'unsafe impact was not rejected: %', v_result;
   END IF;

@@ -6,8 +6,6 @@ export type AdapterConfig = {
   emitIntervalMs: number;
   fundingIntervalEvents: number;
   fundingScanIntervalMs: number;
-  walletScanIntervalMs: number;
-  walletFillLookbackMs: bigint;
   requestTimeoutMs: number;
   collectorRequestTimeoutMs: number;
   healthPort: number;
@@ -176,16 +174,6 @@ export function loadConfig(
       env,
       "FUNDING_SCAN_INTERVAL_MS",
       3_600_000,
-    ),
-    walletScanIntervalMs: positiveInteger(
-      env,
-      "WALLET_SCAN_INTERVAL_MS",
-      60_000,
-    ),
-    walletFillLookbackMs: unsignedInteger(
-      env,
-      "WALLET_FILL_LOOKBACK_MS",
-      "86400000",
     ),
     requestTimeoutMs: positiveInteger(env, "REQUEST_TIMEOUT_MS", 3000),
     collectorRequestTimeoutMs: positiveInteger(

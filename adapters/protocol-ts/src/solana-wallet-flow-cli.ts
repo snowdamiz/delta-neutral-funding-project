@@ -76,6 +76,23 @@ function cursors(value: unknown): Map<string, SolanaWalletCursor> {
   return result;
 }
 
+function quoteSizes(value: unknown): { positionUsdMicros: bigint; exitDepthMultiple: bigint } {
+  const config = object(object(value, "Solana wallet-flow state").strategyConfig, "strategy config");
+  const values = object(config.values, "strategy config values");
+  if (
+    typeof values.positionUsdMicros !== "string" ||
+    !positive.test(values.positionUsdMicros) ||
+    typeof values.minimumExitDepthMultiple !== "string" ||
+    !positive.test(values.minimumExitDepthMultiple)
+  ) {
+    throw new Error("collector returned invalid Solana strategy quote sizes");
+  }
+  return {
+    positionUsdMicros: BigInt(values.positionUsdMicros),
+    exitDepthMultiple: BigInt(values.minimumExitDepthMultiple),
+  };
+}
+
 function followedWallets(value: unknown): string[] {
   const config = object(object(value, "Solana wallet-flow state").followedWallets, "followed wallets");
   if (
@@ -191,6 +208,7 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
   const wallets = followedWallets(state);
   const durableCursors = cursors(state);
   const openCandidates = openMints(state);
+  const sizes = quoteSizes(state);
   let rpcId = 0;
   const rpc: SolanaRpc = async (method, params) => {
     const response = await fetch(config.rpcUrl, {
@@ -233,6 +251,8 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
           quote: config.quote,
           cohortWallets: wallets,
           sanctionedAddresses: config.sanctionedAddresses,
+          positionUsdMicros: sizes.positionUsdMicros,
+          exitDepthMultiple: sizes.exitDepthMultiple,
         }),
       );
       result.snapshots += 1;
@@ -254,6 +274,8 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
         quote: config.quote,
         cohortWallets: wallets,
         sanctionedAddresses: config.sanctionedAddresses,
+        positionUsdMicros: sizes.positionUsdMicros,
+        exitDepthMultiple: sizes.exitDepthMultiple,
         ...(candidate.paperPositionAtoms === undefined
           ? {}
           : { paperPositionAtoms: candidate.paperPositionAtoms }),

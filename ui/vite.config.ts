@@ -138,6 +138,7 @@ export default defineConfig(({ mode }) => {
                 `console-${Date.now()}-${randomUUID()}`,
               );
               if (!signed) return;
+              if (signed.forwardPath !== undefined) proxyReq.path = signed.forwardPath;
               Object.entries(signed.headers).forEach(([name, value]) =>
                 proxyReq.setHeader(name, value),
               );

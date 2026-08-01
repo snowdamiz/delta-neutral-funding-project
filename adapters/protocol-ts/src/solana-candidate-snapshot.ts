@@ -73,6 +73,7 @@ type SnapshotPayload = {
   creatorSold: boolean;
   clusterSold: boolean;
   sanctionsHit: boolean;
+  flowBuyers: Array<{ owner: string; firstSeenMs: string; boughtAtoms: string }>;
 };
 
 export type SolanaCandidateSnapshotEvent = {
@@ -91,8 +92,6 @@ export type SolanaCandidateSnapshotEvent = {
 const usdc = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const splToken = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const token2022 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
-const buyUsdMicros = 10_000_000n;
-const depthUsdMicros = 100_000_000n;
 const knownExtensions = new Set([
   "transferFeeConfig",
   "metadataPointer",
@@ -169,6 +168,7 @@ function accountKeys(value: unknown): string[] {
 function defaultPayload(
   acquisition: SolanaWalletAcquisitionEvent,
   observedAtMs: bigint,
+  positionUsdMicros: bigint,
 ): SnapshotPayload {
   return {
     acquisitionEventId: acquisition.eventId,
@@ -196,7 +196,7 @@ function defaultPayload(
     marketAgeSlots: "0",
     migrationStatus: "unknown",
     routeLabels: [],
-    buyInputUsdMicros: buyUsdMicros.toString(),
+    buyInputUsdMicros: positionUsdMicros.toString(),
     buyOutputAtoms: "0",
     sellOutputUsdMicros: "0",
     entryPriceImpactBps: "10000",
@@ -223,6 +223,7 @@ function defaultPayload(
     creatorSold: false,
     clusterSold: false,
     sanctionsHit: false,
+    flowBuyers: [],
   };
 }
 
@@ -295,8 +296,16 @@ function tokenOwnerDeltas(transaction: unknown, mint: string): Map<string, bigin
   return deltas;
 }
 
-function usdMicros(atoms: bigint, buyOutputAtoms: bigint): string {
+function usdMicros(atoms: bigint, buyUsdMicros: bigint, buyOutputAtoms: bigint): string {
   return (buyOutputAtoms === 0n ? 0n : atoms * buyUsdMicros / buyOutputAtoms).toString();
+}
+
+function migrationFrom(routeLabels: string[]): SnapshotPayload["migrationStatus"] {
+  return routeLabels.some((label) => /pumpswap/i.test(label))
+    ? "post_migration"
+    : routeLabels.some((label) => /pump\.fun/i.test(label))
+      ? "pre_migration"
+      : "not_applicable";
 }
 
 export function createJupiterQuote(
@@ -344,9 +353,13 @@ export async function snapshotSolanaCandidate(input: {
   quote: JupiterQuote;
   cohortWallets: string[];
   sanctionedAddresses: Set<string>;
+  positionUsdMicros: bigint;
+  exitDepthMultiple: bigint;
   paperPositionAtoms?: bigint;
 }): Promise<SolanaCandidateSnapshotEvent> {
-  const payload = defaultPayload(input.acquisition, input.observedAtMs);
+  const buyUsdMicros = input.positionUsdMicros;
+  const depthUsdMicros = buyUsdMicros * input.exitDepthMultiple;
+  const payload = defaultPayload(input.acquisition, input.observedAtMs, buyUsdMicros);
   const mint = input.acquisition.payload.outputMint;
   let rejectReason = "";
   try {
@@ -450,6 +463,7 @@ export async function snapshotSolanaCandidate(input: {
       payload.creator,
     ]);
     let oldestHistoryMs = observedAtMs;
+    const earlyBuyers = new Map<string, { firstSeenMs: bigint; boughtAtoms: bigint }>();
     for (const raw of history) {
       const row = object(raw, "mint signature");
       if (row.blockTime === null || row.blockTime === undefined) continue;
@@ -468,6 +482,15 @@ export async function snapshotSolanaCandidate(input: {
         if (owner === payload.creator && delta < 0n) payload.creatorSold = true;
         if (cohort.has(owner) && delta < 0n) payload.clusterSold = true;
         if (ignoredBuyers.has(owner) || delta === 0n) continue;
+        if (delta > 0n) {
+          const seen = earlyBuyers.get(owner);
+          earlyBuyers.set(owner, {
+            firstSeenMs: seen === undefined || blockTimeMs < seen.firstSeenMs
+              ? blockTimeMs
+              : seen.firstSeenMs,
+            boughtAtoms: (seen?.boughtAtoms ?? 0n) + delta,
+          });
+        }
         for (const [index, duration] of [60_000n, 300_000n, 3_600_000n].entries()) {
           if (observedAtMs - blockTimeMs > duration) continue;
           const window = windows[index]!;
@@ -481,36 +504,26 @@ export async function snapshotSolanaCandidate(input: {
       }
     }
     payload.flowCoverageComplete = history.length < 50 || oldestHistoryMs <= observedAtMs - 3_600_000n;
+    payload.flowBuyers = [...earlyBuyers.entries()]
+      .sort(([ownerA, a], [ownerB, b]) =>
+        a.firstSeenMs === b.firstSeenMs
+          ? ownerA < ownerB ? -1 : 1
+          : a.firstSeenMs < b.firstSeenMs ? -1 : 1)
+      .slice(0, 20)
+      .map(([owner, seen]) => ({
+        owner,
+        firstSeenMs: seen.firstSeenMs.toString(),
+        boughtAtoms: seen.boughtAtoms.toString(),
+      }));
 
     let buy: JupiterQuoteResult;
     let sell: JupiterQuoteResult;
     let depthBuy: JupiterQuoteResult;
     let depthSell: JupiterQuoteResult;
     let positionSell: JupiterQuoteResult | undefined;
-    try {
-      buy = await input.quote(usdc, mint, buyUsdMicros);
-      payload.transferFeeBuyAtoms = transferFee(buy.outAmount, fee.bps, fee.maximum).toString();
-      const sellable = buy.outAmount - BigInt(payload.transferFeeBuyAtoms);
-      if (sellable <= 0n) throw new Error("transfer fee consumes the paper fill");
-      sell = await input.quote(mint, usdc, sellable);
-      payload.transferFeeSellAtoms = transferFee(sellable, fee.bps, fee.maximum).toString();
-      depthBuy = await input.quote(usdc, mint, depthUsdMicros);
-      const depthFee = transferFee(depthBuy.outAmount, fee.bps, fee.maximum);
-      depthSell = await input.quote(mint, usdc, depthBuy.outAmount - depthFee);
-    } catch {
-      payload.rejectReason = "REJECT_NO_ROUND_TRIP";
-      return event(input.acquisition, input.observedAtMs, input.sessionId, payload);
-    }
-    payload.buyOutputAtoms = buy.outAmount.toString();
-    payload.sellOutputUsdMicros = sell.outAmount.toString();
-    payload.entryPriceImpactBps = String(buy.priceImpactBps);
-    payload.roundTripLossBps = (sell.outAmount >= buyUsdMicros
-      ? 0n
-      : (buyUsdMicros - sell.outAmount) * 10_000n / buyUsdMicros).toString();
-    payload.exitDepthImpactBps = String(depthSell.priceImpactBps);
-    payload.exitDepthUsdMicros = depthSell.priceImpactBps <= 1000
-      ? depthUsdMicros.toString()
-      : "0";
+    // The full-position exit quote runs first and independently of the probe
+    // quotes: when a route degrades, the broker still needs executable exit
+    // evidence for the open position rather than a defaulted zero.
     if (input.paperPositionAtoms !== undefined && input.paperPositionAtoms > 0n) {
       payload.paperPositionAtoms = input.paperPositionAtoms.toString();
       const positionFee = transferFee(input.paperPositionAtoms, fee.bps, fee.maximum);
@@ -527,6 +540,35 @@ export async function snapshotSolanaCandidate(input: {
         }
       }
     }
+    try {
+      buy = await input.quote(usdc, mint, buyUsdMicros);
+      payload.transferFeeBuyAtoms = transferFee(buy.outAmount, fee.bps, fee.maximum).toString();
+      const sellable = buy.outAmount - BigInt(payload.transferFeeBuyAtoms);
+      if (sellable <= 0n) throw new Error("transfer fee consumes the paper fill");
+      sell = await input.quote(mint, usdc, sellable);
+      payload.transferFeeSellAtoms = transferFee(sellable, fee.bps, fee.maximum).toString();
+      depthBuy = await input.quote(usdc, mint, depthUsdMicros);
+      const depthFee = transferFee(depthBuy.outAmount, fee.bps, fee.maximum);
+      depthSell = await input.quote(mint, usdc, depthBuy.outAmount - depthFee);
+    } catch {
+      payload.rejectReason = "REJECT_NO_ROUND_TRIP";
+      if (positionSell) {
+        payload.quoteContextSlot = positionSell.contextSlot.toString();
+        payload.routeLabels = [...new Set(positionSell.routeLabels)];
+        payload.migrationStatus = migrationFrom(payload.routeLabels);
+      }
+      return event(input.acquisition, input.observedAtMs, input.sessionId, payload);
+    }
+    payload.buyOutputAtoms = buy.outAmount.toString();
+    payload.sellOutputUsdMicros = sell.outAmount.toString();
+    payload.entryPriceImpactBps = String(buy.priceImpactBps);
+    payload.roundTripLossBps = (sell.outAmount >= buyUsdMicros
+      ? 0n
+      : (buyUsdMicros - sell.outAmount) * 10_000n / buyUsdMicros).toString();
+    payload.exitDepthImpactBps = String(depthSell.priceImpactBps);
+    payload.exitDepthUsdMicros = depthSell.priceImpactBps <= 1000
+      ? depthUsdMicros.toString()
+      : "0";
     payload.quoteContextSlot = [
       buy.contextSlot,
       sell.contextSlot,
@@ -544,11 +586,7 @@ export async function snapshotSolanaCandidate(input: {
     if (payload.routeLabels.some((label) => !knownRouteLabel.test(label))) {
       rejectReason ||= "UNKNOWN_ROUTE_PROGRAM";
     }
-    payload.migrationStatus = payload.routeLabels.some((label) => /pumpswap/i.test(label))
-      ? "post_migration"
-      : payload.routeLabels.some((label) => /pump\.fun/i.test(label))
-        ? "pre_migration"
-        : "not_applicable";
+    payload.migrationStatus = migrationFrom(payload.routeLabels);
     payload.marketCapUsdMicros = buy.outAmount === 0n
       ? "0"
       : (supply * buyUsdMicros / buy.outAmount).toString();
@@ -559,19 +597,22 @@ export async function snapshotSolanaCandidate(input: {
     payload.unlinkedBuyerCount1h = String(oneHour.buyers.size);
     payload.netQuoteInflowUsdMicros1m = usdMicros(
       oneMinute.boughtAtoms > oneMinute.soldAtoms ? oneMinute.boughtAtoms - oneMinute.soldAtoms : 0n,
+      buyUsdMicros,
       buy.outAmount,
     );
     payload.netQuoteInflowUsdMicros = usdMicros(
       fiveMinutes.boughtAtoms > fiveMinutes.soldAtoms ? fiveMinutes.boughtAtoms - fiveMinutes.soldAtoms : 0n,
+      buyUsdMicros,
       buy.outAmount,
     );
     payload.netQuoteInflowUsdMicros1h = usdMicros(
       oneHour.boughtAtoms > oneHour.soldAtoms ? oneHour.boughtAtoms - oneHour.soldAtoms : 0n,
+      buyUsdMicros,
       buy.outAmount,
     );
-    payload.volumeUsdMicros1m = usdMicros(oneMinute.boughtAtoms + oneMinute.soldAtoms, buy.outAmount);
-    payload.volumeUsdMicros5m = usdMicros(fiveMinutes.boughtAtoms + fiveMinutes.soldAtoms, buy.outAmount);
-    payload.volumeUsdMicros1h = usdMicros(oneHour.boughtAtoms + oneHour.soldAtoms, buy.outAmount);
+    payload.volumeUsdMicros1m = usdMicros(oneMinute.boughtAtoms + oneMinute.soldAtoms, buyUsdMicros, buy.outAmount);
+    payload.volumeUsdMicros5m = usdMicros(fiveMinutes.boughtAtoms + fiveMinutes.soldAtoms, buyUsdMicros, buy.outAmount);
+    payload.volumeUsdMicros1h = usdMicros(oneHour.boughtAtoms + oneHour.soldAtoms, buyUsdMicros, buy.outAmount);
     if (payload.sanctionsHit) rejectReason ||= "SANCTIONS_HIT";
     payload.rejectReason = rejectReason;
     payload.snapshotStatus = rejectReason ? "rejected" : "complete";

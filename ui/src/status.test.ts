@@ -88,13 +88,22 @@ describe("system state", () => {
 });
 
 describe("routing", () => {
-  it("resolves tabs, strategies, and anything unrecognised", () => {
-    expect(parseRoute("")).toEqual({ tab: "", strategy: "" });
-    expect(parseRoute("#/markets")).toEqual({ tab: "markets", strategy: "" });
-    expect(parseRoute("#/system")).toEqual({ tab: "system", strategy: "" });
-    expect(parseRoute("#/s/jitosol_carry")).toEqual({ tab: "", strategy: "jitosol_carry" });
+  it("resolves pages, strategies, and anything unrecognised", () => {
+    expect(parseRoute("")).toEqual({ tab: "", strategy: "", sub: "" });
+    expect(parseRoute("#/markets")).toEqual({ tab: "markets", strategy: "", sub: "" });
+    expect(parseRoute("#/system")).toEqual({ tab: "system", strategy: "", sub: "" });
+    expect(parseRoute("#/s/jitosol_carry")).toEqual({ tab: "", strategy: "jitosol_carry", sub: "" });
     // A stale link from the previous console, and an invented one, land home.
-    expect(parseRoute("#jitosol_carry")).toEqual({ tab: "", strategy: "" });
-    expect(parseRoute("#/nonsense")).toEqual({ tab: "", strategy: "" });
+    expect(parseRoute("#jitosol_carry")).toEqual({ tab: "", strategy: "", sub: "" });
+    expect(parseRoute("#/nonsense")).toEqual({ tab: "", strategy: "", sub: "" });
+  });
+
+  it("resolves a strategy sub-tab and drops one it does not own", () => {
+    expect(parseRoute("#/s/jitosol_carry/risk")).toEqual({
+      tab: "", strategy: "jitosol_carry", sub: "risk",
+    });
+    expect(parseRoute("#/s/jitosol_carry/nonsense")).toEqual({
+      tab: "", strategy: "jitosol_carry", sub: "",
+    });
   });
 });

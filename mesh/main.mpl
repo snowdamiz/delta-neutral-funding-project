@@ -2,7 +2,6 @@ from Api.Router import build_router
 from Packages.BuildIdentity import code_commit, mesh_commit
 from Packages.LeaderLease import acquire_startup, release, start_leader_lease_supervisor
 from Packages.Log import error, info
-from Packages.ReplayCli import run_replay_command
 from Packages.RuntimeConfig import RuntimeConfig, load_runtime_config, runtime_config_hash
 from Packages.SolanaReadCli import run_native_solana_read, run_native_solana_subscription
 from Packages.SolanaTxCli import native_solana_transaction_burst, native_solana_transaction_report
@@ -162,19 +161,6 @@ fn serve_collector() do
   end
 end
 
-fn replay(args :: List<String>) do
-  case run_replay_command(
-    args,
-    mesh_commit()
-  ) do
-    Ok(output) -> println(output)
-    Err(reason) -> do
-      IO.eprintln(reason)
-      Process.exit(1)
-    end
-  end
-end
-
 fn solana_read() do
   case Env.get("SOLANA_RPC_URL", "")
     |> run_native_solana_read() do
@@ -250,7 +236,6 @@ fn main() do
     serve_collector()
   else
     case List.get(args, 1) do
-      "replay" -> replay(args)
       "solana-read" -> solana_read()
       "solana-subscribe" -> solana_subscribe()
       "solana-inspect-instruction" -> solana_inspect_instruction()

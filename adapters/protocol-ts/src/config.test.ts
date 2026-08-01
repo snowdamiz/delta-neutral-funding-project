@@ -22,7 +22,6 @@ test("loads bounded adapter configuration", () => {
   assert.equal(config.mode, "synthetic");
   assert.equal(config.fundingScanIntervalMs, 3_600_000);
   assert.deepEqual(config.hyperliquidUrls, ["https://api.hyperliquid.xyz"]);
-  assert.equal(config.walletScanIntervalMs, 60_000);
   assert.equal(
     config.kaminoLendingMarket,
     "7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF",

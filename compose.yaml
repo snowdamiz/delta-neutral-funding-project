@@ -7,8 +7,6 @@ x-paper-environment: &paper-environment
   EMIT_INTERVAL_MS: ${EMIT_INTERVAL_MS:-15000}
   FUNDING_INTERVAL_EVENTS: ${FUNDING_INTERVAL_EVENTS:-12}
   FUNDING_SCAN_INTERVAL_MS: ${FUNDING_SCAN_INTERVAL_MS:-3600000}
-  WALLET_SCAN_INTERVAL_MS: ${WALLET_SCAN_INTERVAL_MS:-60000}
-  WALLET_FILL_LOOKBACK_MS: ${WALLET_FILL_LOOKBACK_MS:-86400000}
   SOURCE_MAX_SLOT_DRIFT: ${SOURCE_MAX_SLOT_DRIFT:-5000}
   SOURCE_MAX_FUNDING_AGE_MS: ${SOURCE_MAX_FUNDING_AGE_MS:-7200000}
   SOURCE_MAX_BORROW_AGE_MS: ${SOURCE_MAX_BORROW_AGE_MS:-7200000}
@@ -56,7 +54,7 @@ services:
       timeout: 2s
       retries: 30
     volumes:
-      - postgres_data_v49:/var/lib/postgresql/data
+      - postgres_data_v53:/var/lib/postgresql/data
     networks:
       - database
     mem_limit: 1g
@@ -208,6 +206,49 @@ services:
     logging: *local-logging
     restart: unless-stopped
 
+  # Live execution sidecar. Never starts by default: it requires both the
+  # explicit solana-live profile and a signer keypair path on the host. The
+  # collector stays EXECUTION_MODE=paper; this process is the only component
+  # that can sign, and the DB arm switch is the only thing that feeds it.
+  solana-live-executor:
+    profiles: ["solana-live"]
+    image: delta-neutral-funding-adapter:latest
+    depends_on:
+      collector:
+        condition: service_healthy
+    command: ["dist/solana-live-executor-cli.js"]
+    environment:
+      ADAPTER_HMAC_SECRET: ${ADAPTER_HMAC_SECRET:-local-paper-only-change-me}
+      LIVE_EXECUTOR_ID: ${LIVE_EXECUTOR_ID:-solana-live-local}
+      COLLECTOR_URL: http://collector:8080/v1/events
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+      JUPITER_URL: ${JUPITER_URL:-https://api.jup.ag/swap/v1}
+      JUPITER_API_KEY: ${JUPITER_API_KEY:-}
+      SOLANA_SIGNER_KEYPAIR: /signer/id.json
+      LIVE_POLL_INTERVAL_MS: ${LIVE_POLL_INTERVAL_MS:-2000}
+      LIVE_CONFIRM_TIMEOUT_MS: ${LIVE_CONFIRM_TIMEOUT_MS:-90000}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-30000}
+    volumes:
+      # Point SOLANA_SIGNER_KEYPAIR_DIR at the directory holding id.json
+      # before starting the solana-live profile; the default mounts nothing
+      # usable and the executor refuses to start.
+      - ${SOLANA_SIGNER_KEYPAIR_DIR:-/dev/null}:/signer:ro
+    healthcheck:
+      disable: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks:
+      - ingest
+    mem_limit: 256m
+    pids_limit: 128
+    logging: *local-logging
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v3.5.0
     depends_on:
@@ -253,7 +294,7 @@ services:
 
 volumes:
   # Preserve older paper evidence when a release changes its runtime fingerprint.
-  postgres_data_v49:
+  postgres_data_v53:
   prometheus_data:
   grafana_data:
 

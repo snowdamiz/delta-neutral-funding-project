@@ -1,6 +1,6 @@
 # Failure operations
 
-Paper and shadow cannot sign or submit. Keep execution paused whenever a row
+Paper cannot sign or submit; live signing exists only in the separately-run solana-live executor profile. Keep execution paused whenever a row
 below is active; never move a key or mutation credential into Mesh to work
 around an outage.
 
@@ -8,11 +8,11 @@ around an outage.
 |---|---|---|---|---|
 | Primary RPC/adapter source | health, sequence, or slot continuity fails | pause entries; use only an approved backup | inspect source status and resnapshot | stable source and reconciled orders/positions |
 | All market sources | every authoritative read is stale/unavailable | pause entries and rebalances | use an independent account view; close manually if qualified and required | authoritative margin/position and market data restored |
-| Adapter schema/build | capability or schema mismatch | reject event; retain stale last value | deploy compatible pinned images | capability, conformance, and replay gates pass |
+| Adapter schema/build | capability or schema mismatch | reject event; retain stale last value | deploy compatible pinned images | capability and conformance gates pass |
 | Adapter sequence gap | non-contiguous source sequence | reject incrementals and pause entries | request a full resnapshot | coherent snapshot plus reconciliation |
 | Replaceable mailbox overflow | dropped count/depth alert | coalesce latest snapshot; mark source degraded | reduce source rate | depth below threshold and fresh snapshot |
 | Critical mailbox rejection | rejected control/accounting item | fail closed and pause all | preserve evidence; restart collector | durable state loaded and reconciliation matched |
-| Actor crash/restart storm | structured crash/restart-limit event | pause execution; bounded supervisor restart | inspect the permanent regression and roll back if needed | restart probe, replay, and reconciliation pass |
+| Actor crash/restart storm | structured crash/restart-limit event | pause execution; bounded supervisor restart | inspect the permanent regression and roll back if needed | restart probe and reconciliation pass |
 | Database unavailable | persistence/query failure | stop decisions and intents | restore PostgreSQL; do not dispatch normal actions | restore drill and reconciliation pass |
 | Spot acquired, perp failed | partial/rejected second leg | enter emergency recovery timer | confirm quantities; short within bounds or sell excess spot | flat or confirmed hedged; incident reviewed |
 | Perp outcome unknown | timeout without authoritative outcome | do not retry | query command/client ID, position, orders, and deltas | outcome classified and recorded |
@@ -22,7 +22,7 @@ around an outage.
 | Margin warning/critical | venue margin or liquidation-distance threshold | warning pauses entries; critical closes perp reduce-only before spot | confirm the venue position and matching spot quantity | authoritative quantities and margin reconciled |
 | Reconciliation mismatch | persisted and derived state differ | pause all; append evidence | classify delay, missed fill, or balance mismatch; never rewrite history | explicit adjustment, if needed, is reviewed and reconciliation matches |
 | Executor/signer unavailable | executor health/command lookup fails | pause entries | use only the qualified manual venue/wallet process | isolated executor restored and command state reconciled |
-| Compiler/runtime regression | conformance, replay, or runtime probe fails | freeze toolchain promotion | roll back immutable compiler and collector images | native probes, collector tests, replay, and reconciliation pass |
+| Compiler/runtime regression | conformance or runtime probe fails | freeze toolchain promotion | roll back immutable compiler and collector images | native probes, collector tests, and reconciliation pass |
 | Emergency flatten partial | confirmed residual exposure remains | stop normal strategy work | reduce liquidation risk and largest delta first using authoritative quantities | flat, reconciled, alerted incident reviewed |
 
 ## Manual delayed unstake and hedge
@@ -59,7 +59,6 @@ Run from the repository:
 ```sh
 scripts/check-recovery.sh
 scripts/check-shutdown.sh
-scripts/check-shadow-persistence.sh
 scripts/check-operator-api.sh
 scripts/check-observability.sh
 ```

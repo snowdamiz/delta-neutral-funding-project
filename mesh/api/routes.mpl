@@ -1,17 +1,12 @@
-from Packages.Accounting import realized_funding_usd
 from Packages.BuildIdentity import code_commit, mesh_commit
-from Packages.Finance import Lamports, RatePpm, TokenAtoms, UsdMicros
 from Packages.LeaderLease import lease_held
 from Packages.Log import info, warn
 from Packages.Metrics import render
-from Packages.Opportunity import OpportunitySet, evaluate_snapshot_for_horizon
-from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, PaperVariant, PositionPlan, plan_controlled_entry, plan_controlled_position, plan_entry, plan_forced_exit, plan_position, plan_recovery, position_risk_approved
-from Packages.ProtocolContracts import FundingObservation, FundingSettlement, MarketSnapshot, WalletObservation, parse_funding_observation, parse_funding_settlement, parse_market_snapshot, parse_shadow_result, parse_wallet_observation
-from Packages.ReadModels import adapter_status, cross_venue_funding_leaderboard, fills, funding, funding_leaderboard, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, reverse_carry_leaderboard, risk_decisions, risk_events, shadow_results, strategies, wallet_config, wallet_tracking
+from Packages.ProtocolContracts import FundingObservation, FundingSettlement, MarketSnapshot, parse_funding_observation, parse_funding_settlement, parse_market_snapshot
+from Packages.ReadModels import adapter_status, fills, funding, funding_leaderboard, jitosol, latest_reconciliation, orders, pnl, portfolio, portfolios, positions, reverse_carry_leaderboard, risk_decisions, risk_events, strategies
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
-from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, parse_solana_wallet_flow_event, persist_solana_validation, persist_solana_wallet_config, persist_solana_wallet_flow_event, solana_followed_wallets, solana_wallet_flow_state
-from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_observation, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_strategy_control, persist_synchronized_paper_entries, persist_synchronized_position_plans, persist_wallet_config, persist_wallet_observation, run_cross_asset_paper_scan, run_cross_venue_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
+from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, claim_solana_live, parse_solana_wallet_flow_event, persist_solana_validation, persist_solana_wallet_config, persist_solana_wallet_flow_event, persist_strategy_execution_mode, record_solana_live, solana_followed_wallets, solana_wallet_flow_state
+from Packages.Storage import FundingPersistence, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, persist_funding_observation, persist_funding_settlement, persist_market_snapshot, persist_operator_command, persist_paper_reset, persist_strategy_control, run_cross_asset_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -99,380 +94,21 @@ fn operator_authenticated(
   end
 end
 
-fn accepted_response(snapshot :: MarketSnapshot, result :: OpportunitySet, duplicate :: Bool) do
-  HTTP.response(202, json {
-    status : if duplicate do "duplicate" else "accepted" end,
-    eventId : snapshot.event_id,
-    navLamports : "${result.nav_lamports.atoms}",
-    hedgeLamports : "${result.hedge_lamports.atoms}",
-    expectedFundingUsdMicros : "${result.expected_funding_usd_micros.atoms}",
-    navRewardUsdMicros : "${result.nav_reward_usd_micros.atoms}",
-    solNetCarryUsdMicros : "${result.sol_net_carry_usd_micros.atoms}",
-    jitosolNetCarryUsdMicros : "${result.jitosol_net_carry_usd_micros.atoms}",
-    solEligible : result.sol_eligible,
-    jitosolEligible : result.jitosol_eligible
-  })
-end
 
-fn run_portfolio_cycle(pool :: PoolHandle,
-snapshot :: MarketSnapshot,
-result :: OpportunitySet,
-portfolio_id :: String,
-variant :: PaperVariant,
-runtime :: PaperRuntime) -> Int ! String do
-  if runtime.state == Idle do
-    if runtime.pause_all do
-      return Ok(0)
-    end
-    let plan = (runtime |4> plan_entry(snapshot, result, variant)) ?
-    return plan |6> persist_paper_plan(pool, snapshot, result, portfolio_id, runtime)
-  end
-  if runtime.state == OpeningSpot || runtime.state == OpeningPerp || runtime.state == EmergencyFlatten do
-    let position = (portfolio_id |2> load_paper_position(pool)) ?
-    let plan = (runtime.state |4> plan_recovery(
-      snapshot,
-      result,
-      position
-    )) ?
-    return plan |7> persist_position_plan(
-      pool,
-      snapshot,
-      portfolio_id,
-      position,
-      runtime,
-      false
-    )
-  end
-  if runtime.state != Hedged do
-    return Ok(0)
-  end
-  let position = (portfolio_id |2> load_paper_position(pool)) ?
-  case (portfolio_id |2> load_pending_paper_action(pool)) ? do
-    PendingAction(action, reason) -> do
-      let plan = plan_forced_exit(
-        snapshot,
-        result,
-        position,
-        action <> ":" <> reason
-      ) ?
-      plan |7> persist_position_plan(
-        pool,
-        snapshot,
-        portfolio_id,
-        position,
-        runtime,
-        true
-      )
-    end
-    NoPendingAction -> do
-      if runtime.pause_all do
-        return Ok(0)
-      end
-      let plan = (runtime |4> plan_position(
-        snapshot,
-        result,
-        position
-      )) ?
-      plan |7> persist_position_plan(
-        pool,
-        snapshot,
-        portfolio_id,
-        position,
-        runtime,
-        position_risk_approved(plan)
-      )
-    end
-  end
-end
 
-fn paper_runtime(pool :: PoolHandle, portfolio_id :: String, now_ms :: Int) -> PaperRuntime ! String do
-  let config = load_runtime_config() ?
-  portfolio_id |2> load_paper_runtime(
-    pool,
-    now_ms,
-    config.max_source_age_ms,
-    config.minimum_margin_ratio_ppm,
-    config.minimum_liquidation_distance_bps,
-    config.rebalance_delta_bps
-  )
-end
 
-fn run_independent_pair(
-  pool :: PoolHandle,
-  snapshot :: MarketSnapshot,
-  result :: OpportunitySet,
-  now_ms :: Int
-) -> Int ! String do
-  run_portfolio_cycle(
-    pool,
-    snapshot,
-    result,
-    "local-sol-control",
-    SolControl,
-    ("local-sol-control" |2> paper_runtime(pool, now_ms)) ?
-  ) ?
-  run_portfolio_cycle(
-    pool,
-    snapshot,
-    result,
-    "local-jitosol-carry",
-    JitoSolCarry,
-    ("local-jitosol-carry" |2> paper_runtime(pool, now_ms)) ?
-  )
-end
 
-fn requires_controlled_exit(action :: PaperAction) -> Bool do
-  action == ExitPosition || action == EmergencyPosition
-end
 
-fn controlled_pending_reason(pool :: PoolHandle) -> String ! String do
-  case ("local-sync-sol-control" |2> load_pending_paper_action(pool)) ? do
-    PendingAction(action, reason) -> Ok(action <> ":" <> reason)
-    NoPendingAction -> case ("local-sync-jitosol-carry" |2> load_pending_paper_action(pool)) ? do
-      PendingAction(action, reason) -> Ok(action <> ":" <> reason)
-      NoPendingAction -> Ok("")
-    end
-  end
-end
 
-fn persist_controlled_positions(
-  pool :: PoolHandle,
-  snapshot :: MarketSnapshot,
-  sol_position :: PaperPosition,
-  sol_runtime :: PaperRuntime,
-  sol_risk_approved :: Bool,
-  sol_plan :: PositionPlan,
-  jito_position :: PaperPosition,
-  jito_runtime :: PaperRuntime,
-  jito_risk_approved :: Bool,
-  jito_plan :: PositionPlan
-) -> Int ! String do
-  persist_synchronized_position_plans(
-    pool,
-    "local-paper-run:synchronized",
-    snapshot,
-    "local-sync-sol-control",
-    sol_position,
-    sol_runtime,
-    sol_risk_approved,
-    sol_plan,
-    "local-sync-jitosol-carry",
-    jito_position,
-    jito_runtime,
-    jito_risk_approved,
-    jito_plan
-  )
-end
 
-fn force_controlled_exit(
-  pool :: PoolHandle,
-  snapshot :: MarketSnapshot,
-  result :: OpportunitySet,
-  sol_position :: PaperPosition,
-  sol_runtime :: PaperRuntime,
-  jito_position :: PaperPosition,
-  jito_runtime :: PaperRuntime,
-  reason :: String,
-  risk_approved :: Bool
-) -> Int ! String do
-  let sol_plan = (reason |4> plan_forced_exit(
-    snapshot,
-    result,
-    sol_position
-  )) ?
-  let jito_plan = (reason |4> plan_forced_exit(
-    snapshot,
-    result,
-    jito_position
-  )) ?
-  persist_controlled_positions(
-    pool,
-    snapshot,
-    sol_position,
-    sol_runtime,
-    risk_approved,
-    sol_plan,
-    jito_position,
-    jito_runtime,
-    risk_approved,
-    jito_plan
-  )
-end
 
-fn run_synchronized_positions(
-  pool :: PoolHandle,
-  snapshot :: MarketSnapshot,
-  result :: OpportunitySet,
-  sol_runtime :: PaperRuntime,
-  jito_runtime :: PaperRuntime
-) -> Int ! String do
-  let sol_position = ("local-sync-sol-control" |2> load_paper_position(pool)) ?
-  let jito_position = ("local-sync-jitosol-carry" |2> load_paper_position(pool)) ?
-  let pending_reason = controlled_pending_reason(pool) ?
-  if String.length(pending_reason) > 0 do
-    return force_controlled_exit(
-      pool,
-      snapshot,
-      result,
-      sol_position,
-      sol_runtime,
-      jito_position,
-      jito_runtime,
-      pending_reason,
-      true
-    )
-  end
-  if sol_runtime.pause_all || jito_runtime.pause_all do
-    return Ok(0)
-  end
-  let sol_plan = (sol_runtime |4> plan_controlled_position(
-    snapshot,
-    result,
-    sol_position
-  )) ?
-  let jito_plan = (jito_runtime |4> plan_controlled_position(
-    snapshot,
-    result,
-    jito_position
-  )) ?
-  if requires_controlled_exit(sol_plan.action) do
-    return force_controlled_exit(
-      pool,
-      snapshot,
-      result,
-      sol_position,
-      sol_runtime,
-      jito_position,
-      jito_runtime,
-      "controlled_exit:" <> sol_plan.reason,
-      false
-    )
-  end
-  if requires_controlled_exit(jito_plan.action) do
-    return force_controlled_exit(
-      pool,
-      snapshot,
-      result,
-      sol_position,
-      sol_runtime,
-      jito_position,
-      jito_runtime,
-      "controlled_exit:" <> jito_plan.reason,
-      false
-    )
-  end
-  persist_controlled_positions(
-    pool,
-    snapshot,
-    sol_position,
-    sol_runtime,
-    position_risk_approved(sol_plan),
-    sol_plan,
-    jito_position,
-    jito_runtime,
-    position_risk_approved(jito_plan),
-    jito_plan
-  )
-end
 
-fn recover_controlled_member(
-  pool :: PoolHandle,
-  snapshot :: MarketSnapshot,
-  result :: OpportunitySet,
-  portfolio_id :: String,
-  runtime :: PaperRuntime
-) -> Int ! String do
-  if runtime.state == Idle do
-    return Ok(0)
-  end
-  let position = (portfolio_id |2> load_paper_position(pool)) ?
-  if runtime.state == OpeningSpot || runtime.state == OpeningPerp || runtime.state == EmergencyFlatten do
-    let plan = (runtime.state |4> plan_recovery(
-      snapshot,
-      result,
-      position
-    )) ?
-    return plan |7> persist_position_plan(
-      pool,
-      snapshot,
-      portfolio_id,
-      position,
-      runtime,
-      false
-    )
-  end
-  if runtime.state == Hedged do
-    let plan = ("controlled_peer_recovery" |4> plan_forced_exit(
-      snapshot,
-      result,
-      position
-    )) ?
-    return plan |7> persist_position_plan(
-      pool,
-      snapshot,
-      portfolio_id,
-      position,
-      runtime,
-      true
-    )
-  end
-  Ok(0)
-end
 
-fn run_synchronized_pair(
-  pool :: PoolHandle,
-  snapshot :: MarketSnapshot,
-  result :: OpportunitySet,
-  now_ms :: Int
-) -> Int ! String do
-  let sol_runtime = ("local-sync-sol-control" |2> paper_runtime(pool, now_ms)) ?
-  let jito_runtime = ("local-sync-jitosol-carry" |2> paper_runtime(pool, now_ms)) ?
-  if sol_runtime.state == Idle && jito_runtime.state == Idle do
-    let sol_plan = (sol_runtime |4> plan_controlled_entry(snapshot, result, SolControl)) ?
-    let jito_plan = (jito_runtime |4> plan_controlled_entry(snapshot, result, JitoSolCarry)) ?
-    return persist_synchronized_paper_entries(
-      pool,
-      "local-paper-run:synchronized",
-      snapshot,
-      result,
-      "local-sync-sol-control",
-      sol_runtime,
-      sol_plan,
-      "local-sync-jitosol-carry",
-      jito_runtime,
-      jito_plan
-    )
-  end
-  if sol_runtime.state == Hedged && jito_runtime.state == Hedged do
-    return run_synchronized_positions(
-      pool,
-      snapshot,
-      result,
-      sol_runtime,
-      jito_runtime
-    )
-  end
-  let sol_applied = (sol_runtime |5> recover_controlled_member(
-    pool,
-    snapshot,
-    result,
-    "local-sync-sol-control"
-  )) ?
-  let jito_applied = (jito_runtime |5> recover_controlled_member(
-    pool,
-    snapshot,
-    result,
-    "local-sync-jitosol-carry"
-  )) ?
-  sol_applied |> Checked.add(jito_applied)
-end
 
-fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) -> Int ! String do
+fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot) -> Int ! String do
   let pool = get_pool()
   let config = load_runtime_config() ?
-  let inserted = (config
-    |> runtime_config_hash
-    |5> persist_opportunities(pool, body, snapshot, result)) ?
+  let inserted = (body |2> persist_market_snapshot(pool, snapshot)) ?
   (snapshot.event_id |2> advance_direct_unstakes(
     pool,
     snapshot.epoch,
@@ -494,17 +130,18 @@ fn run_paper_cycle(body :: String, snapshot :: MarketSnapshot, result :: Opportu
     config.expected_hold_hours
   ) ?
   info("nav_discount_paper_cycle", nav_result)
-  (now_ms |4> run_independent_pair(pool, snapshot, result)) ?
-  (now_ms |4> run_synchronized_pair(pool, snapshot, result)) ?
   Ok(inserted)
 end
 
-fn persist_response(body :: String, snapshot :: MarketSnapshot, result :: OpportunitySet) do
-  case run_paper_cycle(body, snapshot, result) do
+fn persist_response(body :: String, snapshot :: MarketSnapshot) do
+  case run_paper_cycle(body, snapshot) do
     Ok(inserted) -> do
       record_accepted()
       info("protocol_event_accepted", "{\"eventId\":\"${snapshot.event_id}\",\"inserted\":\"${inserted}\"}")
-      accepted_response(snapshot, result, inserted == 0)
+      HTTP.response(202, json {
+        status : if inserted == 0 do "duplicate" else "accepted" end,
+        eventId : snapshot.event_id
+      })
     end
     Err(reason) -> do
       record_rejected()
@@ -518,47 +155,9 @@ fn persist_response(body :: String, snapshot :: MarketSnapshot, result :: Opport
 end
 
 fn evaluate_response(body :: String, snapshot :: MarketSnapshot) do
-  case load_runtime_config() do
-    Ok(config) -> case evaluate_snapshot_for_horizon(
-      snapshot,
-      config.expected_hold_hours,
-      config.maximum_break_even_hours
-    ) do
-      Ok(result) -> persist_response(body, snapshot, result)
-      Err(reason) -> do
-        record_rejected()
-        error_response(422, "evaluation_failed", reason)
-      end
-    end
-    Err(reason) -> error_response(503, "config_unavailable", reason)
-  end
+  persist_response(body, snapshot)
 end
 
-fn funding_payment(
-  pool :: PoolHandle,
-  portfolio_id :: String,
-  event :: FundingSettlement,
-  now_ms :: Int
-) -> String ! String do
-  let runtime = (portfolio_id |2> paper_runtime(pool, now_ms)) ?
-  if runtime.state != Hedged do
-    Ok(json { enabled : false })
-  else
-    let position = (portfolio_id |2> load_paper_position(pool)) ?
-    let amount = (position.perp_short_quantity
-      |> realized_funding_usd(
-        event.sol_price_usd_micros,
-        event.realized_short_rate_ppm
-      )) ?
-    Ok(json {
-      enabled : true,
-      portfolioRunId : portfolio_id,
-      stateVersion : "${position.state_version}",
-      positionQuantityAtoms : "${position.perp_short_quantity.atoms}",
-      amountUsdMicros : "${amount.atoms}"
-    })
-  end
-end
 
 fn funding_accepted_response(event :: FundingSettlement, result :: FundingPersistence) do
   HTTP.response(202, json {
@@ -569,66 +168,24 @@ fn funding_accepted_response(event :: FundingSettlement, result :: FundingPersis
   })
 end
 
-fn funding_payments(
-  pool :: PoolHandle,
-  event :: FundingSettlement,
-  now_ms :: Int,
-  portfolio_ids :: List<String>,
-  index :: Int,
-  payments :: List<String>
-) -> List<String> ! String do
-  if index >= List.length(portfolio_ids) do
-    Ok(payments)
-  else
-    let payment = (List.get(portfolio_ids, index)
-      |2> funding_payment(pool, event, now_ms)) ?
-    funding_payments(
-      pool,
-      event,
-      now_ms,
-      portfolio_ids,
-      index + 1,
-      List.append(payments, payment)
-    )
-  end
-end
 
 fn funding_response(body :: String, event :: FundingSettlement) do
   let pool = get_pool()
-  let now_ms = DateTime.utc_now() |> DateTime.to_unix_ms
-  case funding_payments(
-    pool,
-    event,
-    now_ms,
-    [
-      "local-sol-control",
-      "local-jitosol-carry",
-      "local-sync-sol-control",
-      "local-sync-jitosol-carry"
-    ],
-    0,
-    List.new()
-  ) do
-    Ok(payments) -> case (event |2> load_direct_unstake_funding_payments(pool)) do
-      Ok(counterfactual_payments) -> case persist_funding_settlement(
-        pool,
-        body,
-        payments,
-        counterfactual_payments
-      ) do
-        Ok(result) -> do
-          record_accepted()
-          info("funding_event_accepted", "{\"eventId\":\"${event.event_id}\",\"payments\":\"${result.payments}\",\"counterfactualPayments\":\"${result.counterfactual_payments}\"}")
-          funding_accepted_response(event, result)
-        end
-        Err(reason) -> do
-          record_rejected()
-          error_response(500, "persistence_failed", reason)
-        end
+  case (event |2> load_direct_unstake_funding_payments(pool)) do
+    Ok(counterfactual_payments) -> case persist_funding_settlement(
+      pool,
+      body,
+      List.new(),
+      counterfactual_payments
+    ) do
+      Ok(result) -> do
+        record_accepted()
+        info("funding_event_accepted", "{\"eventId\":\"${event.event_id}\",\"counterfactualPayments\":\"${result.counterfactual_payments}\"}")
+        funding_accepted_response(event, result)
       end
       Err(reason) -> do
         record_rejected()
-        error_response(500, "funding_evaluation_failed", reason)
+        error_response(500, "persistence_failed", reason)
       end
     end
     Err(reason) -> do
@@ -701,34 +258,6 @@ fn funding_observation_response(event :: FundingObservation) do
             ()
           end
         end
-        let venue_result = if result.scan_complete do
-          run_cross_venue_paper_scan(
-            get_pool(),
-            event.scan_id,
-            event.observed_at_ms,
-            config.source_max_funding_age_ms,
-            config.target_notional_usd_micros,
-            config.paper_costs_usd_micros,
-            config.paper_risk_haircut_usd_micros,
-            config.expected_hold_hours,
-            config.paper_collateral_usd_micros,
-            config.minimum_margin_ratio_ppm,
-            config.minimum_liquidation_distance_bps
-          )
-        else
-          Ok("{\"status\":\"scan_incomplete\"}")
-        end
-        case venue_result do
-          Err(reason) -> do
-            record_rejected()
-            return error_response(500, "paper_cycle_failed", reason)
-          end
-          Ok(body) -> if result.scan_complete do
-            info("cross_venue_paper_cycle", body)
-          else
-            ()
-          end
-        end
         record_accepted()
         info("funding_observation_accepted", "{\"eventId\":\"${event.event_id}\",\"venue\":\"${event.venue}\",\"asset\":\"${event.asset}\",\"scanComplete\":\"${result.scan_complete}\"}")
         HTTP.response(202, json {
@@ -747,31 +276,6 @@ fn funding_observation_response(event :: FundingObservation) do
   end
 end
 
-fn wallet_observation_response(event :: WalletObservation) do
-  case load_runtime_config() do
-    Ok(config) -> case persist_wallet_observation(
-      get_pool(),
-      event,
-      config.source_max_funding_age_ms,
-      config.target_notional_usd_micros,
-      config.paper_costs_usd_micros
-    ) do
-      Ok(body) -> do
-        record_accepted()
-        info(
-          "wallet_observation_accepted",
-          "{\"eventId\":\"${event.event_id}\",\"wallet\":\"${event.wallet}\",\"positions\":\"${event.positions}\",\"fills\":\"${event.fills}\"}"
-        )
-        HTTP.response(202, body)
-      end
-      Err(reason) -> do
-        record_rejected()
-        error_response(500, "persistence_failed", reason)
-      end
-    end
-    Err(reason) -> error_response(503, "config_unavailable", reason)
-  end
-end
 
 fn solana_wallet_flow_response(event :: SolanaWalletFlowEvent) do
   case persist_solana_wallet_flow_event(get_pool(), event) do
@@ -815,15 +319,6 @@ fn authenticated_event_response(body :: String) do
         "FundingObservation" -> do
           case parse_funding_observation(body) do
             Ok(event) -> funding_observation_response(event)
-            Err(reason) -> do
-              record_rejected()
-              error_response(400, "invalid_event", reason)
-            end
-          end
-        end
-        "WalletObservation" -> do
-          case parse_wallet_observation(body) do
-            Ok(event) -> wallet_observation_response(event)
             Err(reason) -> do
               record_rejected()
               error_response(400, "invalid_event", reason)
@@ -957,10 +452,10 @@ fn wallet_config_values(body :: String, maximum :: Int) -> String ! String do
   end
 end
 
-fn wallet_config_response(request :: Request, solana :: Bool) do
+fn wallet_config_response(request :: Request) do
   let body = Request.body(request)
   let idempotency_key = request_header(request, "x-idempotency-key")
-  let action = if solana do "solana_wallet_config" else "wallet_config" end
+  let action = "solana_wallet_config"
   if operator_authenticated(request, idempotency_key, body) == false do
     warn("operator_command_rejected", "{\"action\":\"${action}\",\"reason\":\"authentication\"}")
     return error_response(401, "unauthorized", "invalid operator signature")
@@ -977,7 +472,7 @@ fn wallet_config_response(request :: Request, solana :: Bool) do
       return error_response(503, "lease_unavailable", reason)
     end
   end
-  case wallet_config_values(body, if solana do 100 else 50 end) do
+  case wallet_config_values(body, 100) do
     Err(reason) -> error_response(400, "invalid_wallet_config", reason)
     Ok(wallets_json) -> do
       if Json.is_string(body, "reason") == false do
@@ -988,24 +483,13 @@ fn wallet_config_response(request :: Request, solana :: Bool) do
         return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
       end
       let request_hash = "${idempotency_key}\n${body}" |> Crypto.sha256
-      let persisted = if solana do
-        persist_solana_wallet_config(
-          get_pool(),
-          idempotency_key,
-          reason,
-          request_hash,
-          wallets_json
-        )
-      else
-        persist_wallet_config(
-          get_pool(),
-          idempotency_key,
-          reason,
-          request_hash,
-          wallets_json
-        )
-      end
-      case persisted do
+      case persist_solana_wallet_config(
+        get_pool(),
+        idempotency_key,
+        reason,
+        request_hash,
+        wallets_json
+      ) do
         Ok(result) -> do
           info("operator_command_applied", "{\"action\":\"${action}\",\"idempotencyKey\":\"${idempotency_key}\"}")
           HTTP.response(202, result)
@@ -1218,22 +702,6 @@ pub fn handle_reconcile(request :: Request) -> Response do
   operator_response(request, "reconcile", "")
 end
 
-pub fn handle_portfolio_exit(request :: Request) -> Response do
-  case Request.param(request, "portfolio") do
-    Some(portfolio_id) -> do
-      if List.contains([
-        "local-sol-control",
-        "local-jitosol-carry",
-        "local-sync-sol-control",
-        "local-sync-jitosol-carry"
-      ], portfolio_id) == false do
-        return error_response(404, "not_found", "paper portfolio not found")
-      end
-      operator_response(request, "exit_position", portfolio_id)
-    end
-    None -> error_response(400, "invalid_request", "missing portfolio")
-  end
-end
 
 pub fn handle_emergency_flatten(request :: Request) -> Response do
   operator_response(request, "emergency_flatten", "*")
@@ -1245,6 +713,134 @@ end
 
 pub fn handle_paper_reset(request :: Request) -> Response do
   paper_reset_response(request)
+end
+
+fn strategy_mode_response(request :: Request, strategy :: String) do
+  let body = Request.body(request)
+  let idempotency_key = request_header(request, "x-idempotency-key")
+  if operator_authenticated(request, idempotency_key, body) == false do
+    warn("operator_command_rejected", "{\"action\":\"strategy_mode\",\"reason\":\"authentication\"}")
+    return error_response(401, "unauthorized", "invalid operator signature")
+  end
+  if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
+    return error_response(400, "invalid_request", "invalid idempotency key")
+  end
+  case Json.parse(body) do
+    Err(reason) -> error_response(400, "invalid_request", reason)
+    Ok(_parsed) -> do
+      if Json.is_string(body, "mode") == false do
+        return error_response(400, "invalid_request", "mode must be a JSON string")
+      end
+      let mode = Json.get(body, "mode")
+      if mode != "paper" && mode != "live" do
+        return error_response(400, "invalid_request", "mode must be paper or live")
+      end
+      if Json.is_string(body, "reason") == false do
+        return error_response(400, "invalid_request", "reason must be a JSON string")
+      end
+      let reason = String.trim(Json.get(body, "reason"))
+      if String.length(reason) == 0 || String.length(reason) > 500 do
+        return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
+      end
+      let approval = if Json.is_string(body, "approval") do
+        Json.get(body, "approval")
+      else
+        ""
+      end
+      if mode == "live" do
+        case lease_held(get_pool()) do
+          Ok(true) -> ()
+          Ok(false) -> do
+            return error_response(409, "leader_required", "cannot arm live without the writer lease")
+          end
+          Err(reason) -> do
+            return error_response(503, "lease_unavailable", reason)
+          end
+        end
+      end
+      let request_hash = "${idempotency_key}\n${body}" |> Crypto.sha256
+      case persist_strategy_execution_mode(
+        get_pool(),
+        strategy,
+        mode,
+        approval,
+        idempotency_key,
+        reason,
+        request_hash
+      ) do
+        Ok(result) -> do
+          info("operator_command_applied", "{\"action\":\"strategy_mode\",\"idempotencyKey\":\"${idempotency_key}\"}")
+          HTTP.response(202, result)
+        end
+        Err(error) -> do
+          if String.contains(error, "idempotency key reused") do
+            error_response(409, "idempotency_conflict", "idempotency key reused for a different command")
+          else if String.contains(error, "approval string") do
+            error_response(409, "live_approval_required", error)
+          else if String.contains(error, "live arming requires") do
+            error_response(409, "strategy_precondition_failed", error)
+          else if String.contains(error, "unknown strategy") do
+            error_response(404, "not_found", "strategy not found")
+          else
+            error_response(500, "operator_command_failed", error)
+          end
+        end
+      end
+    end
+  end
+end
+
+pub fn handle_strategy_mode(request :: Request) -> Response do
+  case Request.param(request, "strategy") do
+    Some(strategy) -> strategy_mode_response(request, strategy)
+    None -> error_response(400, "invalid_request", "missing strategy")
+  end
+end
+
+pub fn handle_solana_live_claim(request :: Request) -> Response do
+  let body = Request.body(request)
+  if authenticated(request, body) == false do
+    warn("live_claim_rejected", "{\"reason\":\"authentication\"}")
+    return error_response(401, "unauthorized", "invalid adapter signature")
+  end
+  case lease_held(get_pool()) do
+    Ok(true) -> case claim_solana_live(get_pool(), body) do
+      Ok(result) -> HTTP.response(200, result)
+      Err(reason) -> do
+        if String.contains(reason, "invalid") do
+          error_response(400, "invalid_request", reason)
+        else
+          error_response(500, "live_claim_failed", reason)
+        end
+      end
+    end
+    Ok(false) -> error_response(503, "leader_required", "collector does not hold the writer lease")
+    Err(reason) -> error_response(503, "lease_unavailable", reason)
+  end
+end
+
+pub fn handle_solana_live_report(request :: Request) -> Response do
+  let body = Request.body(request)
+  if authenticated(request, body) == false do
+    warn("live_report_rejected", "{\"reason\":\"authentication\"}")
+    return error_response(401, "unauthorized", "invalid adapter signature")
+  end
+  case lease_held(get_pool()) do
+    Ok(true) -> case record_solana_live(get_pool(), body) do
+      Ok(result) -> HTTP.response(202, result)
+      Err(reason) -> do
+        if String.contains(reason, "invalid") do
+          error_response(400, "invalid_request", reason)
+        else if String.contains(reason, "no rows") do
+          error_response(404, "not_found", "live intent not found")
+        else
+          error_response(500, "live_report_failed", reason)
+        end
+      end
+    end
+    Ok(false) -> error_response(503, "leader_required", "collector does not hold the writer lease")
+    Err(reason) -> error_response(503, "lease_unavailable", reason)
+  end
 end
 
 pub fn handle_solana_validation_start(request :: Request) -> Response do
@@ -1274,7 +870,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 49
+      schemaVersion : 53
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -1379,44 +975,7 @@ pub fn handle_orders(request :: Request) -> Response do
   end
 end
 
-pub fn handle_shadow_results(request :: Request) -> Response do
-  case page(request) do
-    Ok(value) -> read_response(shadow_results(
-      get_pool(),
-      value.limit,
-      value.offset
-    ))
-    Err(reason) -> error_response(400, "invalid_pagination", reason)
-  end
-end
 
-pub fn handle_shadow_result(request :: Request) -> Response do
-  let body = Request.body(request)
-  if authenticated(request, body) == false do
-    return error_response(401, "unauthorized", "invalid adapter signature")
-  end
-  case parse_shadow_result(body) do
-    Err(reason) -> error_response(400, "invalid_shadow_result", reason)
-    Ok(result) -> case persist_shadow_result(get_pool(), result) do
-      Ok(status) -> do
-        info("shadow_result_recorded", "{\"commandId\":\"${result.command_id}\",\"status\":\"${status}\",\"outcome\":\"${result.status}\"}")
-        HTTP.response(202, json {
-          status : status,
-          commandId : result.command_id,
-          outcome : result.status,
-          retryAllowed : result.status != "UNKNOWN"
-        })
-      end
-      Err(reason) -> do
-        if String.contains(reason, "shadow command binding changed") || String.contains(reason, "terminal shadow result changed") do
-          error_response(409, "shadow_command_conflict", reason)
-        else
-          error_response(500, "persistence_failed", reason)
-        end
-      end
-    end
-  end
-end
 
 pub fn handle_fills(request :: Request) -> Response do
   case page(request) do
@@ -1466,32 +1025,7 @@ pub fn handle_reverse_carry_leaderboard(_request :: Request) -> Response do
   end
 end
 
-pub fn handle_cross_venue_funding_leaderboard(
-  _request :: Request
-) -> Response do
-  case load_runtime_config() do
-    Ok(config) -> read_response(cross_venue_funding_leaderboard(
-      get_pool(),
-      DateTime.utc_now() |> DateTime.to_unix_ms,
-      config.source_max_funding_age_ms,
-      config.target_notional_usd_micros,
-      config.paper_costs_usd_micros,
-      config.paper_risk_haircut_usd_micros,
-      config.expected_hold_hours,
-      config.paper_collateral_usd_micros,
-      config.minimum_margin_ratio_ppm,
-      config.minimum_liquidation_distance_bps
-    ))
-    Err(reason) -> error_response(503, "config_unavailable", reason)
-  end
-end
 
-pub fn handle_wallet_tracking(_request :: Request) -> Response do
-  read_response(wallet_tracking(
-    get_pool(),
-    DateTime.utc_now() |> DateTime.to_unix_ms
-  ))
-end
 
 pub fn handle_solana_wallet_flow(_request :: Request) -> Response do
   read_response(get_pool() |> solana_wallet_flow_state)
@@ -1502,16 +1036,10 @@ pub fn handle_solana_wallet_config(_request :: Request) -> Response do
 end
 
 pub fn handle_solana_wallet_config_update(request :: Request) -> Response do
-  wallet_config_response(request, true)
+  wallet_config_response(request)
 end
 
-pub fn handle_wallet_config(_request :: Request) -> Response do
-  read_response(get_pool() |> wallet_config)
-end
 
-pub fn handle_wallet_config_update(request :: Request) -> Response do
-  wallet_config_response(request, false)
-end
 
 pub fn handle_jitosol(_request :: Request) -> Response do
   read_response(get_pool() |> jitosol)
@@ -1521,9 +1049,6 @@ pub fn handle_pnl(_request :: Request) -> Response do
   read_response(get_pool() |> pnl)
 end
 
-pub fn handle_pnl_comparison(_request :: Request) -> Response do
-  read_response(get_pool() |> pnl_comparison)
-end
 
 pub fn handle_risk_events(request :: Request) -> Response do
   case page(request) do
@@ -1581,7 +1106,7 @@ pub fn handle_config(_request :: Request) -> Response do
       directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
       directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
       protocolSchemaVersion : 1,
-      databaseSchemaVersion : 49,
+      databaseSchemaVersion : 53,
       liveEnabled : false
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)

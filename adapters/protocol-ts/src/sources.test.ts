@@ -394,7 +394,6 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     assert.equal(captured.fundingObservation.realizedFundingRatePpm, "250");
     assert.equal(captured.fundingObservation.perpExitDepthAtoms, "80000000000");
     assert.equal(captured.fundingObservation.depthQualified, false);
-    assert.equal(captured.fundingObservation.maintenanceMarginPpm, "50000");
     assert.deepEqual(captured.endpoints, {
       phoenix: backup.url,
       solana: backup.url,

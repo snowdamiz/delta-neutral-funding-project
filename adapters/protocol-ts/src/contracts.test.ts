@@ -122,8 +122,6 @@ test("builds a depth-qualified per-asset funding observation", () => {
   assert.equal(event.payload.asset, "BTC");
   assert.equal(event.payload.fundingRatePpmPerHour, "13");
   assert.equal(event.payload.depthQualified, true);
-  assert.equal(event.payload.marginStatus, "valid");
-  assert.equal(event.payload.maintenanceMarginPpm, "12500");
   assert.equal(event.payload.fundingHistory.length, 1);
   assert.equal(validateEvent(event), event);
 
@@ -150,14 +148,6 @@ test("builds a depth-qualified per-asset funding observation", () => {
         payload: { ...event.payload, spotExitDepthAtoms: "0" },
       }),
     /depth-qualified/,
-  );
-  assert.throws(
-    () =>
-      validateEvent({
-        ...event,
-        payload: { ...event.payload, maintenanceMarginPpm: "0" },
-      }),
-    /margin/,
   );
   assert.throws(
     () =>

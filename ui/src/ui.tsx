@@ -11,6 +11,16 @@ const CatalogContext = createContext<Strategy[]>([]);
 export const CatalogProvider = CatalogContext.Provider;
 export const useCatalog = () => useContext(CatalogContext);
 
+/**
+ * Every section note, panel hint, and stat caption hangs off this one flag.
+ * Off by default: four layers of permanent prose sat between the operator and
+ * the numbers. The rail's `?` turns all of it back on at once, so nothing is
+ * lost — it just is not the default reading.
+ */
+const VerboseContext = createContext(false);
+export const VerboseProvider = VerboseContext.Provider;
+export const useVerbose = () => useContext(VerboseContext);
+
 // Status is never carried by colour alone: red↔green is indistinguishable
 // under deuteranopia, so every chip pairs a glyph with a word.
 const GLYPH: Record<Tone, string> = { ok: "●", warn: "▲", crit: "■", mute: "○" };
@@ -109,13 +119,14 @@ export const reasonName = (reason: string) =>
 export function Section({
   title, note, children,
 }: { title: string; note?: string; children: ReactNode }) {
+  const verbose = useVerbose();
   return (
     <section className="rise">
       <div className="shead">
         <h2>{title}</h2>
         <div className="rule" />
       </div>
-      {note && <p className="snote">{note}</p>}
+      {note && verbose && <p className="snote">{note}</p>}
       {children}
     </section>
   );
@@ -123,20 +134,23 @@ export function Section({
 
 export const Panel = ({
   label, hint, aside, children,
-}: { label?: string; hint?: string; aside?: ReactNode; children: ReactNode }) => (
-  <div className="panel">
-    {(label || aside) && (
-      <div className="ph">
-        <div className="ph-l">
-          <span className="lbl">{label}</span>
-          {hint && <span className="hint">{hint}</span>}
+}: { label?: string; hint?: string; aside?: ReactNode; children: ReactNode }) => {
+  const verbose = useVerbose();
+  return (
+    <div className="panel">
+      {(label || aside) && (
+        <div className="ph">
+          <div className="ph-l">
+            <span className="lbl" title={verbose ? undefined : hint}>{label}</span>
+            {hint && verbose && <span className="hint">{hint}</span>}
+          </div>
+          {aside}
         </div>
-        {aside}
-      </div>
-    )}
-    {children}
-  </div>
-);
+      )}
+      {children}
+    </div>
+  );
+};
 
 export const Empty = ({ msg }: { msg: string }) => (
   <div className="empty-state">
@@ -155,13 +169,19 @@ export const Stat = ({
   tone?: Tone;
   sm?: boolean;
   hero?: boolean;
-}) => (
-  <div className={`stat${sm ? " sm" : ""}${hero ? " hero" : ""}`}>
-    <div className="lbl">{label}</div>
-    <div className="val" style={tone ? { color: `var(--${tone})` } : undefined}>{value}</div>
-    {cap && <div className="cap">{cap}</div>}
-  </div>
-);
+}) => {
+  const verbose = useVerbose();
+  return (
+    <div
+      className={`stat${sm ? " sm" : ""}${hero ? " hero" : ""}`}
+      title={!verbose && typeof cap === "string" ? cap : undefined}
+    >
+      <div className="lbl">{label}</div>
+      <div className="val" style={tone ? { color: `var(--${tone})` } : undefined}>{value}</div>
+      {cap && verbose && <div className="cap">{cap}</div>}
+    </div>
+  );
+};
 
 /**
  * Margin ratio sits ~33x above its floor, so a bar of the raw value would peg

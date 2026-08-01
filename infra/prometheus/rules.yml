@@ -25,12 +25,6 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: Liquidation distance is below the configured minimum
-      - alert: CriticalDelta
-        expr: max(position_delta_bps) > 50
-        for: 30s
-        labels: { severity: critical }
-        annotations:
-          summary: Portfolio delta exceeds the rebalance limit
       - alert: AdapterStale
         expr: adapter_connected == 0
         for: 30s
@@ -42,11 +36,6 @@ groups:
         labels: { severity: high }
         annotations:
           summary: A reconciliation mismatch was recorded
-      - alert: ShadowOutcomeUnknown
-        expr: shadow_executor_results{status="unknown"} > 0
-        labels: { severity: high }
-        annotations:
-          summary: Shadow executor has an unknown outcome
       - alert: CriticalRiskEvent
         expr: increase(risk_events_total{severity="critical"}[5m]) > 0
         labels: { severity: critical }

@@ -92,7 +92,7 @@ end
 pub fn solana_wallet_flow_state(pool :: PoolHandle) -> String ! String do
   let rows = Pool.query(
     pool,
-    "SELECT (solana_wallet_flow_read_model() || jsonb_build_object('followedWallets', solana_wallet_config(), 'validation', solana_validation_latest_report()))::text AS body",
+    "SELECT (solana_wallet_flow_read_model() || jsonb_build_object('followedWallets', solana_wallet_config(), 'validation', solana_validation_latest_report(), 'discovery', solana_wallet_discovery(30000, 10, 50), 'live', solana_live_read_model()))::text AS body",
     []
   ) ?
   if List.length(rows) != 1 do
@@ -129,6 +129,59 @@ pub fn persist_solana_wallet_config(
   ) ?
   if List.length(rows) != 1 do
     Err("database returned invalid Solana wallet configuration result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn persist_strategy_execution_mode(
+  pool :: PoolHandle,
+  strategy :: String,
+  mode :: String,
+  approval :: String,
+  idempotency_key :: String,
+  reason :: String,
+  request_hash :: String
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT apply_strategy_execution_mode($1, $2, $3, $4, $5, $6)::text AS body",
+    [strategy, mode, approval, idempotency_key, reason, request_hash]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid strategy execution mode result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn claim_solana_live(
+  pool :: PoolHandle,
+  body :: String
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT claim_solana_live_request($1::jsonb)::text AS body",
+    [body]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid live claim result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn record_solana_live(
+  pool :: PoolHandle,
+  body :: String
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT record_solana_live_report($1::jsonb)::text AS body",
+    [body]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid live report result")
   else
     Ok(Map.get(List.head(rows), "body"))
   end

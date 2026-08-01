@@ -1,26 +1,26 @@
 # Delta-neutral funding collector
 
-Local-first, Mesh-owned paper and shadow system for comparing:
+Local-first, Mesh-owned paper trading system running four strategies:
 
-- long SOL + short SOL-PERP (`SOL_CONTROL`);
-- long JitoSOL + short SOL-PERP (`JITOSOL_CARRY`);
+- follow configured Solana wallets' confirmed acquisitions, survival-score
+  each exact mint, and trade the survivors — recoup cost at the ladder, ride
+  the remainder behind a trailing stop (`SOLANA_WALLET_FLOW_QUANT`, the
+  centerpiece; research in
+  [docs/us-accessible-strategy-research.md](docs/us-accessible-strategy-research.md));
 - long the top-ranked spot asset + short its perpetual
   (`CROSS_ASSET_FUNDING`);
 - long the top-ranked asset perpetual + borrowed/sold spot when funding is
   deeply negative (`NEGATIVE_FUNDING_REVERSE`);
 - buy JitoSOL below protocol NAV, short its NAV-equivalent SOL exposure, and
-  redeem through the better modeled exit (`JITOSOL_NAV_DISCOUNT`);
-- short the higher-realized-funding perpetual and long the lower-funding
-  perpetual for the same asset (`CROSS_VENUE_FUNDING`);
-- aggregate, mirror, or fade configured Hyperliquid wallets
-  (`HYPERLIQUID_WALLET_FLOW`, `HYPERLIQUID_WALLET_MIRROR`,
-  `HYPERLIQUID_WALLET_FADE`).
+  redeem through the better modeled exit (`JITOSOL_NAV_DISCOUNT`).
 
-Paper mode is the default and the only currently approved mode. The repository
-contains no private key and no route from the paper deployment to a signer.
-The [Solana wallet-flow quant strategy](docs/us-accessible-strategy-research.md)
-specifies aggregator-aware SPL-token analysis and paper validation without
-authorizing live trading.
+Paper mode is the default everywhere. The wallet-flow strategy additionally
+has a default-off live path with two independent switches: an HMAC-signed
+arm toggle with an explicit approval literal, and a separate executor
+process (`solana-live` compose profile) that holds the only signing key and
+refuses to start without one. Nothing else in the deployment can sign.
+Retired strategies and the reasoning are recorded in
+[docs/implementation-status.md](docs/implementation-status.md).
 
 ## Local development
 
@@ -123,12 +123,14 @@ pending.
 
 `ui/` is a React console over the read API. It is driven by the collector's
 strategy catalog (`GET /v1/strategies`) and enumerates nothing itself: the
-overview shows signal state, one card per registered strategy, forward and
-reverse funding leaderboards, and the capability matrix; opening a card shows
-that strategy against the benchmark it declares, its positions against their
-pinned margin and liquidation floors, attribution, risk decisions,
-opportunities, and ledger. The open strategy lives in the URL fragment
-(`#jitosol_carry`), so a detail view is linkable.
+overview shows signal state and one card per registered strategy, the
+markets page carries the funding and reverse-carry scans, and opening a card
+shows that strategy's positions, attribution, risk decisions, opportunities,
+and ledger. The wallet-flow strategy opens its own page: paper account,
+ladder and trailing state per position, wallet discovery nominations, the
+followed cohort, and the two-step live arm switch. The open strategy lives
+in the URL fragment (`#/s/solana_wallet_flow_quant`), so a detail view is
+linkable.
 
 Registering a strategy is a row in the catalog read model
 (`mesh/packages/read_models.mpl`); the console needs no change to render it.
@@ -160,13 +162,13 @@ fixed-point conversion and arithmetic.
 
 ## Operator commands
 
-Read-only operator commands use `bin/collector` directly. Mutations require the
-separate operator secret, and paper exits/flattening also require the explicit
+Read-only operator commands use `bin/collector` directly. Mutations require
+the separate operator secret, and flattening also requires the explicit
 `--approve-paper` argument:
 
 ```sh
 OPERATOR_HMAC_SECRET=local-operator-only-change-me \
-  bin/collector exit jitosol-carry "manual paper exit" --approve-paper
+  bin/collector flatten "manual paper flatten" --approve-paper
 ```
 
 `paper-reset` is intentionally stricter: pause all entries, flatten every paper
@@ -183,22 +185,14 @@ The collateral must match the pinned runtime
 configuration. A successful reset atomically clears paper evidence, recreates
 opening ledgers, preserves build/operator audit records, and remains paused.
 
-Deterministic replay uses the same collector image without a network or writable
-root filesystem:
+The adoption gates:
 
 ```sh
-bin/collector replay \
-  --bundle replay/bundles/calm-v1.jsonl \
-  --config replay/configs/baseline-v1.json
-
 bin/collector verify-toolchain
 
-scripts/check-replay.sh
-scripts/check-toolchain-rollback.sh
 scripts/check-database.sh
 scripts/check-toolchain.sh
 scripts/check-shutdown.sh
-scripts/check-shadow-persistence.sh
 scripts/check-native-solana-read.sh
 scripts/check-native-solana-subscription.sh
 scripts/check-native-solana-instruction.sh
@@ -209,23 +203,15 @@ scripts/soak-report.sh
 scripts/runtime-stability-report.sh
 ```
 
-The replay gate runs the calm, volatile, liquidity-loss, epoch-boundary, and
-deterministic-failure bundles twice and checks their exact outcome hashes.
-The rollback gate replays all six bundles on the candidate and prior pinned
-Mesh images and requires identical economic traces after release identity is
-removed from the comparison.
 The database gate applies every migration and contract test to fresh temporary
 PostgreSQL storage.
 The toolchain gate additionally verifies the exact clean Mesh checkout and runs
-the Mesh, TypeScript, and Rust conformance suites while building their images.
+the Mesh and TypeScript suites while building their images.
 It requires a clean project checkout, compiles the Git and Mesh revisions into
 the collector, labels every image, and creates commit-qualified local image
 tags for rollback.
 The native instruction gate inspects both one raw instruction and a complete
 Jupiter build instruction set in a read-only container with networking disabled.
-The shadow persistence check builds Jupiter and perp actions without network
-access, dry-runs the independent Rust policy, and records paper/simulation
-deltas through the authenticated Mesh API.
 The native Solana check runs the compiled Mesh collector as a read-only
 mainnet RPC client and compares its independently validated JitoSOL epoch and
 atomic NAV with the latest authoritative adapter observation.

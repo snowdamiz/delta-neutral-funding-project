@@ -233,31 +233,6 @@ export type ReverseCarryLeaderboard = {
   items: ReverseCarryRank[];
 };
 
-export type CrossVenueRank = {
-  rank: number;
-  scanId: string;
-  asset: string;
-  instrument: string;
-  shortVenue: string;
-  longVenue: string;
-  realizedSpreadPpmPerHour: string;
-  gateDistancePpm: string;
-  historyReady: boolean;
-  shortMarginStatus: string;
-  longMarginStatus: string;
-  shortMarginRatioPpm: string;
-  longMarginRatioPpm: string;
-  eligible: boolean;
-};
-
-export type CrossVenueLeaderboard = {
-  asOfMs: string;
-  historyRequiredHours: string;
-  minimumRealizedSamples24h: string;
-  gateThresholdPpm: string;
-  items: CrossVenueRank[];
-};
-
 export type WalletCohort = {
   version: string;
   wallets: string[];
@@ -265,47 +240,100 @@ export type WalletCohort = {
   updatedAt: string;
 };
 
-export type WalletTracking = {
-  config: WalletCohort;
-  scores: {
-    asOfMs: string;
-    minimumDecisions: string;
-    items: {
-      rank: number;
-      wallet: string;
-      closedDecisions: string;
-      netRealizedUsdMicros: string;
-      feesUsdMicros: string;
-      maxDrawdownUsdMicros: string;
-      scorePpm: string;
-      qualified: boolean;
-    }[];
-  };
-  signals: {
-    asset: string;
-    observedAtMs: string;
-    signalPpm: string;
-    qualifiedWallets: string;
-    qualified: boolean;
-  }[];
-  positions: unknown[];
-  decisions: unknown[];
-  assessment: {
-    asOfMs: string;
-    modes: Record<"flow" | "mirror" | "fade", {
-      verdict: "pending" | "go" | "kill";
-      evidenceDays: string;
-      closedDecisions: string;
-      netUsdMicros: string;
-      riskAdjustedReturnPpm: string;
-      minimumDays: string;
-      minimumDecisions: string;
-    }>;
-    benchmarks: Record<"holdingSol" | "phase1", {
-      ready: boolean;
-      riskAdjustedReturnPpm: string;
-    }>;
-  };
+export type WalletFlowExitLeg = {
+  legNo: number;
+  reason: string;
+  quantityAtoms: string;
+  proceedsUsdMicros: string;
+  exitedAtMs: string;
+};
+
+export type WalletFlowPosition = {
+  id: string;
+  wallet: string;
+  mint: string;
+  status: "open" | "closed";
+  openedAtMs: string;
+  closedAtMs: string | null;
+  entryCostUsdMicros: string;
+  quantityAtoms: string;
+  remainingQuantityAtoms: string;
+  recouped: boolean;
+  peakReturnBps: string;
+  migrationCrossed: boolean;
+  entryMigrationStatus: string;
+  exitReason: string | null;
+  exitProceedsUsdMicros: string | null;
+  realizedPnlUsdMicros: string | null;
+  exitLegs: WalletFlowExitLeg[];
+};
+
+export type WalletFlowAction = {
+  id: string;
+  action: "ENTRY" | "EXIT" | "HOLD" | "SKIP";
+  status: "FILLED" | "PLANNED" | "REJECTED";
+  reason: string;
+  processedAtMs: string;
+  quantityAtoms: string;
+  cashDeltaUsdMicros: string;
+};
+
+export type WalletFlowDiscovery = {
+  wallet: string;
+  runnerCount: number;
+  bestRank: number;
+  bestMultipleBps: string;
+  alreadyFollowed: boolean;
+  evidence: { mint: string; peakMultipleBps: string; buyRank: number }[];
+};
+
+export type WalletFlowLiveIntent = {
+  id: string;
+  kind: "ENTRY" | "EXIT";
+  mint: string;
+  status: "pending" | "claimed" | "filled" | "failed" | "expired";
+  reason: string;
+  inputUsdMicros: string;
+  fractionBps: number;
+  failureReason: string | null;
+  createdAtMs: string;
+};
+
+export type WalletFlowLivePosition = {
+  mint: string;
+  status: "open" | "closed";
+  remainingAtoms: string;
+  costUsdMicros: string;
+  proceedsUsdMicros: string;
+  feeLamports: string;
+  openedAtMs: string;
+};
+
+export type WalletFlow = {
+  cursors: { wallet: string; captureComplete: boolean; gapReason: string | null }[];
+  openMints: unknown[];
+  paperAccount: {
+    initialCapitalUsdMicros: string;
+    reserveCapitalUsdMicros: string;
+    cashBalanceUsdMicros: string;
+    realizedPnlUsdMicros: string;
+    updatedAtMs: string;
+  } | null;
+  positions: WalletFlowPosition[];
+  actions: WalletFlowAction[];
+  strategyConfig: { id: string; values: Record<string, string> } | null;
+  brokerConfig: { id: string; values: Record<string, string> } | null;
+  followedWallets: WalletCohort | null;
+  validation: { passed: boolean; gates: Record<string, boolean> } | null;
+  discovery: WalletFlowDiscovery[];
+  live: {
+    mode: "paper" | "live";
+    config: { id: string; values: Record<string, string> } | null;
+    dailySpendUsdMicros: string;
+    intents: WalletFlowLiveIntent[];
+    positions: WalletFlowLivePosition[];
+    fills: unknown[];
+  } | null;
 };
 
 export type Capability = {
@@ -320,7 +348,7 @@ export type Reconciliation = {
   completedAt: string;
 } | null;
 
-export type OperatorAction = "pause-all" | "resume" | "start" | "stop";
+export type OperatorAction = "pause-all" | "resume" | "start" | "stop" | "arm-live" | "disarm-live";
 
 type Page<T> = { items: T[]; limit: number; offset: number };
 
@@ -342,8 +370,7 @@ export type Snapshot = {
   funding: FundingPayment[];
   fundingLeaderboard: FundingLeaderboard | null;
   reverseCarryLeaderboard: ReverseCarryLeaderboard | null;
-  crossVenueLeaderboard: CrossVenueLeaderboard | null;
-  walletTracking: WalletTracking | null;
+  walletFlow: WalletFlow | null;
   solanaWalletConfig: WalletCohort | null;
   capabilities: Capability[];
   buildManifestId: string;
@@ -363,7 +390,7 @@ const EMPTY: Snapshot = {
   status: null, build: null, config: null, adapter: null, executor: null,
   strategies: [], portfolios: [], positions: [], pnl: [], decisions: [], events: [],
   opportunities: [], orders: [], fills: [], funding: [], fundingLeaderboard: null,
-  reverseCarryLeaderboard: null, crossVenueLeaderboard: null, walletTracking: null,
+  reverseCarryLeaderboard: null, walletFlow: null,
   solanaWalletConfig: null, capabilities: [],
   buildManifestId: "", reconciliation: null, reachable: false, polledAt: 0,
   polling: true, intervalMs: POLL_MS,
@@ -413,9 +440,6 @@ async function configureWalletCohort(path: string, wallets: string[]): Promise<v
   throw new Error(error?.message ?? `wallet update failed (${response.status})`);
 }
 
-export const configureWallets = (wallets: string[]) =>
-  configureWalletCohort("/operator/wallets/config", wallets);
-
 export const configureSolanaWallets = (wallets: string[]) =>
   configureWalletCohort("/operator/solana-wallets/config", wallets);
 
@@ -434,7 +458,7 @@ export async function pull(): Promise<Snapshot> {
   const [
     status, build, config, adapter, executor, catalog, portfolios, positions, pnl,
     decisions, events, opportunities, orders, fills, funding, fundingLeaderboard,
-    reverseCarryLeaderboard, crossVenueLeaderboard, walletTracking, solanaWalletConfig,
+    reverseCarryLeaderboard, walletFlow,
     capabilities, reconciliation,
   ] = await Promise.all([
     get<Status | null>("/v1/status", null),
@@ -454,9 +478,7 @@ export async function pull(): Promise<Snapshot> {
     get<Page<FundingPayment> | null>("/v1/funding?limit=12", null),
     get<FundingLeaderboard | null>("/v1/funding/leaderboard", null),
     get<ReverseCarryLeaderboard | null>("/v1/reverse-carry/leaderboard", null),
-    get<CrossVenueLeaderboard | null>("/v1/cross-venue/leaderboard", null),
-    get<WalletTracking | null>("/v1/wallets", null),
-    get<WalletCohort | null>("/v1/solana-wallet-flow/config", null),
+    get<WalletFlow | null>("/v1/solana-wallet-flow", null),
     get<{ results: Capability[]; buildManifestId: string } | null>("/v1/capabilities", null),
     get<Reconciliation>("/v1/reconciliations/latest", null),
   ]);
@@ -475,9 +497,8 @@ export async function pull(): Promise<Snapshot> {
     funding: page(funding),
     fundingLeaderboard,
     reverseCarryLeaderboard,
-    crossVenueLeaderboard,
-    walletTracking,
-    solanaWalletConfig,
+    walletFlow,
+    solanaWalletConfig: walletFlow?.followedWallets ?? null,
     capabilities: capabilities?.results ?? [],
     buildManifestId: capabilities?.buildManifestId ?? "",
     reconciliation,

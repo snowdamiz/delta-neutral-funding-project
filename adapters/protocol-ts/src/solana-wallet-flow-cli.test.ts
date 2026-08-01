@@ -56,7 +56,11 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
               routePrograms: ["JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"],
             },
           },
-        }] }));
+        }], strategyConfig: {
+          id: "solana-wallet-flow-v2",
+          configHash: "b".repeat(64),
+          values: { positionUsdMicros: "100000000", minimumExitDepthMultiple: "10" },
+        } }));
         return;
       }
       const chunks: Buffer[] = [];
@@ -208,6 +212,11 @@ test("uses an empty collector cohort without restarting", async () => {
       },
       cursors: [],
       openMints: [],
+      strategyConfig: {
+        id: "solana-wallet-flow-v2",
+        configHash: "b".repeat(64),
+        values: { positionUsdMicros: "100000000", minimumExitDepthMultiple: "10" },
+      },
     }));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

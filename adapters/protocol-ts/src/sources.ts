@@ -769,10 +769,6 @@ export async function buildAuthoritativeEvents(
     initialMargin * perp.maintenanceBps,
     10_000n,
   );
-  const maintenanceMarginPpm = ceilDiv(
-    million * million * perp.maintenanceBps,
-    leverageTier.maxLeveragePpm * 10_000n,
-  );
   const liquidationDistance =
     config.paperCollateralUsdMicros <= maintenance
       ? 0n
@@ -879,8 +875,6 @@ export async function buildAuthoritativeEvents(
     spotExitDepthAtoms: "0",
     perpExitDepthAtoms: perp.depthLamports.toString(),
     depthQualified: false,
-    marginStatus: "valid",
-    maintenanceMarginPpm: maintenanceMarginPpm.toString(),
     raw: perp.raw,
   };
   return {

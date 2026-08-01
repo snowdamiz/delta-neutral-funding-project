@@ -24,26 +24,13 @@ CODE_COMMIT=$code_commit docker compose \
   --project-directory "$project_dir" \
   --file "$project_dir/compose.yaml" \
   build collector adapter
-docker build \
-  --sbom=true \
-  --provenance=mode=max \
-  --build-arg "CODE_COMMIT=$code_commit" \
-  --file "$project_dir/infra/docker/executor.Dockerfile" \
-  --tag delta-neutral-funding-executor:latest \
-  "$project_dir"
 docker image tag \
   delta-neutral-funding-collector:latest \
   "delta-neutral-funding-collector:$code_commit-$mesh_tag"
 docker image tag \
   delta-neutral-funding-adapter:latest \
   "delta-neutral-funding-adapter:$code_commit"
-docker image tag \
-  delta-neutral-funding-executor:latest \
-  "delta-neutral-funding-executor:$code_commit"
-"$project_dir/scripts/check-shadow.sh"
 "$project_dir/scripts/check-lease-fencing.sh"
-"$project_dir/scripts/check-replay.sh"
-"$project_dir/scripts/check-toolchain-rollback.sh"
 "$project_dir/scripts/check-database.sh"
 
 printf 'toolchain adoption checks passed\n'

@@ -54,7 +54,7 @@ post resume "$run_id-resume" '{"reason":"paper reconciliation passed"}' |
 post reconcile "$run_id-reconcile" '{"reason":"standalone paper reconciliation"}' |
   jq -e '(.reconciliationId | length) > 0' >/dev/null
 
-for strategy in hyperliquid_wallet_mirror solana_wallet_flow_quant; do
+for strategy in solana_wallet_flow_quant; do
   key="$run_id-$strategy-empty"
   body='{"reason":"empty wallet cohort must fail closed"}'
   test "$(
@@ -67,18 +67,34 @@ for strategy in hyperliquid_wallet_mirror solana_wallet_flow_quant; do
   )" = "409"
 done
 
-post strategies/sol_control/stop "$run_id-sol-stop-first" \
+post strategies/cross_asset_funding/stop "$run_id-cross-stop-first" \
   '{"reason":"isolation setup"}' >/dev/null
-post strategies/jitosol_carry/stop "$run_id-jito-stop" \
+post strategies/negative_funding_reverse/stop "$run_id-reverse-stop" \
   '{"reason":"isolation setup"}' >/dev/null
-post strategies/sol_control/start "$run_id-sol-start" \
+post strategies/cross_asset_funding/start "$run_id-cross-start" \
   '{"reason":"independent strategy check"}' |
-  jq -e '.strategy == "sol_control" and .enabled == true' >/dev/null
+  jq -e '.strategy == "cross_asset_funding" and .enabled == true' >/dev/null
 curl -fsS "$base_url/v1/strategies" |
-  jq -e '([.strategies[] | select(.enabled) | .id] == ["sol_control"])' >/dev/null
-post strategies/sol_control/stop "$run_id-sol-stop" \
+  jq -e '([.strategies[] | select(.enabled) | .id] == ["cross_asset_funding"])' >/dev/null
+post strategies/cross_asset_funding/stop "$run_id-cross-stop" \
   '{"reason":"independent strategy check complete"}' |
-  jq -e '.strategy == "sol_control" and .enabled == false' >/dev/null
+  jq -e '.strategy == "cross_asset_funding" and .enabled == false' >/dev/null
+
+# Live arm/disarm is precondition-guarded: arming a stopped strategy with an
+# empty cohort fails closed, and disarm always succeeds.
+key="$run_id-arm-live-blocked"
+body='{"mode":"live","approval":"ARM LIVE TRADING","reason":"arm must fail closed"}'
+test "$(
+  curl -sS -o /dev/null -w '%{http_code}' \
+    -H 'content-type: application/json' \
+    -H "x-idempotency-key: $key" \
+    -H "x-operator-signature: $(signature "$key" "$body")" \
+    --data "$body" \
+    "$base_url/v1/strategies/solana_wallet_flow_quant/mode"
+)" = "409"
+post strategies/solana_wallet_flow_quant/mode "$run_id-disarm-live" \
+  '{"mode":"paper","reason":"disarm is always accepted"}' |
+  jq -e '.mode == "paper"' >/dev/null
 
 curl -fsS "$base_url/v1/status" |
   jq -e '.paused == false and .pauseEntries == false and .pauseAll == false' >/dev/null
