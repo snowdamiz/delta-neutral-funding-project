@@ -3,6 +3,16 @@ set -eu
 
 migration_dir=${MIGRATION_DIR:-/migrations}
 found=false
+attempt=0
+
+until psql --tuples-only --no-align --command="SELECT 1" >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    printf 'database did not become ready within 30 seconds\n' >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 for migration_path in "$migration_dir"/[0-9][0-9][0-9]_*.sql; do
   [ -f "$migration_path" ] || continue
