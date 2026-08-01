@@ -85,32 +85,6 @@ describe("operator proxy request", () => {
     }
   });
 
-  it("signs a validated canonical wallet cohort", () => {
-    const address = `0x${"A".repeat(40)}`;
-    const request = operatorRequest(
-      "/operator/wallets/config",
-      "operator-secret",
-      "wallet-config",
-      JSON.stringify({ wallets: [address] }),
-    );
-
-    expect(JSON.parse(request?.body ?? "{}")).toEqual({
-      reason: "wallet cohort updated from local operator console",
-      wallets: [address.toLowerCase()],
-    });
-    expect(request?.headers["x-operator-signature"]).toBe(
-      signature("wallet-config", request?.body ?? ""),
-    );
-    expect(
-      operatorRequest(
-        "/operator/wallets/config",
-        "operator-secret",
-        "invalid-wallet-config",
-        '{"wallets":["not-a-wallet"]}',
-      ),
-    ).toBeNull();
-  });
-
   it("signs a case-sensitive Solana wallet cohort", () => {
     const wallet = "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ";
     const request = operatorRequest(
@@ -132,6 +106,15 @@ describe("operator proxy request", () => {
         "/operator/solana-wallets/config",
         "operator-secret",
         "invalid-solana-wallet-config",
+        '{"wallets":["0x1111111111111111111111111111111111111111"]}',
+      ),
+    ).toBeNull();
+    // The retired Hyperliquid cohort path has no collector route left.
+    expect(
+      operatorRequest(
+        "/operator/wallets/config",
+        "operator-secret",
+        "retired-wallet-config",
         '{"wallets":["0x1111111111111111111111111111111111111111"]}',
       ),
     ).toBeNull();
