@@ -39,7 +39,8 @@ pub fn parse_solana_wallet_flow_event(
   end
   let event_type = (body |> required_string("eventType")) ?
   if (event_type != "SolanaWalletAcquisition"
-    && event_type != "SolanaWalletCheckpoint") do
+    && event_type != "SolanaWalletCheckpoint"
+    && event_type != "SolanaCandidateSnapshot") do
     return Err("unsupported Solana wallet event type")
   end
   let payload = Json.get(body, "payload")
@@ -68,11 +69,19 @@ pub fn persist_solana_wallet_flow_event(
   pool :: PoolHandle,
   event :: SolanaWalletFlowEvent
 ) -> String ! String do
-  let rows = Pool.query(
-    pool,
-    "SELECT record_solana_wallet_flow_event($1::jsonb)::text AS body",
-    [event.body]
-  ) ?
+  let rows = if event.event_type == "SolanaCandidateSnapshot" do
+    Pool.query(
+      pool,
+      "SELECT record_solana_candidate_snapshot($1::jsonb)::text AS body",
+      [event.body]
+    ) ?
+  else
+    Pool.query(
+      pool,
+      "SELECT record_solana_wallet_flow_event($1::jsonb)::text AS body",
+      [event.body]
+    ) ?
+  end
   if List.length(rows) != 1 do
     Err("database returned invalid Solana wallet event result")
   else

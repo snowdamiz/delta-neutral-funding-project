@@ -848,6 +848,15 @@ fn authenticated_event_response(body :: String) do
             end
           end
         end
+        "SolanaCandidateSnapshot" -> do
+          case parse_solana_wallet_flow_event(body) do
+            Ok(event) -> solana_wallet_flow_response(event)
+            Err(reason) -> do
+              record_rejected()
+              error_response(400, "invalid_event", reason)
+            end
+          end
+        end
         _ -> do
           record_rejected()
           error_response(400, "invalid_event", "unsupported event type")
@@ -1172,7 +1181,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 42
+      schemaVersion : 43
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
