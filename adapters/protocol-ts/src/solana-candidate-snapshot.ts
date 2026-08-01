@@ -156,7 +156,6 @@ const dangerousExtensions = new Map([
   ["pausable", "TOKEN2022_PAUSABLE"],
   ["permissionedBurn", "TOKEN2022_PERMISSIONED_BURN"],
 ]);
-const knownRouteLabel = /^(Pump\.fun|PumpSwap|Jupiter|Raydium(?: CP)?|Meteora(?: DLMM)?|Orca(?: V2)?|Whirlpool)$/i;
 
 function object(value: unknown, field: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -665,9 +664,13 @@ export async function snapshotSolanaCandidate(input: {
       ...sell.routeLabels,
       ...(positionSell?.routeLabels ?? []),
     ])];
-    if (payload.routeLabels.some((label) => !knownRouteLabel.test(label))) {
-      rejectReason ||= "UNKNOWN_ROUTE_PROGRAM";
-    }
+    // Route labels are evidence, not a gate. The aggregator adds and retires
+    // venues continuously, so an allowlist rejects working liquidity as soon
+    // as it goes stale — it refused Deriverse, HumidiFi, Riptide and SolFi V2
+    // on the first live cohort. Nor would it protect execution: the executor
+    // re-quotes at fill time and may route elsewhere entirely. What the venue
+    // has to prove is proven directly above, by quotes that are executable in
+    // both directions at position size, and bounded at fill by max slippage.
     payload.migrationStatus = migrationFrom(payload.routeLabels);
     payload.marketCapUsdMicros = buy.outAmount === 0n
       ? "0"

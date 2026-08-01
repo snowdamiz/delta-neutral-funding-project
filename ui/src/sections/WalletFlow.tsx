@@ -16,6 +16,14 @@ const shortMint = (mint: string) => `${mint.slice(0, 4)}…${mint.slice(-4)}`;
 const shortWallet = (wallet: string) => `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
 const SOLANA_WALLET = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
+// A gap reason is a capture verdict, and two of them say something about the
+// wallet rather than the connection: an address transacting faster than the
+// signature pages can be walked is a bot, not a trader worth following.
+const GAP_HELP: Record<string, string> = {
+  backfill_limit_reached: "transacts faster than capture can page it — a bot, not a copy-trade target",
+  cursor_not_recovered: "the provider no longer serves the last signature seen",
+};
+
 const EXIT_TONE: Record<string, Tone> = {
   RECOUP: "ok",
   TRAILING_STOP: "ok",
@@ -331,6 +339,177 @@ function Positions({ flow }: { flow: WalletFlowState }) {
   );
 }
 
+const DECISION_TONE: Record<string, Tone> = { ENTER: "ok", WATCH: "warn", REJECT: "mute" };
+
+/** A gate reading, coloured only when it is the reason a candidate failed. */
+const Gate = ({ text, failed }: { text: string; failed: boolean }) =>
+  failed ? <strong className="gate-bad">{text}</strong> : <>{text}</>;
+
+const tokens = (atoms: string, decimals: number): string =>
+  (Number(atoms) / 10 ** decimals).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+function Candidates({ flow }: { flow: WalletFlowState }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const arrivals = useArrivals(flow.candidates, (candidate) => candidate.snapshotEventId);
+  const gates = flow.strategyConfig?.values ?? {};
+  const limit = (name: string) => Number(gates[name] ?? 0);
+  const positionUsd = Number(gates.positionUsdMicros ?? 0);
+  const maxImpact = limit("maxEntryImpactBps");
+  const maxRoundTrip = limit("maxRoundTripLossBps");
+  const minDepth = limit("minimumExitDepthMultiple");
+  const minBuyers = limit("minimumOrganicBuyerCount");
+  const maxConcentration = limit("maxTopTenHolderConcentrationBps");
+
+  return (
+    <Panel
+      label="Candidates examined"
+      hint="Every mint a followed wallet bought, with the evidence it was scored on. A value is red when it breaches its frozen gate. Select a row for the full snapshot."
+      aside={<span className="micro">{flow.candidates.length} scored</span>}
+    >
+      {flow.candidates.length === 0 ? (
+        <Empty msg="No candidates scored yet. Each one needs a followed wallet to buy a mint." />
+      ) : (
+        <div className="tw">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Mint</th>
+                <th scope="col">Decision</th>
+                <th scope="col">Reason</th>
+                <th scope="col" className="n">Score</th>
+                <th scope="col" className="n">Cap</th>
+                <th scope="col" className="n">Impact</th>
+                <th scope="col" className="n">Round trip</th>
+                <th scope="col" className="n">Exit depth</th>
+                <th scope="col" className="n">Buyers</th>
+                <th scope="col" className="n">Top 10</th>
+                <th scope="col" className="n">When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {flow.candidates.map((candidate) => {
+                const depthMultiple = positionUsd
+                  ? Number(candidate.exitDepthUsdMicros) / positionUsd
+                  : 0;
+                const expanded = open === candidate.snapshotEventId;
+                return [
+                  <tr
+                    key={candidate.snapshotEventId}
+                    onClick={() => setOpen(expanded ? null : candidate.snapshotEventId)}
+                    className={arrivals.fresh.has(candidate.snapshotEventId) ? "arrived row-pick" : "row-pick"}
+                  >
+                    <td><code title={candidate.mint}>{shortMint(candidate.mint)}</code></td>
+                    <td>
+                      <Chip tone={DECISION_TONE[candidate.decision] ?? "mute"}>
+                        {candidate.decision.toLowerCase()}
+                      </Chip>
+                    </td>
+                    <td>{candidate.reason.toLowerCase().replaceAll("_", " ")}</td>
+                    <td className="n">{(candidate.totalScoreBps / 100).toFixed(0)}</td>
+                    <td className="n">{fmt(micros(candidate.marketCapUsdMicros), 0) ?? "—"}</td>
+                    <td className="n">
+                      <Gate
+                        text={`${(candidate.entryPriceImpactBps / 100).toFixed(2)}%`}
+                        failed={maxImpact > 0 && candidate.entryPriceImpactBps > maxImpact}
+                      />
+                    </td>
+                    <td className="n">
+                      <Gate
+                        text={`${(candidate.roundTripLossBps / 100).toFixed(2)}%`}
+                        failed={maxRoundTrip > 0 && candidate.roundTripLossBps > maxRoundTrip}
+                      />
+                    </td>
+                    <td className="n">
+                      <Gate
+                        text={`${depthMultiple.toFixed(1)}×`}
+                        failed={minDepth > 0 && depthMultiple < minDepth}
+                      />
+                    </td>
+                    <td className="n">
+                      <Gate
+                        text={String(candidate.unlinkedBuyerCount)}
+                        failed={minBuyers > 0 && candidate.unlinkedBuyerCount < minBuyers}
+                      />
+                    </td>
+                    <td className="n">
+                      <Gate
+                        text={`${(candidate.topTenHolderConcentrationBps / 100).toFixed(1)}%`}
+                        failed={
+                          maxConcentration > 0
+                          && candidate.topTenHolderConcentrationBps > maxConcentration
+                        }
+                      />
+                    </td>
+                    <td className="n"><Since at={ms(candidate.observedAtMs)} verb="" /></td>
+                  </tr>,
+                  expanded && (
+                    <tr key={`${candidate.snapshotEventId}:detail`}>
+                      <td colSpan={11}>
+                        <dl className="facts">
+                          <dt>Mint</dt><dd><code>{candidate.mint}</code></dd>
+                          <dt>Bought by</dt><dd><code>{candidate.wallet}</code></dd>
+                          <dt>Token program</dt>
+                          <dd>
+                            {candidate.tokenProgram} · {candidate.decimals} decimals ·{" "}
+                            {tokens(candidate.supplyAtoms, candidate.decimals)} supply
+                          </dd>
+                          <dt>Quoted entry</dt>
+                          <dd>
+                            {fmt(micros(candidate.buyInputUsdMicros), 2)} USD buys{" "}
+                            {tokens(candidate.buyOutputAtoms, candidate.decimals)} tokens; selling
+                            them back returns {fmt(micros(candidate.sellOutputUsdMicros), 2)} USD
+                          </dd>
+                          <dt>Exit depth</dt>
+                          <dd>
+                            {fmt(micros(candidate.exitDepthUsdMicros), 2)} USD exits within the
+                            impact bound
+                          </dd>
+                          <dt>Organic flow</dt>
+                          <dd>
+                            {candidate.unlinkedBuyerCount} unlinked buyers ·{" "}
+                            {fmt(micros(candidate.netQuoteInflowUsdMicros), 2, { signed: true })} net
+                            inflow · {fmt(micros(candidate.volumeUsdMicros5m), 2)} volume over 5m
+                          </dd>
+                          <dt>Insider inventory</dt>
+                          <dd>
+                            creator holds {tokens(candidate.creatorInventoryAtoms, candidate.decimals)}
+                            {candidate.creatorSold ? " and has sold" : " and has not sold"}; cluster
+                            holds {tokens(candidate.clusterInventoryAtoms, candidate.decimals)}
+                            {candidate.clusterSold ? " and has sold" : " and has not sold"}
+                          </dd>
+                          <dt>Authorities</dt>
+                          <dd>
+                            mint {candidate.mintAuthorityDisabled ? "disabled" : "LIVE"} · freeze{" "}
+                            {candidate.freezeAuthorityDisabled ? "disabled" : "LIVE"}
+                          </dd>
+                          <dt>Venue</dt>
+                          <dd>
+                            {candidate.migrationStatus.toLowerCase().replaceAll("_", " ")} ·{" "}
+                            {candidate.routeLabels.join(", ") || "—"}
+                          </dd>
+                          <dt>Score</dt>
+                          <dd>
+                            wallet {(candidate.walletScoreBps / 100).toFixed(0)} · token{" "}
+                            {(candidate.tokenScoreBps / 100).toFixed(0)} · liquidity{" "}
+                            {(candidate.liquidityScoreBps / 100).toFixed(0)} · flow{" "}
+                            {(candidate.flowScoreBps / 100).toFixed(0)} → total{" "}
+                            {(candidate.totalScoreBps / 100).toFixed(0)}
+                          </dd>
+                          <dt>Snapshot</dt><dd><code>{candidate.snapshotEventId}</code></dd>
+                        </dl>
+                      </td>
+                    </tr>
+                  ),
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function Discovery({ flow }: { flow: WalletFlowState }) {
   const cohort = flow.followedWallets?.wallets ?? [];
   const [busy, setBusy] = useState("");
@@ -542,6 +721,13 @@ export function WalletFlow({ snap, strategy }: { snap: Snapshot; strategy: strin
           <Stat
             label="Capture"
             value={gaps.length === 0 ? "complete" : `${gaps.length} gapped`}
+            cap={gaps.length === 0
+              ? "every followed wallet is fully captured"
+              : gaps
+                .map((gap) => `${shortWallet(gap.wallet)} ${
+                  GAP_HELP[gap.gapReason ?? ""] ?? (gap.gapReason ?? "gapped").replaceAll("_", " ")
+                }`)
+                .join(" · ")}
             tone={gaps.length === 0 ? "ok" : "crit"}
           />
         </div>
@@ -550,6 +736,7 @@ export function WalletFlow({ snap, strategy }: { snap: Snapshot; strategy: strin
       <Stream flow={flow} />
       <Live flow={flow} strategy={strategy} />
       <Positions flow={flow} />
+      <Candidates flow={flow} />
       <Discovery flow={flow} />
 
       <Panel

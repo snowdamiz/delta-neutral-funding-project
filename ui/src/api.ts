@@ -278,6 +278,42 @@ export type WalletFlowAction = {
   cashDeltaUsdMicros: string;
 };
 
+export type WalletFlowCandidate = {
+  snapshotEventId: string;
+  mint: string;
+  wallet: string;
+  observedAtMs: string;
+  decision: "ENTER" | "WATCH" | "REJECT";
+  reason: string;
+  tokenProgram: string;
+  decimals: number;
+  migrationStatus: string;
+  routeLabels: string[];
+  marketCapUsdMicros: string;
+  supplyAtoms: string;
+  buyInputUsdMicros: string;
+  buyOutputAtoms: string;
+  sellOutputUsdMicros: string;
+  entryPriceImpactBps: number;
+  roundTripLossBps: number;
+  exitDepthUsdMicros: string;
+  topTenHolderConcentrationBps: number;
+  creatorInventoryAtoms: string;
+  clusterInventoryAtoms: string;
+  unlinkedBuyerCount: number;
+  netQuoteInflowUsdMicros: string;
+  volumeUsdMicros5m: string;
+  creatorSold: boolean;
+  clusterSold: boolean;
+  mintAuthorityDisabled: boolean;
+  freezeAuthorityDisabled: boolean;
+  walletScoreBps: number;
+  tokenScoreBps: number;
+  liquidityScoreBps: number;
+  flowScoreBps: number;
+  totalScoreBps: number;
+};
+
 export type WalletFlowDiscovery = {
   wallet: string;
   runnerCount: number;
@@ -321,6 +357,7 @@ export type WalletFlow = {
   } | null;
   positions: WalletFlowPosition[];
   actions: WalletFlowAction[];
+  candidates: WalletFlowCandidate[];
   strategyConfig: { id: string; values: Record<string, string> } | null;
   brokerConfig: { id: string; values: Record<string, string> } | null;
   followedWallets: WalletCohort | null;

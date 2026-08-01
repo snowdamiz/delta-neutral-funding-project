@@ -48,6 +48,18 @@ BEGIN
     END IF;
   END;
 
+  -- A cursor latches closed on the first capture gap and never reopens, so an
+  -- unfollowed wallet must not leave one behind: re-following it would resume
+  -- a gap it can never clear, and removing the wallet is the only remedy an
+  -- operator has.
+  INSERT INTO solana_wallet_cursors (
+    wallet, latest_signature, latest_slot, capture_complete, gap_reason,
+    observed_at_ms
+  ) VALUES (
+    '4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ', 'sig', 10, false,
+    'backfill_limit_reached', 1000
+  );
+
   result := apply_solana_wallet_config(
     'solana-wallet-config-empty',
     'removed all followed wallets',
@@ -58,6 +70,9 @@ BEGIN
      OR result->>'count' <> '0'
      OR jsonb_array_length(solana_wallet_config()->'wallets') <> 0 THEN
     RAISE EXCEPTION 'empty Solana cohort did not stop capture: %', result;
+  END IF;
+  IF EXISTS (SELECT 1 FROM solana_wallet_cursors) THEN
+    RAISE EXCEPTION 'an unfollowed wallet kept a latched capture cursor';
   END IF;
 END;
 $$;

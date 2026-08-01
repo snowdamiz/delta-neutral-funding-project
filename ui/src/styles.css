@@ -330,6 +330,14 @@ tbody tr:hover { background:#ffffff05 }
 td.n, th.n { text-align:right }
 td strong { color:var(--ink1); font-weight:500 }
 
+/* a measurement is coloured only where it breached the gate that rejected it */
+.gate-bad { color:var(--crit); font-weight:500 }
+.row-pick { cursor:pointer }
+.facts { display:grid; grid-template-columns:auto minmax(0,1fr); gap:.5rem 1.5rem; margin:0; padding:.35rem 0 .1rem; white-space:normal }
+.facts dt { font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink4); padding-top:.1rem }
+.facts dd { margin:0; color:var(--ink2); line-height:1.6; overflow-wrap:anywhere }
+.facts code { color:var(--ink1) }
+
 /* series identity: a coloured key beside the text, never coloured text */
 .key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:.55rem; flex:none }
 .legend { display:flex; gap:1.1rem; flex-wrap:wrap; align-items:center; justify-content:flex-end }

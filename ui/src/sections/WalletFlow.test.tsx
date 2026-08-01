@@ -69,7 +69,52 @@ const FLOW: WalletFlowState = {
     quantityAtoms: "1005400",
     cashDeltaUsdMicros: "100519999",
   }],
-  strategyConfig: { id: "solana-wallet-flow-v2", values: { positionUsdMicros: "100000000" } },
+  candidates: [{
+    snapshotEventId: "snap-1c",
+    mint: "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ",
+    wallet: "11111111111111111111111111111111",
+    observedAtMs: "1785023500000",
+    decision: "REJECT",
+    reason: "TOP_TEN_CONCENTRATION",
+    tokenProgram: "token-2022",
+    decimals: 6,
+    migrationStatus: "pre_migration",
+    routeLabels: ["Pump.fun", "HumidiFi"],
+    marketCapUsdMicros: "412000000000",
+    supplyAtoms: "1000000000000000",
+    buyInputUsdMicros: "100000000",
+    buyOutputAtoms: "2475000",
+    sellOutputUsdMicros: "99280000",
+    entryPriceImpactBps: 96,
+    roundTripLossBps: 720,
+    exitDepthUsdMicros: "1400000000",
+    topTenHolderConcentrationBps: 7401,
+    creatorInventoryAtoms: "102015652111205",
+    clusterInventoryAtoms: "102015652111205",
+    unlinkedBuyerCount: 24,
+    netQuoteInflowUsdMicros: "8400000",
+    volumeUsdMicros5m: "42000000",
+    creatorSold: false,
+    clusterSold: false,
+    mintAuthorityDisabled: true,
+    freezeAuthorityDisabled: true,
+    walletScoreBps: 5000,
+    tokenScoreBps: 2500,
+    liquidityScoreBps: 8000,
+    flowScoreBps: 6000,
+    totalScoreBps: 5375,
+  }],
+  strategyConfig: {
+    id: "solana-wallet-flow-v2",
+    values: {
+      positionUsdMicros: "100000000",
+      maxEntryImpactBps: "200",
+      maxRoundTripLossBps: "800",
+      minimumExitDepthMultiple: "10",
+      minimumOrganicBuyerCount: "10",
+      maxTopTenHolderConcentrationBps: "4000",
+    },
+  },
   brokerConfig: { id: "solana-paper-broker-v2", values: { maxOpenPositions: "3" } },
   followedWallets: {
     version: "3",
@@ -110,6 +155,35 @@ describe("wallet flow", () => {
     // Nothing has arrived on a first read, so the strip must not claim it has.
     expect(html).toContain("idle");
     expect(html).toContain("1 candidate");
+  });
+
+  it("shows the evidence behind each candidate and marks only the breached gate", () => {
+    const html = renderToStaticMarkup(
+      <WalletFlow snap={{ walletFlow: FLOW } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,
+    );
+    expect(html).toContain("Candidates examined");
+    expect(html).toContain("1 scored");
+    expect(html).toContain("top ten concentration");
+    // The measurements the score was computed from, not just the verdict.
+    expect(html).toContain("0.96%");
+    expect(html).toContain("7.20%");
+    expect(html).toContain("14.0×");
+    expect(html).toContain("74.0%");
+    // Concentration is the only gate this candidate breached.
+    expect(html.match(/gate-bad/g)).toHaveLength(1);
+  });
+
+  it("names the wallet and reason behind a capture gap", () => {
+    const gapped = {
+      ...FLOW,
+      cursors: [{ wallet: "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o", captureComplete: false, gapReason: "backfill_limit_reached" }],
+    };
+    const html = renderToStaticMarkup(
+      <WalletFlow snap={{ walletFlow: gapped } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,
+    );
+    expect(html).toContain("CyaE1V…a54o");
+    // The reason names what the operator has to decide, not the capture code.
+    expect(html).toContain("a bot, not a copy-trade target");
   });
 
   it("reports gapped capture ahead of any arrival state", () => {
