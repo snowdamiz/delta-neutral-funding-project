@@ -11,6 +11,7 @@ import {
   type SolanaWalletCursor,
 } from "./solana-wallet-flow.js";
 import { createWalletSubscriber, websocketUrlFrom } from "./solana-wallet-subscriber.js";
+import type { SolanaBatchRpc } from "./solana-candidate-snapshot.js";
 import { signBody } from "./transport.js";
 
 type PollConfig = {
@@ -92,6 +93,18 @@ function quoteSizes(value: unknown): { positionUsdMicros: bigint; exitDepthMulti
     positionUsdMicros: BigInt(values.positionUsdMicros),
     exitDepthMultiple: BigInt(values.minimumExitDepthMultiple),
   };
+}
+
+/** The broker will not fill an entry until this much later than its first
+ *  eligible decision, so the follow-up quote is taken exactly then. */
+function entryLatency(value: unknown): number {
+  const config = object(object(value, "Solana wallet-flow state").brokerConfig, "broker config");
+  const values = object(config.values, "broker config values");
+  const raw = values.minimumDecisionLatencyMs;
+  if (typeof raw !== "string" || !unsigned.test(raw)) {
+    throw new Error("collector returned an invalid broker decision latency");
+  }
+  return Number(raw);
 }
 
 function followedWallets(value: unknown): string[] {
@@ -200,6 +213,7 @@ type FlowState = {
   cursors: Map<string, SolanaWalletCursor>;
   openCandidates: ReturnType<typeof openMints>;
   sizes: { positionUsdMicros: bigint; exitDepthMultiple: bigint };
+  entryLatencyMs: number;
 };
 
 function rpcClient(config: PollConfig): SolanaRpc {
@@ -220,6 +234,35 @@ function rpcClient(config: PollConfig): SolanaRpc {
   };
 }
 
+function batchRpcClient(config: PollConfig): SolanaBatchRpc {
+  let rpcId = 0;
+  return async (calls) => {
+    if (calls.length === 0) return [];
+    const body = calls.map((call) => ({
+      jsonrpc: "2.0",
+      id: ++rpcId,
+      method: call.method,
+      params: call.params,
+    }));
+    const response = await fetch(config.rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(config.timeoutMs),
+    });
+    if (!response.ok) throw new Error(`Solana RPC batch returned ${response.status}`);
+    const parsed = await response.json();
+    if (!Array.isArray(parsed)) throw new Error("Solana RPC batch returned no array");
+    // Providers may reorder a batch, so match on the request id.
+    const byId = new Map<number, unknown>();
+    for (const raw of parsed) {
+      const entry = object(raw, "Solana RPC batch entry");
+      if (typeof entry.id === "number") byId.set(entry.id, entry.error === undefined ? entry.result : null);
+    }
+    return body.map((call) => byId.get(call.id) ?? null);
+  };
+}
+
 export async function fetchFlowState(config: PollConfig): Promise<FlowState> {
   if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs <= 0) {
     throw new Error("request timeout must be positive");
@@ -236,6 +279,7 @@ export async function fetchFlowState(config: PollConfig): Promise<FlowState> {
     cursors: cursors(state),
     openCandidates: openMints(state),
     sizes: quoteSizes(state),
+    entryLatencyMs: entryLatency(state),
   };
 }
 
@@ -252,6 +296,7 @@ export async function captureWallet(
   index: number,
   rpc: SolanaRpc,
   result: PollResult,
+  batchRpc?: SolanaBatchRpc,
 ): Promise<void> {
   const capture = await captureSolanaWalletFlow({
     wallet,
@@ -279,6 +324,7 @@ export async function captureWallet(
         sanctionedAddresses: config.sanctionedAddresses,
         positionUsdMicros: state.sizes.positionUsdMicros,
         exitDepthMultiple: state.sizes.exitDepthMultiple,
+        ...(batchRpc === undefined ? {} : { batchRpc }),
       }),
     );
     result.snapshots += 1;
@@ -294,6 +340,7 @@ export async function monitorCandidates(
   state: FlowState,
   rpc: SolanaRpc,
   result: PollResult,
+  batchRpc?: SolanaBatchRpc,
 ): Promise<void> {
   for (const [index, candidate] of state.openCandidates.entries()) {
     await post(
@@ -310,6 +357,7 @@ export async function monitorCandidates(
         sanctionedAddresses: config.sanctionedAddresses,
         positionUsdMicros: state.sizes.positionUsdMicros,
         exitDepthMultiple: state.sizes.exitDepthMultiple,
+        ...(batchRpc === undefined ? {} : { batchRpc }),
         ...(candidate.paperPositionAtoms === undefined
           ? {}
           : { paperPositionAtoms: candidate.paperPositionAtoms }),
@@ -323,11 +371,12 @@ export async function monitorCandidates(
 export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResult> {
   const state = await fetchFlowState(config);
   const rpc = rpcClient(config);
+  const batchRpc = batchRpcClient(config);
   const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
   for (const [index, wallet] of state.wallets.entries()) {
-    await captureWallet(config, state, wallet, index, rpc, result);
+    await captureWallet(config, state, wallet, index, rpc, result, batchRpc);
   }
-  await monitorCandidates(config, state, rpc, result);
+  await monitorCandidates(config, state, rpc, result, batchRpc);
   return result;
 }
 
@@ -335,6 +384,7 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
 export async function captureWalletNow(
   config: PollConfig,
   wallet: string,
+  settings?: () => PollConfig,
 ): Promise<PollResult> {
   const state = await fetchFlowState(config);
   const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
@@ -346,7 +396,18 @@ export async function captureWalletNow(
     state.wallets.indexOf(wallet),
     rpcClient(config),
     result,
+    batchRpcClient(config),
   );
+  if (result.acquisitions === 0) return result;
+  // The broker holds the first eligible decision for its latency gate and
+  // fills on the next quote. Take that quote as soon as the gate allows
+  // rather than at the next monitor tick, so the recorded fill reflects a
+  // decision acted on promptly — the measured latency is still what the
+  // evidence records.
+  await new Promise((resolve) => setTimeout(resolve, state.entryLatencyMs + 50));
+  const next = settings ? settings() : config;
+  const follow = await fetchFlowState(next);
+  await monitorCandidates(next, follow, rpcClient(next), result, batchRpcClient(next));
   return result;
 }
 
@@ -433,7 +494,7 @@ async function main(): Promise<void> {
         dirty.clear();
         for (const pendingWallet of pendingWallets) {
           try {
-            const result = await captureWalletNow(settings(), pendingWallet);
+            const result = await captureWalletNow(settings(), pendingWallet, settings);
             log("solana_wallet_event_captured", { wallet: pendingWallet, ...result });
           } catch (error) {
             // A failed realtime capture is recovered by the next sweep.
@@ -461,15 +522,16 @@ async function main(): Promise<void> {
         subscriber.reconcile(state.wallets);
         const config = settings();
         const rpc = rpcClient(config);
+        const batchRpc = batchRpcClient(config);
         const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
         if (sweepDue || Date.now() - lastSweepMs >= sweepIntervalMs) {
           for (const [index, wallet] of state.wallets.entries()) {
-            await captureWallet(config, state, wallet, index, rpc, result);
+            await captureWallet(config, state, wallet, index, rpc, result, batchRpc);
           }
           sweepDue = false;
           lastSweepMs = Date.now();
         }
-        await monitorCandidates(config, state, rpc, result);
+        await monitorCandidates(config, state, rpc, result, batchRpc);
         log("solana_wallet_tick", {
           ...result,
           connected: subscriber.connected(),

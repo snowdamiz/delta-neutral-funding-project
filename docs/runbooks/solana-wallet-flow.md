@@ -118,6 +118,16 @@ Gap detection is unchanged and still authoritative: a notification only
 triggers the same cursor-based capture, so the validation gate's
 complete-capture requirement is unaffected by socket delivery.
 
+Snapshot cost, the remaining latency after the socket, is bounded three
+ways: a candidate rejected on token control returns before the history scan
+and without spending a single quote (most launches end here); the mint's
+recent history is fetched in one batched JSON-RPC round trip rather than one
+call per signature; and the entry and depth quote ladders run concurrently.
+Against 60ms RPC and 90ms quote round trips with 45 history signatures, a
+snapshot measures ~0.43s eligible and ~0.12s rejected, from ~3.2s for both.
+The follow-up quote that clears the broker's decision-latency gate is taken
+as soon as that gate allows instead of at the next monitor tick.
+
 Endpoints: `SOLANA_RPC_URL` falls back to `SOLANA_RPC_URLS`, so one paid key
 configures the adapter and the observer. `SOLANA_WS_URL` defaults to that
 URL with the `wss` scheme, which is correct for Alchemy and most providers;

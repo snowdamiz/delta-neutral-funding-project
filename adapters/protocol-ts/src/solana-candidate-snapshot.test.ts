@@ -273,3 +273,94 @@ test("derives confirmed post-trigger organic flow and cluster sells", async () =
   assert.equal(event.payload.clusterSold, true);
   assert.equal(event.payload.creatorSold, false);
 });
+
+test("abandons a hard-rejected candidate before the history scan and quotes", async () => {
+  const calls: string[] = [];
+  const baseRpc = rpc();
+  const countingRpc: SolanaRpc = async (method, params) => {
+    calls.push(method);
+    if (method === "getAccountInfo") {
+      const response = await baseRpc(method, params) as {
+        value: { data: { parsed: { info: Record<string, unknown> } } };
+      };
+      // A live mint authority can never become eligible.
+      response.value.data.parsed.info.mintAuthority = creator;
+      return response;
+    }
+    return baseRpc(method, params);
+  };
+  let quoted = 0;
+  const quote: JupiterQuote = async () => {
+    quoted += 1;
+    throw new Error("a rejected candidate must never be quoted");
+  };
+
+  const event = await snapshotSolanaCandidate({
+    acquisition,
+    observedAtMs: 201_000n,
+    sessionId: "test-reject",
+    rpc: countingRpc,
+    quote,
+    cohortWallets: [wallet],
+    sanctionedAddresses: new Set(),
+    positionUsdMicros: 100_000_000n,
+    exitDepthMultiple: 10n,
+  });
+
+  assert.equal(event.payload.snapshotStatus, "rejected");
+  assert.equal(event.payload.rejectReason, "MINT_AUTHORITY_ENABLED");
+  assert.equal(quoted, 0, "no quote may be spent on a rejected candidate");
+  // Only the opening parallel reads run; the per-signature history scan does not.
+  assert.equal(calls.filter((method) => method === "getTransaction").length, 1);
+});
+
+test("fetches the history scan in one batch when the provider supports it", async () => {
+  const buyer = "5Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ";
+  const baseRpc = rpc();
+  const single: string[] = [];
+  const batches: number[] = [];
+  const flowTransaction = (owner: string) => ({ meta: {
+    preTokenBalances: [{ mint, owner, uiTokenAmount: { amount: "0" } }],
+    postTokenBalances: [{ mint, owner, uiTokenAmount: { amount: "10000" } }],
+  } });
+  const flowRpc: SolanaRpc = async (method, params) => {
+    if (method === "getTransaction" && params[0] !== "swap-1") single.push(String(params[0]));
+    if (method === "getSignaturesForAddress") {
+      return [
+        { signature: "buyer-1", slot: 14, blockTime: 200 },
+        { signature: "buyer-2", slot: 14, blockTime: 200 },
+        { signature: "buyer-3", slot: 14, blockTime: 200 },
+      ];
+    }
+    return baseRpc(method, params);
+  };
+  const quote: JupiterQuote = async (inputMint, outputMint, amount) => ({
+    inputMint,
+    outputMint,
+    inAmount: amount,
+    outAmount: inputMint === mint ? 9_500_000n : 250_000n,
+    priceImpactBps: 100,
+    contextSlot: 14n,
+    routeLabels: ["Pump.fun"],
+  });
+
+  const event = await snapshotSolanaCandidate({
+    acquisition,
+    observedAtMs: 201_000n,
+    sessionId: "test-batch",
+    rpc: flowRpc,
+    quote,
+    cohortWallets: [wallet],
+    sanctionedAddresses: new Set(),
+    positionUsdMicros: 10_000_000n,
+    exitDepthMultiple: 10n,
+    batchRpc: async (requests) => {
+      batches.push(requests.length);
+      return requests.map((_, index) => flowTransaction(`${buyer.slice(0, 43)}${index}`));
+    },
+  });
+
+  assert.deepEqual(batches, [3], "the history scan is one round trip");
+  assert.deepEqual(single, [], "no per-signature call survives the batch path");
+  assert.equal(event.payload.unlinkedBuyerCount, "3");
+});

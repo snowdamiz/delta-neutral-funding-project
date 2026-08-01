@@ -60,6 +60,10 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
           id: "solana-wallet-flow-v2",
           configHash: "b".repeat(64),
           values: { positionUsdMicros: "100000000", minimumExitDepthMultiple: "10" },
+        }, brokerConfig: {
+          id: "solana-paper-broker-v2",
+          configHash: "c".repeat(64),
+          values: { minimumDecisionLatencyMs: "500" },
         } }));
         return;
       }
@@ -216,6 +220,11 @@ test("uses an empty collector cohort without restarting", async () => {
         id: "solana-wallet-flow-v2",
         configHash: "b".repeat(64),
         values: { positionUsdMicros: "100000000", minimumExitDepthMultiple: "10" },
+      },
+      brokerConfig: {
+        id: "solana-paper-broker-v2",
+        configHash: "c".repeat(64),
+        values: { minimumDecisionLatencyMs: "500" },
       },
     }));
   });

@@ -20,6 +20,47 @@ export type JupiterQuote = (
   amount: bigint,
 ) => Promise<JupiterQuoteResult>;
 
+/** One JSON-RPC request carrying many calls. Optional: without it the flow
+ *  scan falls back to bounded-parallel single calls. */
+export type SolanaBatchRpc = (
+  calls: { method: string; params: unknown[] }[],
+) => Promise<unknown[]>;
+
+const FLOW_CONCURRENCY = 8;
+
+async function fetchFlowTransactions(
+  signatures: string[],
+  rpc: SolanaRpc,
+  batchRpc: SolanaBatchRpc | undefined,
+): Promise<Map<string, unknown>> {
+  const params = (signature: string) => [signature, {
+    commitment: "confirmed",
+    encoding: "jsonParsed",
+    maxSupportedTransactionVersion: 0,
+  }];
+  const found = new Map<string, unknown>();
+  if (batchRpc) {
+    // The mint's recent history is the snapshot's dominant cost; one round
+    // trip for all of it instead of one per signature.
+    for (let start = 0; start < signatures.length; start += 25) {
+      const chunk = signatures.slice(start, start + 25);
+      const results = await batchRpc(
+        chunk.map((signature) => ({ method: "getTransaction", params: params(signature) })),
+      );
+      chunk.forEach((signature, index) => found.set(signature, results[index]));
+    }
+    return found;
+  }
+  for (let start = 0; start < signatures.length; start += FLOW_CONCURRENCY) {
+    const chunk = signatures.slice(start, start + FLOW_CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map((signature) => rpc("getTransaction", params(signature))),
+    );
+    chunk.forEach((signature, index) => found.set(signature, results[index]));
+  }
+  return found;
+}
+
 type SnapshotPayload = {
   acquisitionEventId: string;
   wallet: string;
@@ -355,6 +396,7 @@ export async function snapshotSolanaCandidate(input: {
   sanctionedAddresses: Set<string>;
   positionUsdMicros: bigint;
   exitDepthMultiple: bigint;
+  batchRpc?: SolanaBatchRpc;
   paperPositionAtoms?: bigint;
 }): Promise<SolanaCandidateSnapshotEvent> {
   const buyUsdMicros = input.positionUsdMicros;
@@ -445,6 +487,16 @@ export async function snapshotSolanaCandidate(input: {
     payload.sanctionsHit = [...screenedAddresses, ...input.cohortWallets]
       .some((address) => input.sanctionedAddresses.has(address));
 
+    // A candidate already rejected on token control cannot become eligible,
+    // and its reject reason is the whole evidence. Skip the mint history scan
+    // and the quote ladder — the majority of launches end here. An open
+    // position is the exception: its exit still needs a live quote.
+    const holding = input.paperPositionAtoms !== undefined && input.paperPositionAtoms > 0n;
+    if (rejectReason && !holding) {
+      payload.rejectReason = rejectReason;
+      return event(input.acquisition, input.observedAtMs, input.sessionId, payload);
+    }
+
     const history = array(historyResponse, "mint history");
     const historySlots = history.map((raw) => integer(object(raw, "mint signature").slot, "mint history slot"));
     const oldestSlot = historySlots.reduce((oldest, slot) => slot < oldest ? slot : oldest, BigInt(input.acquisition.sourceSlot));
@@ -464,20 +516,28 @@ export async function snapshotSolanaCandidate(input: {
     ]);
     let oldestHistoryMs = observedAtMs;
     const earlyBuyers = new Map<string, { firstSeenMs: bigint; boughtAtoms: bigint }>();
-    for (const raw of history) {
-      const row = object(raw, "mint signature");
-      if (row.blockTime === null || row.blockTime === undefined) continue;
+    const scanned = history
+      .map((raw) => object(raw, "mint signature"))
+      .filter((row) => {
+        if (row.blockTime === null || row.blockTime === undefined) return false;
+        const blockTimeMs = integer(row.blockTime, "mint signature blockTime") * 1000n;
+        return blockTimeMs >= confirmedAtMs && blockTimeMs <= observedAtMs;
+      });
+    const flowTransactions = await fetchFlowTransactions(
+      scanned
+        .map((row) => text(row.signature, "mint signature signature"))
+        .filter((signature) => signature !== input.acquisition.payload.signature),
+      input.rpc,
+      input.batchRpc,
+    );
+    for (const row of scanned) {
       const blockTimeMs = integer(row.blockTime, "mint signature blockTime") * 1000n;
-      if (blockTimeMs < confirmedAtMs || blockTimeMs > observedAtMs) continue;
       if (blockTimeMs < oldestHistoryMs) oldestHistoryMs = blockTimeMs;
       const signature = text(row.signature, "mint signature signature");
       const flowTransaction = signature === input.acquisition.payload.signature
         ? transactionResponse
-        : await input.rpc("getTransaction", [signature, {
-          commitment: "confirmed",
-          encoding: "jsonParsed",
-          maxSupportedTransactionVersion: 0,
-        }]);
+        : flowTransactions.get(signature);
+      if (flowTransaction === null || flowTransaction === undefined) continue;
       for (const [owner, delta] of tokenOwnerDeltas(flowTransaction, mint)) {
         if (owner === payload.creator && delta < 0n) payload.creatorSold = true;
         if (cohort.has(owner) && delta < 0n) payload.clusterSold = true;
@@ -541,15 +601,37 @@ export async function snapshotSolanaCandidate(input: {
       }
     }
     try {
-      buy = await input.quote(usdc, mint, buyUsdMicros);
-      payload.transferFeeBuyAtoms = transferFee(buy.outAmount, fee.bps, fee.maximum).toString();
-      const sellable = buy.outAmount - BigInt(payload.transferFeeBuyAtoms);
-      if (sellable <= 0n) throw new Error("transfer fee consumes the paper fill");
-      sell = await input.quote(mint, usdc, sellable);
-      payload.transferFeeSellAtoms = transferFee(sellable, fee.bps, fee.maximum).toString();
-      depthBuy = await input.quote(usdc, mint, depthUsdMicros);
-      const depthFee = transferFee(depthBuy.outAmount, fee.bps, fee.maximum);
-      depthSell = await input.quote(mint, usdc, depthBuy.outAmount - depthFee);
+      // Entry and depth are independent ladders; only the sell inside each one
+      // depends on its own buy, so the two chains run side by side.
+      const [entryLadder, depthLadder] = await Promise.all([
+        (async () => {
+          const entryBuy = await input.quote(usdc, mint, buyUsdMicros);
+          const buyFee = transferFee(entryBuy.outAmount, fee.bps, fee.maximum);
+          const sellable = entryBuy.outAmount - buyFee;
+          if (sellable <= 0n) throw new Error("transfer fee consumes the paper fill");
+          return {
+            entryBuy,
+            buyFee,
+            sellable,
+            entrySell: await input.quote(mint, usdc, sellable),
+          };
+        })(),
+        (async () => {
+          const probeBuy = await input.quote(usdc, mint, depthUsdMicros);
+          const probeFee = transferFee(probeBuy.outAmount, fee.bps, fee.maximum);
+          return {
+            probeBuy,
+            probeSell: await input.quote(mint, usdc, probeBuy.outAmount - probeFee),
+          };
+        })(),
+      ]);
+      buy = entryLadder.entryBuy;
+      sell = entryLadder.entrySell;
+      depthBuy = depthLadder.probeBuy;
+      depthSell = depthLadder.probeSell;
+      payload.transferFeeBuyAtoms = entryLadder.buyFee.toString();
+      payload.transferFeeSellAtoms =
+        transferFee(entryLadder.sellable, fee.bps, fee.maximum).toString();
     } catch {
       payload.rejectReason = "REJECT_NO_ROUND_TRIP";
       if (positionSell) {
