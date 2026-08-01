@@ -13,7 +13,6 @@ import {
 import { signBody } from "./transport.js";
 
 type PollConfig = {
-  wallets: string[];
   collectorUrl: string;
   rpcUrl: string;
   hmacSecret: string;
@@ -68,6 +67,22 @@ function cursors(value: unknown): Map<string, SolanaWalletCursor> {
     });
   }
   return result;
+}
+
+function followedWallets(value: unknown): string[] {
+  const config = object(object(value, "Solana wallet-flow state").followedWallets, "followed wallets");
+  if (
+    typeof config.version !== "string" ||
+    !unsigned.test(config.version) ||
+    config.maximumWallets !== "100" ||
+    !Array.isArray(config.wallets) ||
+    config.wallets.length > 100 ||
+    config.wallets.some((wallet) => typeof wallet !== "string" || !publicKey.test(wallet)) ||
+    new Set(config.wallets).size !== config.wallets.length
+  ) {
+    throw new Error("collector returned invalid followed Solana wallets");
+  }
+  return config.wallets as string[];
 }
 
 function openMints(value: unknown): Array<{
@@ -156,14 +171,6 @@ async function post(
 }
 
 export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResult> {
-  if (
-    config.wallets.length === 0 ||
-    config.wallets.length > 100 ||
-    new Set(config.wallets).size !== config.wallets.length ||
-    config.wallets.some((wallet) => !publicKey.test(wallet))
-  ) {
-    throw new Error("SOLANA_FOLLOWED_WALLETS must contain 1-100 unique public keys");
-  }
   if (!Number.isSafeInteger(config.timeoutMs) || config.timeoutMs <= 0) {
     throw new Error("request timeout must be positive");
   }
@@ -174,6 +181,7 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
   });
   if (!stateResponse.ok) throw new Error(`collector state returned ${stateResponse.status}`);
   const state = await stateResponse.json();
+  const wallets = followedWallets(state);
   const durableCursors = cursors(state);
   const openCandidates = openMints(state);
   let rpcId = 0;
@@ -193,7 +201,7 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
   };
   const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
 
-  for (const [index, wallet] of config.wallets.entries()) {
+  for (const [index, wallet] of wallets.entries()) {
     const capture = await captureSolanaWalletFlow({
       wallet,
       observedAtMs: config.observedAtMs,
@@ -216,7 +224,7 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
           sessionId: `${config.sessionId}-${index}`,
           rpc,
           quote: config.quote,
-          cohortWallets: config.wallets,
+          cohortWallets: wallets,
           sanctionedAddresses: config.sanctionedAddresses,
         }),
       );
@@ -237,7 +245,7 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
         sessionId: `${config.sessionId}-monitor-${index}`,
         rpc,
         quote: config.quote,
-        cohortWallets: config.wallets,
+        cohortWallets: wallets,
         sanctionedAddresses: config.sanctionedAddresses,
         ...(candidate.paperPositionAtoms === undefined
           ? {}
@@ -258,10 +266,6 @@ function positiveInteger(value: string | undefined, fallback: number, name: stri
 }
 
 async function main(): Promise<void> {
-  const wallets = (process.env.SOLANA_FOLLOWED_WALLETS ?? "")
-    .split(",")
-    .map((wallet) => wallet.trim())
-    .filter(Boolean);
   const collectorUrl = process.env.COLLECTOR_URL ?? "http://127.0.0.1:8080/v1/events";
   const rpcUrl = process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
   const hmacSecret = process.env.ADAPTER_HMAC_SECRET ?? "";
@@ -290,7 +294,6 @@ async function main(): Promise<void> {
   while (!stopping) {
     try {
       const result = await pollSolanaWalletFlow({
-        wallets,
         collectorUrl,
         rpcUrl,
         hmacSecret,

@@ -9,7 +9,7 @@ from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, Paper
 from Packages.ProtocolContracts import FundingObservation, FundingSettlement, MarketSnapshot, WalletObservation, parse_funding_observation, parse_funding_settlement, parse_market_snapshot, parse_shadow_result, parse_wallet_observation
 from Packages.ReadModels import adapter_status, cross_venue_funding_leaderboard, fills, funding, funding_leaderboard, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, reverse_carry_leaderboard, risk_decisions, risk_events, shadow_results, strategies, wallet_config, wallet_tracking
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
-from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, parse_solana_wallet_flow_event, persist_solana_validation, persist_solana_wallet_flow_event, solana_wallet_flow_state
+from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, parse_solana_wallet_flow_event, persist_solana_validation, persist_solana_wallet_config, persist_solana_wallet_flow_event, solana_followed_wallets, solana_wallet_flow_state
 from Packages.StateMachine import PortfolioState
 from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_observation, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans, persist_wallet_config, persist_wallet_observation, run_cross_asset_paper_scan, run_cross_venue_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
@@ -926,22 +926,23 @@ fn operator_response(request :: Request, action :: String, target :: String) do
   end
 end
 
-fn wallet_config_values(body :: String) -> String ! String do
+fn wallet_config_values(body :: String, maximum :: Int) -> String ! String do
   let root = Json.parse(body) ?
   let wallets = (root |> Json.object_get("wallets")) ?
   let count = (wallets |> Json.array_length()) ?
-  if count > 50 do
-    Err("wallets must contain at most 50 addresses")
+  if count > maximum do
+    Err("wallets must contain at most ${maximum} addresses")
   else
     Ok(wallets |> Json.encode)
   end
 end
 
-fn wallet_config_response(request :: Request) do
+fn wallet_config_response(request :: Request, solana :: Bool) do
   let body = Request.body(request)
   let idempotency_key = request_header(request, "x-idempotency-key")
+  let action = if solana do "solana_wallet_config" else "wallet_config" end
   if operator_authenticated(request, idempotency_key, body) == false do
-    warn("operator_command_rejected", "{\"action\":\"wallet_config\",\"reason\":\"authentication\"}")
+    warn("operator_command_rejected", "{\"action\":\"${action}\",\"reason\":\"authentication\"}")
     return error_response(401, "unauthorized", "invalid operator signature")
   end
   if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
@@ -956,7 +957,7 @@ fn wallet_config_response(request :: Request) do
       return error_response(503, "lease_unavailable", reason)
     end
   end
-  case wallet_config_values(body) do
+  case wallet_config_values(body, if solana do 100 else 50 end) do
     Err(reason) -> error_response(400, "invalid_wallet_config", reason)
     Ok(wallets_json) -> do
       if Json.is_string(body, "reason") == false do
@@ -967,15 +968,26 @@ fn wallet_config_response(request :: Request) do
         return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
       end
       let request_hash = "${idempotency_key}\n${body}" |> Crypto.sha256
-      case persist_wallet_config(
-        get_pool(),
-        idempotency_key,
-        reason,
-        request_hash,
-        wallets_json
-      ) do
+      let persisted = if solana do
+        persist_solana_wallet_config(
+          get_pool(),
+          idempotency_key,
+          reason,
+          request_hash,
+          wallets_json
+        )
+      else
+        persist_wallet_config(
+          get_pool(),
+          idempotency_key,
+          reason,
+          request_hash,
+          wallets_json
+        )
+      end
+      case persisted do
         Ok(result) -> do
-          info("operator_command_applied", "{\"action\":\"wallet_config\",\"idempotencyKey\":\"${idempotency_key}\"}")
+          info("operator_command_applied", "{\"action\":\"${action}\",\"idempotencyKey\":\"${idempotency_key}\"}")
           HTTP.response(202, result)
         end
         Err(error) -> do
@@ -1228,7 +1240,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 46
+      schemaVersion : 47
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -1451,12 +1463,20 @@ pub fn handle_solana_wallet_flow(_request :: Request) -> Response do
   read_response(get_pool() |> solana_wallet_flow_state)
 end
 
+pub fn handle_solana_wallet_config(_request :: Request) -> Response do
+  read_response(get_pool() |> solana_followed_wallets)
+end
+
+pub fn handle_solana_wallet_config_update(request :: Request) -> Response do
+  wallet_config_response(request, true)
+end
+
 pub fn handle_wallet_config(_request :: Request) -> Response do
   read_response(get_pool() |> wallet_config)
 end
 
 pub fn handle_wallet_config_update(request :: Request) -> Response do
-  wallet_config_response(request)
+  wallet_config_response(request, false)
 end
 
 pub fn handle_jitosol(_request :: Request) -> Response do
@@ -1527,7 +1547,7 @@ pub fn handle_config(_request :: Request) -> Response do
       directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
       directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
       protocolSchemaVersion : 1,
-      databaseSchemaVersion : 46,
+      databaseSchemaVersion : 47,
       liveEnabled : false
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)

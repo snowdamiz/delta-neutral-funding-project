@@ -81,4 +81,30 @@ describe("operator proxy request", () => {
       ),
     ).toBeNull();
   });
+
+  it("signs a case-sensitive Solana wallet cohort", () => {
+    const wallet = "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ";
+    const request = operatorRequest(
+      "/operator/solana-wallets/config",
+      "operator-secret",
+      "solana-wallet-config",
+      JSON.stringify({ wallets: [wallet] }),
+    );
+
+    expect(JSON.parse(request?.body ?? "{}")).toEqual({
+      reason: "Solana wallet cohort updated from local operator console",
+      wallets: [wallet],
+    });
+    expect(request?.headers["x-operator-signature"]).toBe(
+      signature("solana-wallet-config", request?.body ?? ""),
+    );
+    expect(
+      operatorRequest(
+        "/operator/solana-wallets/config",
+        "operator-secret",
+        "invalid-solana-wallet-config",
+        '{"wallets":["0x1111111111111111111111111111111111111111"]}',
+      ),
+    ).toBeNull();
+  });
 });

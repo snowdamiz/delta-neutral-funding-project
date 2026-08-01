@@ -17,7 +17,12 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
       if (request.method === "GET") {
         assert.equal(request.url, "/v1/solana-wallet-flow");
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ cursors: [], openMints: [{
+        response.end(JSON.stringify({ followedWallets: {
+          version: "1",
+          wallets: [wallet],
+          maximumWallets: "100",
+          updatedAt: "2026-08-01T00:00:00Z",
+        }, cursors: [], openMints: [{
           decision: "WATCH",
           snapshotEventId: "snapshot-old",
           snapshotObservedAtMs: "150000",
@@ -158,7 +163,6 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
       routeLabels: ["Pump.fun"],
     });
     const result = await pollSolanaWalletFlow({
-      wallets: [wallet],
       collectorUrl: `${base}/v1/events`,
       rpcUrl: `${base}/rpc`,
       hmacSecret: "secret",
@@ -176,6 +180,47 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
       { eventType: "SolanaWalletCheckpoint", signature: "swap-1" },
       { eventType: "SolanaCandidateSnapshot", signature: "swap-old" },
     ]);
+  } finally {
+    server.close();
+  }
+});
+
+test("uses an empty collector cohort without restarting", async () => {
+  let requests = 0;
+  const server = createServer((request, response) => {
+    requests += 1;
+    assert.equal(request.method, "GET");
+    assert.equal(request.url, "/v1/solana-wallet-flow");
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      followedWallets: {
+        version: "2",
+        wallets: [],
+        maximumWallets: "100",
+        updatedAt: "2026-08-01T00:00:05Z",
+      },
+      cursors: [],
+      openMints: [],
+    }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const result = await pollSolanaWalletFlow({
+      collectorUrl: `${base}/v1/events`,
+      rpcUrl: `${base}/rpc`,
+      hmacSecret: "secret",
+      sessionId: "test-empty",
+      timeoutMs: 1000,
+      observedAtMs: 205_000n,
+      quote: async () => { throw new Error("quote should not be requested"); },
+      sanctionedAddresses: new Set(),
+    });
+    assert.deepEqual(result, { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 });
+    assert.equal(requests, 1);
   } finally {
     server.close();
   }

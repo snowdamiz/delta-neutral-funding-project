@@ -18,7 +18,9 @@ export function operatorRequest(
   requestBody = "",
 ) {
   const [path, query] = (url ?? "").split("?", 2);
-  if (path === "/operator/wallets/config" || path === "/v1/wallets/config") {
+  const solanaWalletConfig =
+    path === "/operator/solana-wallets/config" || path === "/v1/solana-wallet-flow/config";
+  if (solanaWalletConfig || path === "/operator/wallets/config" || path === "/v1/wallets/config") {
     try {
       const parsed = JSON.parse(requestBody) as { wallets?: unknown };
       if (
@@ -26,17 +28,23 @@ export function operatorRequest(
         typeof parsed !== "object" ||
         Object.keys(parsed).length !== 1 ||
         !Array.isArray(parsed.wallets) ||
-        parsed.wallets.length > 50
+        parsed.wallets.length > (solanaWalletConfig ? 100 : 50)
       ) return null;
       const wallets = parsed.wallets.map((wallet) =>
-        typeof wallet === "string" ? wallet.trim().toLowerCase() : "",
+        typeof wallet === "string"
+          ? solanaWalletConfig ? wallet.trim() : wallet.trim().toLowerCase()
+          : "",
       );
       if (
-        wallets.some((wallet) => !/^0x[0-9a-f]{40}$/.test(wallet)) ||
+        wallets.some((wallet) => !(solanaWalletConfig
+          ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet)
+          : /^0x[0-9a-f]{40}$/.test(wallet))) ||
         new Set(wallets).size !== wallets.length
       ) return null;
       return signed(JSON.stringify({
-        reason: "wallet cohort updated from local operator console",
+        reason: solanaWalletConfig
+          ? "Solana wallet cohort updated from local operator console"
+          : "wallet cohort updated from local operator console",
         wallets,
       }), secret, key);
     } catch {

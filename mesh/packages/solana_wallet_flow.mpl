@@ -92,11 +92,43 @@ end
 pub fn solana_wallet_flow_state(pool :: PoolHandle) -> String ! String do
   let rows = Pool.query(
     pool,
-    "SELECT (solana_wallet_flow_read_model() || jsonb_build_object('validation', solana_validation_latest_report()))::text AS body",
+    "SELECT (solana_wallet_flow_read_model() || jsonb_build_object('followedWallets', solana_wallet_config(), 'validation', solana_validation_latest_report()))::text AS body",
     []
   ) ?
   if List.length(rows) != 1 do
     Err("database returned invalid Solana wallet-flow state")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn solana_followed_wallets(pool :: PoolHandle) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT solana_wallet_config()::text AS body",
+    []
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid Solana wallet configuration")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn persist_solana_wallet_config(
+  pool :: PoolHandle,
+  idempotency_key :: String,
+  reason :: String,
+  request_hash :: String,
+  wallets_json :: String
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT apply_solana_wallet_config($1, $2, $3, $4::jsonb)::text AS body",
+    [idempotency_key, reason, request_hash, wallets_json]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid Solana wallet configuration result")
   else
     Ok(Map.get(List.head(rows), "body"))
   end

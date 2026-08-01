@@ -56,7 +56,7 @@ services:
       timeout: 2s
       retries: 30
     volumes:
-      - postgres_data_v46:/var/lib/postgresql/data
+      - postgres_data_v47:/var/lib/postgresql/data
     networks:
       - database
     mem_limit: 1g
@@ -188,7 +188,6 @@ services:
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
       JUPITER_URL: ${JUPITER_URL:-https://api.jup.ag/swap/v1}
       JUPITER_API_KEY: ${JUPITER_API_KEY:-}
-      SOLANA_FOLLOWED_WALLETS: ${SOLANA_FOLLOWED_WALLETS:-}
       SOLANA_SANCTIONED_ADDRESSES: ${SOLANA_SANCTIONED_ADDRESSES:-}
       SOLANA_WALLET_POLL_INTERVAL_MS: ${SOLANA_WALLET_POLL_INTERVAL_MS:-5000}
       SOLANA_WALLET_MAX_BACKFILL_PAGES: ${SOLANA_WALLET_MAX_BACKFILL_PAGES:-10}
@@ -254,7 +253,7 @@ services:
 
 volumes:
   # Preserve older paper evidence when a release changes its runtime fingerprint.
-  postgres_data_v46:
+  postgres_data_v47:
   prometheus_data:
   grafana_data:
 
