@@ -74,7 +74,17 @@ export function Summary({ snap }: { snap: Snapshot }) {
   );
 }
 
-function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; onOpen: () => void }) {
+function Card({
+  snap,
+  strategy,
+  onOpen,
+  onManageWallets,
+}: {
+  snap: Snapshot;
+  strategy: Strategy;
+  onOpen: () => void;
+  onManageWallets: () => void;
+}) {
   const s = snap.status;
   const latest = snap.opportunities.find((o) => o.variant === strategy.id);
   const unavailable =
@@ -93,6 +103,9 @@ function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; 
   const controllable =
     !!s && s.deploymentEnvironment === "local" && s.executionMode === "paper" &&
     strategy.runState !== "unregistered" && strategy.controlScope === "strategy";
+  const walletDependent =
+    strategy.id.startsWith("hyperliquid_wallet_") || strategy.id === "solana_wallet_flow_quant";
+  const startBlocked = !strategy.enabled && walletDependent && unavailable === "wallets not configured";
 
   const checkedAt = ms(latest?.observedAtMs);
 
@@ -154,7 +167,18 @@ function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; 
           <Since at={checkedAt} verb="priced" freshMs={freshLimit(snap)} />
         </div>
 
-        {controllable && <Control paused={!strategy.enabled} strategy={strategy.id} />}
+        {walletDependent && (
+          <button type="button" className="manage-wallets" onClick={onManageWallets}>
+            Manage wallets →
+          </button>
+        )}
+        {controllable && (
+          <Control
+            paused={!strategy.enabled}
+            strategy={strategy.id}
+            disabledReason={startBlocked ? "Configure wallets before starting." : undefined}
+          />
+        )}
       </div>
     </article>
   );
@@ -164,7 +188,15 @@ function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; 
  * Faceted by family. Nine flat cards read as a wall; three groups of three
  * read as a portfolio — and family is the axis the hue already encodes.
  */
-export function Overview({ snap, onOpen }: { snap: Snapshot; onOpen: (id: string) => void }) {
+export function Overview({
+  snap,
+  onOpen,
+  onManageWallets,
+}: {
+  snap: Snapshot;
+  onOpen: (id: string) => void;
+  onManageWallets: () => void;
+}) {
   const catalog = snap.strategies;
   const families = familiesOf(catalog);
 
@@ -191,7 +223,13 @@ export function Overview({ snap, onOpen }: { snap: Snapshot; onOpen: (id: string
               </div>
               <div className="cards">
                 {members.map((s) => (
-                  <Card key={s.id} snap={snap} strategy={s} onOpen={() => onOpen(s.id)} />
+                  <Card
+                    key={s.id}
+                    snap={snap}
+                    strategy={s}
+                    onOpen={() => onOpen(s.id)}
+                    onManageWallets={onManageWallets}
+                  />
                 ))}
               </div>
             </div>

@@ -264,6 +264,9 @@ section { margin-top:3.25rem }
 .card-meta dt { color:var(--ink4); letter-spacing:.1em; text-transform:uppercase; font-size:9.5px; padding-top:.1rem }
 .card-meta dd { color:var(--ink2); line-height:1.45 }
 .card-when { margin-top:.85rem; padding-top:.7rem; border-top:1px solid var(--line) }
+.manage-wallets { align-self:flex-start; margin-top:.55rem; border:0; background:transparent; color:var(--ok); padding:0; font:600 10.5px var(--mono); letter-spacing:.06em; cursor:pointer }
+.manage-wallets:hover { color:white }
+.manage-wallets:focus-visible { outline:2px solid var(--ok); outline-offset:3px }
 .card .controls { margin-top:1rem }
 
 /* ─── detail: switch strategy without going back ─────────────────────── */

@@ -165,7 +165,11 @@ export default function App() {
             <StatusBanner snap={snap} />
             <Summary snap={snap} />
             <Alerts snap={snap} />
-            <Overview snap={snap} onOpen={(id) => go(`s/${id}`)} />
+            <Overview
+              snap={snap}
+              onOpen={(id) => go(`s/${id}`)}
+              onManageWallets={() => go("markets")}
+            />
           </>
         )}
 

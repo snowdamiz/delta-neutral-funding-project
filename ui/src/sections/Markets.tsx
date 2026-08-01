@@ -219,6 +219,80 @@ export function Markets({ snap }: { snap: Snapshot }) {
       note="Continuous scans across venues. A market has to clear its gate here before any strategy will open a position — rates are in parts per million per hour (ppm/h)."
     >
       <Panel
+        label="Solana wallet flow"
+        hint="Confirmed acquisitions from followed wallets feed paper-only candidate monitoring. Add or remove wallets without restarting the observer."
+        aside={<Since at={ms(solanaWalletConfig.updatedAt)} verb="configured" />}
+      >
+        <SolanaWalletConfig key={solanaWalletConfig.version} config={solanaWalletConfig} />
+      </Panel>
+
+      <Panel
+        label="Wallet consistency"
+        hint="Tracked Hyperliquid wallets scored on realised profit after fees and drawdown. Each mode needs 60 days of paper evidence before it could ever go live."
+        aside={wallet && (
+          <ScanAside
+            at={wallet.scores.asOfMs}
+            gate={`mirror ${wallet.assessment.modes.mirror.evidenceDays}/${wallet.assessment.modes.mirror.minimumDays} days`}
+          />
+        )}
+      >
+        <WalletConfig key={walletConfig.version} config={walletConfig} />
+        {walletScores.length === 0 ? (
+          <Empty msg="Add wallets above to start collecting the 60-day paper evidence." />
+        ) : (
+          <>
+            <div className="tw">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Wallet</th>
+                    <th scope="col" className="n">Closed trades</th>
+                    <th scope="col" className="n">Net USD</th>
+                    <th scope="col" className="n">Max drawdown USD</th>
+                    <th scope="col" className="n">Score</th>
+                    <th scope="col">State</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {walletScores.map((score) => (
+                    <tr key={score.wallet}>
+                      <td>{score.rank}</td>
+                      <td><strong>{shortWallet(score.wallet)}</strong></td>
+                      <td className="n">{score.closedDecisions}</td>
+                      <td className="n">{fmt(micros(score.netRealizedUsdMicros), 2, { signed: true })}</td>
+                      <td className="n">{fmt(micros(score.maxDrawdownUsdMicros), 2)}</td>
+                      <td className="n">{pct(score.scorePpm)}</td>
+                      <td>
+                        <Chip tone={score.qualified ? "ok" : "mute"}>
+                          {score.qualified ? "qualified" : "warming up"}
+                        </Chip>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="card-row pad">
+              {(["flow", "mirror", "fade"] as const).map((mode) => {
+                const gate = wallet!.assessment.modes[mode];
+                return (
+                  <Chip key={mode} tone={gate.verdict === "go" ? "ok" : gate.verdict === "kill" ? "warn" : "mute"}>
+                    {mode} {gate.verdict} · {gate.evidenceDays}/{gate.minimumDays} days · {gate.closedDecisions}/{gate.minimumDecisions} trades
+                  </Chip>
+                );
+              })}
+              {wallet!.signals.map((signal) => (
+                <Chip key={signal.asset} tone={signal.qualified ? "ok" : "mute"}>
+                  {signal.asset} flow {signedPpm(signal.signalPpm)} ppm
+                </Chip>
+              ))}
+            </div>
+          </>
+        )}
+      </Panel>
+
+      <Panel
         label="Funding rates"
         hint="Funding paid to shorts. The carry strategies enter when a market beats the gate and stays there."
         aside={funding && <ScanAside at={funding.asOfMs} gate={`gate ${signedPpm(funding.gateThresholdPpm)} ppm/h`} />}
@@ -348,79 +422,6 @@ export function Markets({ snap }: { snap: Snapshot }) {
         )}
       </Panel>
 
-      <Panel
-        label="Solana wallet flow"
-        hint="Confirmed acquisitions from followed wallets feed paper-only candidate monitoring. Add or remove wallets without restarting the observer."
-        aside={<Since at={ms(solanaWalletConfig.updatedAt)} verb="configured" />}
-      >
-        <SolanaWalletConfig key={solanaWalletConfig.version} config={solanaWalletConfig} />
-      </Panel>
-
-      <Panel
-        label="Wallet consistency"
-        hint="Tracked Hyperliquid wallets scored on realised profit after fees and drawdown. Each mode needs 60 days of paper evidence before it could ever go live."
-        aside={wallet && (
-          <ScanAside
-            at={wallet.scores.asOfMs}
-            gate={`mirror ${wallet.assessment.modes.mirror.evidenceDays}/${wallet.assessment.modes.mirror.minimumDays} days`}
-          />
-        )}
-      >
-        <WalletConfig key={walletConfig.version} config={walletConfig} />
-        {walletScores.length === 0 ? (
-          <Empty msg="Add wallets above to start collecting the 60-day paper evidence." />
-        ) : (
-          <>
-            <div className="tw">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">#</th>
-                    <th scope="col">Wallet</th>
-                    <th scope="col" className="n">Closed trades</th>
-                    <th scope="col" className="n">Net USD</th>
-                    <th scope="col" className="n">Max drawdown USD</th>
-                    <th scope="col" className="n">Score</th>
-                    <th scope="col">State</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {walletScores.map((score) => (
-                    <tr key={score.wallet}>
-                      <td>{score.rank}</td>
-                      <td><strong>{shortWallet(score.wallet)}</strong></td>
-                      <td className="n">{score.closedDecisions}</td>
-                      <td className="n">{fmt(micros(score.netRealizedUsdMicros), 2, { signed: true })}</td>
-                      <td className="n">{fmt(micros(score.maxDrawdownUsdMicros), 2)}</td>
-                      <td className="n">{pct(score.scorePpm)}</td>
-                      <td>
-                        <Chip tone={score.qualified ? "ok" : "mute"}>
-                          {score.qualified ? "qualified" : "warming up"}
-                        </Chip>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="card-row pad">
-              {(["flow", "mirror", "fade"] as const).map((mode) => {
-                const gate = wallet!.assessment.modes[mode];
-                return (
-                  <Chip key={mode} tone={gate.verdict === "go" ? "ok" : gate.verdict === "kill" ? "warn" : "mute"}>
-                    {mode} {gate.verdict} · {gate.evidenceDays}/{gate.minimumDays} days · {gate.closedDecisions}/{gate.minimumDecisions} trades
-                  </Chip>
-                );
-              })}
-              {wallet!.signals.map((signal) => (
-                <Chip key={signal.asset} tone={signal.qualified ? "ok" : "mute"}>
-                  {signal.asset} flow {signedPpm(signal.signalPpm)} ppm
-                </Chip>
-              ))}
-            </div>
-          </>
-        )}
-      </Panel>
     </Section>
   );
 }

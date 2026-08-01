@@ -9,7 +9,15 @@ import { Chip, Panel, Section, Since, Spin, Stat } from "../ui";
  * One button serves the collector-wide emergency switch and each independent
  * strategy switch. The path, labels, and feedback follow the supplied scope.
  */
-export function Control({ paused, strategy }: { paused: boolean; strategy?: string }) {
+export function Control({
+  paused,
+  strategy,
+  disabledReason,
+}: {
+  paused: boolean;
+  strategy?: string;
+  disabledReason?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
   const scoped = strategy !== undefined;
@@ -35,7 +43,7 @@ export function Control({ paused, strategy }: { paused: boolean; strategy?: stri
         type="button"
         className={paused ? "go" : ""}
         onClick={press}
-        disabled={busy}
+        disabled={busy || (paused && disabledReason !== undefined)}
         aria-busy={busy}
       >
         {busy && <Spin on />}
@@ -45,7 +53,7 @@ export function Control({ paused, strategy }: { paused: boolean; strategy?: stri
         {busy
           ? `Waiting for the collector to acknowledge ${paused ? "start" : "stop"}…`
           : feedback || (paused
-            ? scoped ? "Allows this strategy to open positions." : "Resumes opening new positions."
+            ? scoped ? disabledReason || "Allows this strategy to open positions." : "Resumes opening new positions."
             : "Halts new positions; open ones keep settling.")}
       </span>
     </div>
