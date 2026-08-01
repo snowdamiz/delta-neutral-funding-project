@@ -31,7 +31,6 @@ curl -fsS "$base_url/v1/capabilities" |
 # run state joined from the portfolios the strategy owns.
 curl -fsS "$base_url/v1/strategies" |
   jq -e '
-    .schemaVersion == 1 and
     (.schemaVersion == 2) and
     (.strategies | length) == 10 and
     all(.strategies[];
