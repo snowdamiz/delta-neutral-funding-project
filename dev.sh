@@ -97,7 +97,7 @@ reset_database() {
     return 1
   }
 
-  local volume=delta-neutral-funding_postgres_data_v38
+  local volume=delta-neutral-funding_postgres_data_v49
   if docker volume inspect "$volume" >/dev/null 2>&1; then
     local project_label volume_label
     project_label=$(docker volume inspect --format \
@@ -105,7 +105,7 @@ reset_database() {
     volume_label=$(docker volume inspect --format \
       '{{index .Labels "com.docker.compose.volume"}}' "$volume")
     if [ "$project_label" != 'delta-neutral-funding' ] ||
-      [ "$volume_label" != 'postgres_data_v38' ]; then
+      [ "$volume_label" != 'postgres_data_v49' ]; then
       printf 'dev.sh: refusing to delete an unverified database volume\n' >&2
       return 1
     fi

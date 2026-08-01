@@ -6,6 +6,70 @@ DECLARE
   v_result jsonb;
 BEGIN
   UPDATE strategy_controls SET enabled = false;
+  DELETE FROM wallet_tracking_wallets;
+  DELETE FROM solana_followed_wallets;
+
+  BEGIN
+    PERFORM apply_strategy_control(
+      'hyperliquid_wallet_mirror',
+      true,
+      'strategy-control:missing-hyperliquid-wallet',
+      'must reject an empty cohort',
+      repeat('e', 64)
+    );
+    RAISE EXCEPTION 'Hyperliquid wallet strategy started without wallets';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'strategy requires at least one configured Hyperliquid wallet' THEN
+        RAISE;
+      END IF;
+  END;
+
+  BEGIN
+    PERFORM apply_strategy_control(
+      'solana_wallet_flow_quant',
+      true,
+      'strategy-control:missing-solana-wallet',
+      'must reject an empty cohort',
+      repeat('f', 64)
+    );
+    RAISE EXCEPTION 'Solana wallet strategy started without wallets';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'strategy requires at least one configured Solana wallet' THEN
+        RAISE;
+      END IF;
+  END;
+
+  INSERT INTO wallet_tracking_wallets(wallet, ordinal)
+  VALUES ('0x0000000000000000000000000000000000000000', 0);
+  PERFORM apply_strategy_control(
+    'hyperliquid_wallet_mirror',
+    true,
+    'strategy-control:configured-hyperliquid-wallet',
+    'start with a configured cohort',
+    repeat('1', 64)
+  );
+  DELETE FROM wallet_tracking_wallets;
+  UPDATE wallet_tracking_config_state SET version = version + 1 WHERE singleton;
+  IF strategy_enabled('hyperliquid_wallet_mirror') THEN
+    RAISE EXCEPTION 'Hyperliquid wallet strategy remained enabled with an empty cohort';
+  END IF;
+
+  INSERT INTO solana_followed_wallets(wallet, ordinal)
+  VALUES ('11111111111111111111111111111111', 0);
+  PERFORM apply_strategy_control(
+    'solana_wallet_flow_quant',
+    true,
+    'strategy-control:configured-solana-wallet',
+    'start with a configured cohort',
+    repeat('2', 64)
+  );
+  DELETE FROM solana_followed_wallets;
+  UPDATE solana_wallet_config_state SET version = version + 1 WHERE singleton;
+  IF strategy_enabled('solana_wallet_flow_quant') THEN
+    RAISE EXCEPTION 'Solana wallet strategy remained enabled with an empty cohort';
+  END IF;
 
   IF position('strategy_enabled(''cross_asset_funding'')' IN
        pg_get_functiondef('run_cross_asset_paper_scan'::regproc)) = 0

@@ -930,10 +930,14 @@ fn operator_response(request :: Request, action :: String, target :: String) do
           if String.contains(error, "idempotency key reused") do
             error_response(409, "idempotency_conflict", "idempotency key reused for a different command")
           else
-            if String.contains(error, "unknown strategy") do
-              error_response(404, "not_found", "strategy not found")
+            if String.contains(error, "strategy requires at least one configured") do
+              error_response(409, "strategy_precondition_failed", error)
             else
-              error_response(500, "operator_command_failed", error)
+              if String.contains(error, "unknown strategy") do
+                error_response(404, "not_found", "strategy not found")
+              else
+                error_response(500, "operator_command_failed", error)
+              end
             end
           end
         end
@@ -1270,7 +1274,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 48
+      schemaVersion : 49
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -1577,7 +1581,7 @@ pub fn handle_config(_request :: Request) -> Response do
       directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
       directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
       protocolSchemaVersion : 1,
-      databaseSchemaVersion : 48,
+      databaseSchemaVersion : 49,
       liveEnabled : false
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)

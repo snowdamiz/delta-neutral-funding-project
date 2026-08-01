@@ -54,6 +54,19 @@ post resume "$run_id-resume" '{"reason":"paper reconciliation passed"}' |
 post reconcile "$run_id-reconcile" '{"reason":"standalone paper reconciliation"}' |
   jq -e '(.reconciliationId | length) > 0' >/dev/null
 
+for strategy in hyperliquid_wallet_mirror solana_wallet_flow_quant; do
+  key="$run_id-$strategy-empty"
+  body='{"reason":"empty wallet cohort must fail closed"}'
+  test "$(
+    curl -sS -o /dev/null -w '%{http_code}' \
+      -H 'content-type: application/json' \
+      -H "x-idempotency-key: $key" \
+      -H "x-operator-signature: $(signature "$key" "$body")" \
+      --data "$body" \
+      "$base_url/v1/strategies/$strategy/start"
+  )" = "409"
+done
+
 post strategies/sol_control/stop "$run_id-sol-stop-first" \
   '{"reason":"isolation setup"}' >/dev/null
 post strategies/jitosol_carry/stop "$run_id-jito-stop" \
