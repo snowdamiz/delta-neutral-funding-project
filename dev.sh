@@ -102,25 +102,34 @@ reset_database() {
     return 1
   }
 
-  local volume=delta-neutral-funding_postgres_data_v49
-  if docker volume inspect "$volume" >/dev/null 2>&1; then
-    local project_label volume_label
-    project_label=$(docker volume inspect --format \
-      '{{index .Labels "com.docker.compose.project"}}' "$volume")
-    volume_label=$(docker volume inspect --format \
-      '{{index .Labels "com.docker.compose.volume"}}' "$volume")
-    if [ "$project_label" != 'delta-neutral-funding' ] ||
-      [ "$volume_label" != 'postgres_data_v49' ]; then
-      printf 'dev.sh: refusing to delete an unverified database volume\n' >&2
-      return 1
-    fi
+  # Read the volume out of the compose file rather than repeating its name:
+  # a schema bump renames it, and a stale name here made reset-db a silent
+  # no-op that stopped the stack, deleted nothing, and reported success.
+  local name
+  name=$(docker compose config --volumes | grep '^postgres_data' | head -1)
+  if [ -z "$name" ]; then
+    printf 'dev.sh: compose declares no postgres volume to reset\n' >&2
+    return 1
+  fi
+  local volume="delta-neutral-funding_$name"
+  if ! docker volume inspect "$volume" >/dev/null 2>&1; then
+    printf 'dev.sh: %s does not exist; there is no paper data to delete\n' "$volume" >&2
+    return 1
+  fi
+  local project_label volume_label
+  project_label=$(docker volume inspect --format \
+    '{{index .Labels "com.docker.compose.project"}}' "$volume")
+  volume_label=$(docker volume inspect --format \
+    '{{index .Labels "com.docker.compose.volume"}}' "$volume")
+  if [ "$project_label" != 'delta-neutral-funding' ] ||
+    [ "$volume_label" != "$name" ]; then
+    printf 'dev.sh: refusing to delete an unverified database volume\n' >&2
+    return 1
   fi
 
   stop_stack
-  if docker volume inspect "$volume" >/dev/null 2>&1; then
-    docker volume rm "$volume" >/dev/null
-    printf 'deleted %s; its paper data cannot be recovered\n' "$volume"
-  fi
+  docker volume rm "$volume" >/dev/null
+  printf 'deleted %s; its paper data cannot be recovered\n' "$volume"
   start_stack
 }
 
