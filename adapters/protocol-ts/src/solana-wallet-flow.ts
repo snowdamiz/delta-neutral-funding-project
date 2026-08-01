@@ -74,7 +74,7 @@ const ordinaryPrograms = new Set([
   "11111111111111111111111111111111",
   "ComputeBudget111111111111111111111111111111",
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-  "TokenzQdYJqWzVQ4zVvXw1Q7hM9VhKfV6Q7hK9VhKf",
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
 ]);
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { pollSolanaWalletFlow } from "./solana-wallet-flow-cli.js";
+import type { JupiterQuote } from "./solana-candidate-snapshot.js";
 import { signBody } from "./transport.js";
 
 const wallet = "11111111111111111111111111111111";
@@ -27,13 +28,28 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
         rpcMethods.push(call.method);
         let result: unknown;
         if (call.method === "getSignaturesForAddress") {
-          result = [{
+          result = call.params[0] === outputMint ? [] : [{
             signature: "swap-1",
             slot: 10,
             err: null,
             confirmationStatus: "confirmed",
             blockTime: 100,
           }];
+        } else if (call.method === "getAccountInfo") {
+          result = { value: {
+            owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            data: { parsed: { type: "mint", info: {
+              decimals: 6,
+              supply: "1000000",
+              mintAuthority: null,
+              freezeAuthority: null,
+              extensions: [],
+            } } },
+          } };
+        } else if (call.method === "getTokenLargestAccounts") {
+          result = { value: [] };
+        } else if (call.method === "getMultipleAccounts") {
+          result = { value: [] };
         } else if (call.method === "getTransaction") {
           result = {
             slot: 10,
@@ -103,6 +119,17 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
   const base = `http://127.0.0.1:${address.port}`;
 
   try {
+    const quote: JupiterQuote = async (inputMint, outputMint, amount) => ({
+      inputMint,
+      outputMint,
+      inAmount: amount,
+      outAmount: inputMint === outputMint
+        ? amount === 250_000n ? 9_500_000n : 80_000_000n
+        : amount === 10_000_000n ? 250_000n : 2_000_000n,
+      priceImpactBps: 100,
+      contextSlot: 10n,
+      routeLabels: ["Pump.fun"],
+    });
     const result = await pollSolanaWalletFlow({
       wallets: [wallet],
       collectorUrl: `${base}/v1/events`,
@@ -111,11 +138,14 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
       sessionId: "test",
       timeoutMs: 1000,
       observedAtMs: 200_000n,
+      quote,
+      sanctionedAddresses: new Set(),
     });
-    assert.deepEqual(result, { acquisitions: 1, checkpoints: 1, gaps: 0 });
-    assert.deepEqual(rpcMethods, ["getSignaturesForAddress", "getTransaction"]);
+    assert.deepEqual(result, { acquisitions: 1, snapshots: 1, checkpoints: 1, gaps: 0 });
+    assert(rpcMethods.every((method) => method !== "sendTransaction"));
     assert.deepEqual(delivered, [
       { eventType: "SolanaWalletAcquisition", signature: "swap-1" },
+      { eventType: "SolanaCandidateSnapshot", signature: "swap-1" },
       { eventType: "SolanaWalletCheckpoint", signature: "swap-1" },
     ]);
   } finally {

@@ -1,5 +1,10 @@
 import { pathToFileURL } from "node:url";
 import {
+  createJupiterQuote,
+  snapshotSolanaCandidate,
+  type JupiterQuote,
+} from "./solana-candidate-snapshot.js";
+import {
   captureSolanaWalletFlow,
   type SolanaRpc,
   type SolanaWalletCursor,
@@ -16,10 +21,13 @@ type PollConfig = {
   observedAtMs: bigint;
   pageSize?: number;
   maxPages?: number;
+  quote: JupiterQuote;
+  sanctionedAddresses: Set<string>;
 };
 
 type PollResult = {
   acquisitions: number;
+  snapshots: number;
   checkpoints: number;
   gaps: number;
 };
@@ -115,7 +123,7 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
     }
     return body.result;
   };
-  const result: PollResult = { acquisitions: 0, checkpoints: 0, gaps: 0 };
+  const result: PollResult = { acquisitions: 0, snapshots: 0, checkpoints: 0, gaps: 0 };
 
   for (const [index, wallet] of config.wallets.entries()) {
     const capture = await captureSolanaWalletFlow({
@@ -130,6 +138,21 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
     for (const acquisition of capture.acquisitions) {
       await post(config.collectorUrl, config.hmacSecret, config.timeoutMs, acquisition);
       result.acquisitions += 1;
+      await post(
+        config.collectorUrl,
+        config.hmacSecret,
+        config.timeoutMs,
+        await snapshotSolanaCandidate({
+          acquisition,
+          observedAtMs: config.observedAtMs,
+          sessionId: `${config.sessionId}-${index}`,
+          rpc,
+          quote: config.quote,
+          cohortWallets: config.wallets,
+          sanctionedAddresses: config.sanctionedAddresses,
+        }),
+      );
+      result.snapshots += 1;
     }
     await post(config.collectorUrl, config.hmacSecret, config.timeoutMs, capture.checkpoint);
     result.checkpoints += 1;
@@ -161,6 +184,17 @@ async function main(): Promise<void> {
     5_000,
     "SOLANA_WALLET_POLL_INTERVAL_MS",
   );
+  const quote = createJupiterQuote(
+    process.env.JUPITER_URL ?? "https://api.jup.ag/swap/v1",
+    process.env.JUPITER_API_KEY ?? "",
+    timeoutMs,
+  );
+  const sanctionedAddresses = new Set(
+    (process.env.SOLANA_SANCTIONED_ADDRESSES ?? "")
+      .split(",")
+      .map((address) => address.trim())
+      .filter(Boolean),
+  );
   let stopping = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => { stopping = true; });
@@ -175,6 +209,8 @@ async function main(): Promise<void> {
         sessionId,
         timeoutMs,
         observedAtMs: BigInt(Date.now()),
+        quote,
+        sanctionedAddresses,
         maxPages: positiveInteger(
           process.env.SOLANA_WALLET_MAX_BACKFILL_PAGES,
           10,
