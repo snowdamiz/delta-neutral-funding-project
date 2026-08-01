@@ -10,7 +10,7 @@ portfolios=$(curl -fsS "$base_url/v1/portfolios")
 test "$(printf '%s' "$build" | jq -r .configHash)" = \
   "$(printf '%s' "$config" | jq -r .configHash)"
 printf '%s' "$build" |
-  jq -e '.schemaVersion == 41' >/dev/null
+  jq -e '.schemaVersion == 42' >/dev/null
 printf '%s' "$config" |
   jq -e '.configHash | test("^[0-9a-f]{64}$")' >/dev/null
 

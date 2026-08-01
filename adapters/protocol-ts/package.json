@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "start:solana-wallet-flow": "node dist/solana-wallet-flow-cli.js",
     "test": "npm run build && node --test dist/*.test.js"
   },
   "devDependencies": {

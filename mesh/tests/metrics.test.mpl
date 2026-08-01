@@ -6,6 +6,6 @@ describe("Prometheus metrics") do
   end
 
   test("reports the current database schema") do
-    assert(String.contains(build_metric("app", "mesh"), "schema_version=\"41\""))
+    assert(String.contains(build_metric("app", "mesh"), "schema_version=\"42\""))
   end
 end

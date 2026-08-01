@@ -212,7 +212,7 @@ function acquisitions(
       schemaVersion: 1,
       eventId: `${sessionId}:solana-acquisition:${row.signature}:${mint}`,
       eventType: "SolanaWalletAcquisition",
-      source: `solana-wallet:${wallet}`,
+      source: `solana-wallet:${wallet}:${mint}`,
       observedAtMs: observedAtMs.toString(),
       sourceSlot: row.slot.toString(),
       sourceSequence: row.signature,

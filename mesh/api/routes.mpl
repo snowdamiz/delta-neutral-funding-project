@@ -9,6 +9,7 @@ from Packages.PaperEngine import PaperAction, PaperPosition, PaperRuntime, Paper
 from Packages.ProtocolContracts import FundingObservation, FundingSettlement, MarketSnapshot, WalletObservation, parse_funding_observation, parse_funding_settlement, parse_market_snapshot, parse_shadow_result, parse_wallet_observation
 from Packages.ReadModels import adapter_status, cross_venue_funding_leaderboard, fills, funding, funding_leaderboard, jitosol, latest_reconciliation, orders, pnl, pnl_comparison, portfolio, portfolios, positions, reverse_carry_leaderboard, risk_decisions, risk_events, shadow_results, strategies, wallet_config, wallet_tracking
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
+from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, parse_solana_wallet_flow_event, persist_solana_wallet_flow_event, solana_wallet_flow_state
 from Packages.StateMachine import PortfolioState
 from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_observation, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans, persist_wallet_config, persist_wallet_observation, run_cross_asset_paper_scan, run_cross_venue_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
@@ -772,6 +773,23 @@ fn wallet_observation_response(event :: WalletObservation) do
   end
 end
 
+fn solana_wallet_flow_response(event :: SolanaWalletFlowEvent) do
+  case persist_solana_wallet_flow_event(get_pool(), event) do
+    Ok(body) -> do
+      record_accepted()
+      info(
+        "solana_wallet_flow_event_accepted",
+        "{\"eventId\":\"${event.event_id}\",\"eventType\":\"${event.event_type}\",\"wallet\":\"${event.wallet}\"}"
+      )
+      HTTP.response(202, body)
+    end
+    Err(reason) -> do
+      record_rejected()
+      error_response(500, "persistence_failed", reason)
+    end
+  end
+end
+
 fn authenticated_event_response(body :: String) do
   case Json.parse(body) do
     Ok(_parsed) -> do
@@ -806,6 +824,24 @@ fn authenticated_event_response(body :: String) do
         "WalletObservation" -> do
           case parse_wallet_observation(body) do
             Ok(event) -> wallet_observation_response(event)
+            Err(reason) -> do
+              record_rejected()
+              error_response(400, "invalid_event", reason)
+            end
+          end
+        end
+        "SolanaWalletAcquisition" -> do
+          case parse_solana_wallet_flow_event(body) do
+            Ok(event) -> solana_wallet_flow_response(event)
+            Err(reason) -> do
+              record_rejected()
+              error_response(400, "invalid_event", reason)
+            end
+          end
+        end
+        "SolanaWalletCheckpoint" -> do
+          case parse_solana_wallet_flow_event(body) do
+            Ok(event) -> solana_wallet_flow_response(event)
             Err(reason) -> do
               record_rejected()
               error_response(400, "invalid_event", reason)
@@ -1136,7 +1172,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 41
+      schemaVersion : 42
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -1353,6 +1389,10 @@ pub fn handle_wallet_tracking(_request :: Request) -> Response do
     get_pool(),
     DateTime.utc_now() |> DateTime.to_unix_ms
   ))
+end
+
+pub fn handle_solana_wallet_flow(_request :: Request) -> Response do
+  read_response(get_pool() |> solana_wallet_flow_state)
 end
 
 pub fn handle_wallet_config(_request :: Request) -> Response do

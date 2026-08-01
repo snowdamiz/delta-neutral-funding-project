@@ -174,6 +174,38 @@ services:
     logging: *local-logging
     restart: unless-stopped
 
+  solana-wallet-flow:
+    profiles: ["solana-wallet-flow"]
+    image: delta-neutral-funding-adapter:latest
+    depends_on:
+      collector:
+        condition: service_healthy
+    command: ["dist/solana-wallet-flow-cli.js"]
+    environment:
+      ADAPTER_HMAC_SECRET: ${ADAPTER_HMAC_SECRET:-local-paper-only-change-me}
+      ADAPTER_SESSION_ID: ${ADAPTER_SESSION_ID:-solana-wallet-flow-local}
+      COLLECTOR_URL: http://collector:8080/v1/events
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+      SOLANA_FOLLOWED_WALLETS: ${SOLANA_FOLLOWED_WALLETS:-}
+      SOLANA_WALLET_POLL_INTERVAL_MS: ${SOLANA_WALLET_POLL_INTERVAL_MS:-5000}
+      SOLANA_WALLET_MAX_BACKFILL_PAGES: ${SOLANA_WALLET_MAX_BACKFILL_PAGES:-10}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-30000}
+    healthcheck:
+      disable: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    networks:
+      - ingest
+    mem_limit: 256m
+    pids_limit: 128
+    logging: *local-logging
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v3.5.0
     depends_on:
