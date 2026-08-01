@@ -22,7 +22,14 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
           wallets: [wallet],
           maximumWallets: "100",
           updatedAt: "2026-08-01T00:00:00Z",
-        }, cursors: [], openMints: [{
+        }, cursors: [{
+          wallet,
+          latestSignature: "",
+          latestSlot: "0",
+          observedAtMs: "150000",
+          captureComplete: false,
+          gapReason: "backfill_limit_reached",
+        }], openMints: [{
           decision: "WATCH",
           snapshotEventId: "snapshot-old",
           snapshotObservedAtMs: "150000",

@@ -55,16 +55,23 @@ function cursors(value: unknown): Map<string, SolanaWalletCursor> {
       typeof cursor.wallet !== "string" ||
       !publicKey.test(cursor.wallet) ||
       typeof cursor.latestSignature !== "string" ||
-      cursor.latestSignature.length === 0 ||
       typeof cursor.latestSlot !== "string" ||
-      !unsigned.test(cursor.latestSlot)
+      !unsigned.test(cursor.latestSlot) ||
+      (cursor.latestSignature.length === 0 && (
+        cursor.latestSlot !== "0" ||
+        cursor.captureComplete !== false ||
+        typeof cursor.gapReason !== "string" ||
+        cursor.gapReason.length === 0
+      ))
     ) {
       throw new Error("collector returned an invalid Solana wallet cursor");
     }
-    result.set(cursor.wallet, {
-      signature: cursor.latestSignature,
-      slot: Number(cursor.latestSlot),
-    });
+    if (cursor.latestSignature.length > 0) {
+      result.set(cursor.wallet, {
+        signature: cursor.latestSignature,
+        slot: Number(cursor.latestSlot),
+      });
+    }
   }
   return result;
 }
