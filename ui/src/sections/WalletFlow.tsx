@@ -324,7 +324,7 @@ function Discovery({ flow }: { flow: WalletFlowState }) {
               </tbody>
             </table>
           </div>
-          {status && <span role="status">{status}</span>}
+          {status && <span role="status" className="discovery-status">{status}</span>}
         </>
       )}
     </Panel>
@@ -348,7 +348,7 @@ function Live({ flow, strategy }: { flow: WalletFlowState; strategy: string }) {
     >
       <LiveControl mode={live.mode} strategy={strategy} />
       {live.mode === "live" && (
-        <p className="micro">
+        <p className="live-note">
           Daily spend {fmt(micros(live.dailySpendUsdMicros), 2)} USD.
           Intents expire unexecuted unless the solana-live executor profile is
           running with a signer key.

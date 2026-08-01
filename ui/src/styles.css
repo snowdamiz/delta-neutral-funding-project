@@ -426,17 +426,30 @@ details.cfg summary:hover { color:var(--ink1) }
 ::-webkit-scrollbar-thumb { background:var(--line-hi); border-radius:5px }
 ::selection { background:#2bc4a033 }
 
-/* Live-mode switch: the arm path is deliberately heavier than the disarm. */
-.live-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 4px 0 10px;
+/* Live-mode switch: the confirm step is deliberately heavier than the arm,
+   and disarm reads as the safe way back, not another alarm. */
+.live-control { display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; padding:1.05rem 1.15rem }
+.live-control button {
+  display:inline-flex; align-items:center; gap:.5rem;
+  border:1px solid var(--line-hi); border-radius:2px; background:var(--s1); color:var(--ink1);
+  padding:.55rem 1rem; font:600 10.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer;
 }
-.live-control [role="alert"] { color: var(--crit); font-size: 12px; }
-button.danger {
-  background: var(--crit);
-  color: var(--bg0, #fff);
-  border-color: var(--crit);
+.live-control button:hover { background:white; color:var(--s0) }
+.live-control button:focus-visible { outline:2px solid var(--ok); outline-offset:2px }
+.live-control button:disabled { cursor:wait; opacity:.55 }
+.live-control button.danger { color:var(--crit); border-color:#e6676766; background:#e6676714 }
+.live-control button.danger:hover { background:var(--crit); color:var(--s0) }
+.live-control [role="alert"] { color:var(--crit); font:10.5px/1.5 var(--mono) }
+.live-note { margin:0; padding:0 1.15rem 1.05rem; color:var(--ink3); font:11px/1.6 var(--mono); max-width:72ch }
+.panel .tw + .tw { border-top:1px solid var(--line) }
+
+/* Table row actions (discovery follow): additive, so they carry the ok hue. */
+.tw button {
+  display:inline-flex; align-items:center; gap:.45rem;
+  border:1px solid #2bc4a044; border-radius:2px; background:#2bc4a00a; color:var(--ok);
+  padding:.4rem .8rem; font:600 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; cursor:pointer;
 }
+.tw button:hover { background:var(--ok); color:var(--s0) }
+.tw button:focus-visible { outline:2px solid var(--ok); outline-offset:2px }
+.tw button:disabled { cursor:wait; opacity:.55 }
+.discovery-status { display:block; padding:.7rem 1.15rem; color:var(--ink2); font:10.5px/1.5 var(--mono) }
