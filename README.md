@@ -18,6 +18,9 @@ Local-first, Mesh-owned paper and shadow system for comparing:
 
 Paper mode is the default and the only currently approved mode. The repository
 contains no private key and no route from the paper deployment to a signer.
+The [Solana wallet-flow quant strategy](docs/us-accessible-strategy-research.md)
+specifies aggregator-aware SPL-token analysis and paper validation without
+authorizing live trading.
 
 ## Local development
 
@@ -85,9 +88,9 @@ The Phase 4 cross-venue book selects one asset across two qualified perpetual
 venues from realized funding prints. It sizes equal and opposite legs, charges
 both-leg costs, values mark divergence, maintains each venue's margin
 independently, and emergency-flattens both legs when either exit becomes
-uncertain. Hyperliquid publishes a usable maintenance rate; the current second
-venue remains fail-closed until its margin and executable-depth evidence is
-qualified.
+uncertain. Hyperliquid and Phoenix now provide the independent SOL perp depth,
+maintenance, and realized-funding evidence used by the paper evaluator. Live
+execution remains unavailable.
 
 Phase 5 indexes the explicit Hyperliquid cohort configured in the console's
 Markets → Wallet consistency panel. The authenticated update is stored in

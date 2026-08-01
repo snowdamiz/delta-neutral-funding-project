@@ -1,6 +1,6 @@
 import type { Snapshot } from "../api";
-import { clock, fmt, micros } from "../fmt";
-import { Chip, Empty, Key, Panel, reasonName, Section, StrategyName } from "../ui";
+import { clock, fmt, latest, micros } from "../fmt";
+import { Chip, Empty, Key, Panel, reasonName, Section, Since, StrategyName } from "../ui";
 
 export function Opportunity({ snap }: { snap: Snapshot }) {
   const items = snap.opportunities;
@@ -11,7 +11,11 @@ export function Opportunity({ snap }: { snap: Snapshot }) {
       title="Entry evaluations"
       note={`Each time the market moves, the collector prices the trade over a ${holdHours}h hold after all costs. It enters only if that is positive and entry costs break even inside ${breakEvenHours}h.`}
     >
-      <Panel label="Recent evaluations" hint="Newest first. “Gated” means the trade was priced and refused, not that it was missed.">
+      <Panel
+        label="Recent evaluations"
+        hint="Newest first. “Gated” means the trade was priced and refused, not that it was missed."
+        aside={<Since at={latest(items, (o) => o.observedAtMs)} verb="priced" />}
+      >
         {items.length === 0 ? (
           <Empty msg="No market has been evaluated yet." />
         ) : (

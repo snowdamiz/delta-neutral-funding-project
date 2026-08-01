@@ -4,8 +4,8 @@
 `npm run dev` already does this via Vite's dev proxy; this is the equivalent for
 a production build, with no Node runtime required.
 
-The bounded local paper controls are signed by this localhost server. Destructive
-operator routes remain unreachable from the browser.
+The bounded local paper controls are signed by this localhost server. Database
+reset is the one destructive route and requires an exact confirmation phrase.
 
     python3 ui/serve.py                  # http://127.0.0.1:8081
     PORT=9000 COLLECTOR=http://127.0.0.1:8080 python3 ui/serve.py
@@ -18,7 +18,9 @@ import http.server
 import json
 import os
 import re
+import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -31,6 +33,9 @@ COLLECTOR = os.environ.get("COLLECTOR", "http://127.0.0.1:8080").rstrip("/")
 PORT = int(os.environ.get("PORT", "8081"))
 TIMEOUT = float(os.environ.get("TIMEOUT_S", "5"))
 OPERATOR_SECRET = os.environ.get("OPERATOR_HMAC_SECRET", "local-operator-only-change-me")
+PROJECT = Path(__file__).resolve().parent.parent
+RESET_APPROVAL = "WIPE PAPER DATABASE"
+RESET_LOCK = threading.Lock()
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -52,6 +57,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # Mirrors ui/operator.ts, which signs the same controls for the Vite
         # dev proxy: same bodies, same scope handling, same reason strings.
         requested = urllib.parse.urlsplit(self.path)
+        if requested.path == "/operator/reset-database":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > 1024:
+                    raise ValueError
+                incoming = json.loads(self.rfile.read(length))
+                if incoming != {"approval": RESET_APPROVAL}:
+                    raise ValueError
+            except (TypeError, ValueError, json.JSONDecodeError):
+                self.respond(b'{"error":"reset_approval_required"}', 400, "application/json")
+                return
+            if not RESET_LOCK.acquire(blocking=False):
+                self.respond(b'{"error":"database_reset_in_progress"}', 409, "application/json")
+                return
+            try:
+                subprocess.run(
+                    [str(PROJECT / "dev.sh"), "reset-db", "--approve-paper-reset"],
+                    cwd=PROJECT,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=180,
+                    check=True,
+                )
+                self.respond(b'{"status":"restarted"}', 200, "application/json")
+            except (OSError, subprocess.SubprocessError):
+                self.respond(b'{"error":"database_reset_failed"}', 500, "application/json")
+            finally:
+                RESET_LOCK.release()
+            return
         if requested.path == "/operator/wallets/config":
             try:
                 length = int(self.headers.get("Content-Length", "0"))

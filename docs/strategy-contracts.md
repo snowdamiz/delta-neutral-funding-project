@@ -82,8 +82,9 @@ before retry.
 - If either leg cannot be priced and exited, persist a critical risk event,
   enter emergency flatten, and close both legs only when both exits are again
   executable.
-- This contract is paper-only; a second venue must be re-qualified before the
-  strategy can open and the 30-day paper gate remains mandatory.
+- This contract is paper-only; Phoenix is qualified only for read-only paper
+  evidence, and a live-capable second venue plus the 30-day gate remain
+  mandatory before any execution path can be approved.
 
 ## HYPERLIQUID_WALLET_TRACKING
 

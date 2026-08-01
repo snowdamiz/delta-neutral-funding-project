@@ -9,6 +9,7 @@ export type AdapterConfig = {
   walletScanIntervalMs: number;
   walletFillLookbackMs: bigint;
   requestTimeoutMs: number;
+  collectorRequestTimeoutMs: number;
   healthPort: number;
   hyperliquidUrls: string[];
   kaminoUrls: string[];
@@ -187,6 +188,11 @@ export function loadConfig(
       "86400000",
     ),
     requestTimeoutMs: positiveInteger(env, "REQUEST_TIMEOUT_MS", 3000),
+    collectorRequestTimeoutMs: positiveInteger(
+      env,
+      "COLLECTOR_REQUEST_TIMEOUT_MS",
+      120_000,
+    ),
     healthPort: positiveInteger(env, "HEALTH_PORT", 8090),
     hyperliquidUrls: urls(
       env,

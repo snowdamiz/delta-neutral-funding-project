@@ -79,7 +79,7 @@ BEGIN
         'perpAskPriceUsdMicros', '50005000000',
         'spotExitDepthAtoms', '100000000',
         'perpExitDepthAtoms', '100000000',
-        'depthQualified', true,
+        'depthQualified', false,
         'marginStatus', 'valid',
         'maintenanceMarginPpm', '25000'
       )
@@ -182,6 +182,21 @@ BEGIN
      OR (SELECT sum(usd_value_atoms::numeric) FROM funding_payments
          WHERE portfolio_run_id LIKE 'cross-venue-%') <> expected_funding THEN
     RAISE EXCEPTION 'realized venue funding was not recorded once: %', result;
+  END IF;
+  IF (SELECT count(*)
+      FROM funding_payments fp
+      JOIN ledger_batches lb ON lb.portfolio_run_id = fp.portfolio_run_id
+        AND lb.event_id = fp.id
+      JOIN ledger_entries le ON le.ledger_batch_id = lb.id
+      WHERE fp.portfolio_run_id LIKE 'cross-venue-%'
+        AND fp.venue_payment_id LIKE 'cross-venue:%'
+        AND le.usd_value_atoms::numeric = abs(fp.usd_value_atoms::numeric)) <>
+      (SELECT count(*)
+       FROM funding_payments
+       WHERE portfolio_run_id LIKE 'cross-venue-%'
+         AND venue_payment_id LIKE 'cross-venue:%'
+         AND amount_atoms::numeric <> 0) THEN
+    RAISE EXCEPTION 'realized venue funding was not journaled once';
   END IF;
 
   result := run_cross_venue_paper_scan(

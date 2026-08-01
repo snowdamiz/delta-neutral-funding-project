@@ -4,10 +4,12 @@
 
 **Document status:** Implementation-ready roadmap derived from a full review of the running paper system
 **Parent document:** `solana_delta_neutral_funding_collector_plan.md` (2026-07-25)
+**Solana wallet-flow quant research:** `docs/us-accessible-strategy-research.md`
 **Review evidence:** Live collector API, `opportunity_decisions` history, July 27 soak backup, live Hyperliquid funding data
-**Capital envelope:** $5,000 or less working capital; strategies are ordered for this constraint
+**Legacy planning capital:** $5,000 or less; the estimates below retain that original assumption
+**Current capital override:** approximately $1,000; use `docs/us-accessible-strategy-research.md` for the wallet-flow sizing and paper-validation thresholds
 **Default operating mode:** `paper` — every strategy, every phase, no exceptions
-**Live policy:** One live experiment at a time, first live notional capped at $500, only after its own paper and shadow gates pass
+**Live policy:** One live experiment at a time, first live notional capped at $500 per leg and $700 total capital consumed, only after its own paper and shadow gates pass
 **First implementation step:** Phase 0 — generalize the operator console so every later phase lands in it without rework
 **Prepared:** July 30, 2026
 
@@ -144,8 +146,9 @@ appears to should fail its paper gate.
 ## 3.3 Standing capital rules
 
 - Total at risk across all live strategies never exceeds the envelope.
-- First live deployment of any strategy: **$500 notional maximum** (10% of
-  bankroll), scaling only after 30 live days match paper within tolerance.
+- First live deployment of any strategy: **$500 notional maximum per leg and
+  $700 total capital consumed**, scaling only after 30 live days match paper
+  within tolerance.
 - Perp collateral intentionally overcollateralized; reduce exposure rather
   than add collateral, exactly as the parent plan requires.
 - If any strategy goes live on Drift, use JitoSOL as perp collateral where
@@ -305,7 +308,9 @@ Net return
 - Funding capture for every perp on Hyperliquid
   (`POST https://api.hyperliquid.xyz/info`, `{"type":"metaAndAssetCtxs"}` —
   one keyless call returns funding, mark, and open interest for all assets)
-  and Drift's public data API.
+  plus the qualified read-only Phoenix SOL funding feed. Drift/Velocity remains
+  excluded until its rebooted production data contract is independently
+  re-qualified.
 - Per-asset funding EMA and percentile columns. Funding is autocorrelated;
   the gate consumes the 24h average, never a single hourly print.
 - Paper portfolios on the top-ranked asset, using the existing independent
@@ -510,8 +515,8 @@ Net return
 
 ## 8.4 Scope and risks
 
-- Start with one asset (whichever Phase 1 ranks most persistent) and two
-  venues from: Hyperliquid, Drift, Phoenix-when-live.
+- Start paper evaluation with SOL on Hyperliquid and the qualified read-only
+  Phoenix feed. Re-qualify a live-capable second venue before any live path.
 - Doubled venue risk is the honest price of removing the spot leg: two
   smart-contract surfaces, two liquidation engines, two oracle stacks.
 - Margin must be maintained independently on both sides; a liquidation on
@@ -687,7 +692,7 @@ New adapter work, in build order:
 
 1. Strategy catalog read endpoint (`/v1/strategies`) — Phase 0.
 2. Hyperliquid info-API adapter (keyless, one endpoint) — Phase 1, feeds 2/4/5.
-3. Drift data-API funding adapter — Phase 1, feeds 4 and 6.
+3. Phoenix SOL funding normalization — Phase 1, feeds Phase 4 paper evaluation.
 4. Lending-market adapter (Kamino or marginfi, read-only first) — Phase 2.
 5. Hyperliquid wallet indexer — Phase 5.
 6. Drift keeper event pipeline — Phase 6.
@@ -755,7 +760,8 @@ No calendar entry authorizes live trading; only §14 does.
 - Shadow-equivalent validation where a construction path exists (unchanged
   from the parent plan's shadow doctrine).
 - Venue eligibility and legal access confirmed; no restriction bypass.
-- First live notional ≤ $500; one live strategy at a time.
+- First live notional ≤ $500 per leg and total capital consumed ≤ $700; one
+  live strategy at a time.
 - Kill switches, emergency flatten, and reconciliation proven on the live
   venue with dust-sized test volume before strategy capital moves.
 - 30 live days matching paper within written tolerance before any scale-up.

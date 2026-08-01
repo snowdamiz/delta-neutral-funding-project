@@ -10,6 +10,7 @@ test("loads bounded adapter configuration", () => {
     EMIT_INTERVAL_MS: "250",
     FUNDING_INTERVAL_EVENTS: "12",
     REQUEST_TIMEOUT_MS: "1000",
+    COLLECTOR_REQUEST_TIMEOUT_MS: "120000",
     HEALTH_PORT: "8090",
     FUNDING_SCAN_INTERVAL_MS: "3600000",
   });
@@ -17,6 +18,7 @@ test("loads bounded adapter configuration", () => {
   assert.equal(config.fundingIntervalEvents, 12);
   assert.equal(config.sessionId, "test-session");
   assert.equal(config.healthPort, 8090);
+  assert.equal(config.collectorRequestTimeoutMs, 120_000);
   assert.equal(config.mode, "synthetic");
   assert.equal(config.fundingScanIntervalMs, 3_600_000);
   assert.deepEqual(config.hyperliquidUrls, ["https://api.hyperliquid.xyz"]);

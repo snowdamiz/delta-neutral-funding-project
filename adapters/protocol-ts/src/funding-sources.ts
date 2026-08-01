@@ -19,7 +19,7 @@ type BorrowFields = Pick<
   | "borrowAvailableUsdMicros"
   | "borrowUtilizationPpm"
 >;
-type FundingRow = Omit<
+export type FundingObservationRow = Omit<
   FundingObservationPayload,
   "scanId" | "scanIndex" | "scanSize" | keyof BorrowFields
 > & {
@@ -353,7 +353,8 @@ async function hyperliquidFundingHistory(
 async function hyperliquidRows(
   config: AdapterConfig,
   observedAtMs: bigint,
-): Promise<FundingRow[]> {
+  crossVenueAssets: Set<string>,
+): Promise<FundingObservationRow[]> {
   const [perpsResponse, spotsResponse] = await Promise.all([
     hyperliquidInfo(config, { type: "metaAndAssetCtxs" }),
     hyperliquidInfo(config, { type: "spotMetaAndAssetCtxs" }),
@@ -389,7 +390,7 @@ async function hyperliquidRows(
     }
   }
 
-  return Promise.all(perpUniverse.map(async (value, index): Promise<FundingRow> => {
+  return Promise.all(perpUniverse.map(async (value, index): Promise<FundingObservationRow> => {
     const market = object(value, `perp market ${index}`);
     const context = object(perpContexts[index], `perp context ${index}`);
     const venueAsset = text(market.name, "perp asset");
@@ -436,7 +437,7 @@ async function hyperliquidRows(
       observedAtMs: observedAtMs.toString(),
       ratePpm: fundingRate.toString(),
     }];
-    if (spotCoin) {
+    if (spotCoin || crossVenueAssets.has(asset)) {
       try {
         const paperQuantity = ceilDiv(
           config.paperNotionalUsdMicros * billion,
@@ -444,34 +445,37 @@ async function hyperliquidRows(
         );
         const [perpBook, spotBook] = await Promise.all([
           l2(config, venueAsset, paperQuantity),
-          l2(config, spotCoin, paperQuantity),
+          spotCoin ? l2(config, spotCoin, paperQuantity) : undefined,
         ]);
-        spotBid = spotBook.bid;
-        spotAsk = spotBook.ask;
         perpBid = perpBook.bid;
         perpAsk = perpBook.ask;
-        spotDepth = spotBook.bidDepth;
-        perpDepth = perpBook.askDepth;
+        perpDepth = perpBook.bidDepth < perpBook.askDepth
+          ? perpBook.bidDepth
+          : perpBook.askDepth;
         const required = paperQuantity * 2n;
-        depthQualified =
-          spotBook.bidDepth >= required &&
-          spotBook.askDepth >= required &&
-          perpBook.bidDepth >= required &&
-          perpBook.askDepth >= required;
-        depthRaw = `${perpBook.raw}\n${spotBook.raw}`;
-        if (depthQualified) {
-          const history = await hyperliquidFundingHistory(
-            config,
-            venueAsset,
-            observedAtMs,
-          );
-          if (history.latest) {
-            realizedFundingRate = history.latest.rate;
-            realizedFundingAtMs = history.latest.atMs;
-          }
-          if (history.samples.length > 0) fundingHistory = history.samples;
-          depthRaw = `${depthRaw}\n${history.raw}`;
+        if (spotBook) {
+          spotBid = spotBook.bid;
+          spotAsk = spotBook.ask;
+          spotDepth = spotBook.bidDepth;
+          depthQualified =
+            spotBook.bidDepth >= required &&
+            spotBook.askDepth >= required &&
+            perpBook.bidDepth >= required &&
+            perpBook.askDepth >= required;
         }
+        const history = await hyperliquidFundingHistory(
+          config,
+          venueAsset,
+          observedAtMs,
+        );
+        if (history.latest) {
+          realizedFundingRate = history.latest.rate;
+          realizedFundingAtMs = history.latest.atMs;
+        }
+        if (history.samples.length > 0) fundingHistory = history.samples;
+        depthRaw = [perpBook.raw, spotBook?.raw, history.raw]
+          .filter(Boolean)
+          .join("\n");
       } catch (error) {
         depthRaw = error instanceof Error ? error.message : String(error);
       }
@@ -511,11 +515,17 @@ export async function captureFundingObservations(
   config: AdapterConfig,
   sequence: bigint,
   observedAtMs: bigint,
+  additionalRows: FundingObservationRow[] = [],
 ): Promise<FundingObservationEvent[]> {
   const [rows, borrows] = await Promise.all([
-    hyperliquidRows(config, observedAtMs),
+    hyperliquidRows(
+      config,
+      observedAtMs,
+      new Set(additionalRows.map(({ asset }) => asset)),
+    ),
     kaminoBorrowSnapshots(config, observedAtMs),
   ]);
+  rows.push(...additionalRows);
   const scanId = `funding-${config.sessionId}-${sequence}`;
   return rows.map((row, index) => {
     const sourceObservedAtMs =
@@ -535,7 +545,7 @@ export async function captureFundingObservations(
     const { raw: _raw, ...canonicalPayload } = payload as FundingObservationPayload & {
       raw?: string;
     };
-    const source = `${row.venue}-funding:${row.asset}`;
+    const source = `${row.venue}-funding-observation:${row.asset}`;
     return validateEvent({
       schemaVersion: 1,
       eventId: `${scanId}:${row.venue}:${row.asset}`,

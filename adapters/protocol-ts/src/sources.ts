@@ -6,6 +6,7 @@ import {
   type MarketSnapshotPayload,
   validateEvent,
 } from "./contracts.js";
+import { type FundingObservationRow } from "./funding-sources.js";
 
 const stakePoolAddress = "Jito4APyf642JPZPx3hGc6WWJ8zPKtRbRs4P815Awbb";
 const stakePoolOwner = "SPoo1Ku8WFXoNDMHPsrGSTSG1Y47rzgn41SLUNakuHy";
@@ -38,6 +39,7 @@ type PhoenixCapture = {
   fundingPpm: bigint;
   fundingTimestampSeconds: bigint;
   fundingPriceUsdMicros: bigint;
+  fundingHistory: { atMs: bigint; ratePpm: bigint }[];
   slots: bigint[];
   raw: string;
   endpoint: string;
@@ -69,6 +71,7 @@ type JupiterCapture = {
 export type AuthoritativeCapture = {
   snapshot: MarketSnapshotEvent;
   funding: FundingSettlementEvent;
+  fundingObservation: FundingObservationRow;
   navLamports: bigint;
   endpoints: { phoenix: string; solana: string; jupiter: string };
 };
@@ -176,6 +179,10 @@ function join(base: string, suffix: string): string {
   return `${base.replace(/\/+$/, "")}/${suffix.replace(/^\/+/, "")}`;
 }
 
+function publicEndpoint(value: string): string {
+  return new URL(value).origin;
+}
+
 async function fetchJson(
   url: string,
   timeoutMs: number,
@@ -274,12 +281,23 @@ function book(value: unknown, slippageBps: bigint): {
   };
 }
 
-async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
+async function phoenix(
+  config: AdapterConfig,
+  observedAtMs: bigint,
+): Promise<PhoenixCapture> {
   return firstProvider("Phoenix", config.phoenixUrls, async (endpoint) => {
     const headers: Record<string, string> = {};
     if (config.phoenixBearerToken.length > 0) {
       headers.authorization = `Bearer ${config.phoenixBearerToken}`;
     }
+    const fundingUrl = new URL(join(endpoint, "v1/funding/SOL/rates"));
+    fundingUrl.searchParams.set(
+      "startTime",
+      (observedAtMs > 608_400_000n ? observedAtMs - 608_400_000n : 0n)
+        .toString(),
+    );
+    fundingUrl.searchParams.set("endTime", observedAtMs.toString());
+    fundingUrl.searchParams.set("limit", "169");
     const [marketResponse, bookResponse, fundingResponse] = await Promise.all([
       fetchJson(
         join(endpoint, "v1/view/exchange/market/SOL"),
@@ -292,7 +310,7 @@ async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
         { headers },
       ),
       fetchJson(
-        join(endpoint, "v1/funding/SOL/rates?limit=1"),
+        fundingUrl.toString(),
         config.requestTimeoutMs,
         { headers },
       ),
@@ -361,18 +379,22 @@ async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
     }
     const rates = array(funding.rates, "funding rates");
     if (rates.length === 0) throw new Error("Phoenix funding history is empty");
-    const latest = rates
-      .map((item) => object(item, "funding rate"))
-      .reduce((left, right) =>
-        timestampSeconds(left.timestamp, "funding timestamp") >=
-        timestampSeconds(right.timestamp, "funding timestamp")
-          ? left
-          : right,
-      );
-    const fundingTimestamp = timestampSeconds(
-      latest.timestamp,
-      "funding timestamp",
-    );
+    const fundingHistory = rates
+      .map((item) => {
+        const rate = object(item, "funding rate");
+        return {
+          atMs: timestampSeconds(rate.timestamp, "funding timestamp") * 1000n,
+          ratePpm: decimal(
+            rate.fundingRatePercentage,
+            4,
+            "floor",
+            "fundingRatePercentage",
+          ),
+        };
+      })
+      .sort((left, right) => left.atMs < right.atMs ? -1 : left.atMs > right.atMs ? 1 : 0);
+    const latest = fundingHistory.at(-1)!;
+    const fundingTimestamp = latest.atMs / 1000n;
     if (fundingTimestamp < 3600n) {
       throw new Error("funding timestamp has no preceding hourly candle");
     }
@@ -400,19 +422,20 @@ async function phoenix(config: AdapterConfig): Promise<PhoenixCapture> {
       feePpm,
       leverageTiers,
       maintenanceBps,
-      fundingPpm: decimal(
-        latest.fundingRatePercentage,
-        4,
-        "floor",
-        "fundingRatePercentage",
-      ),
+      fundingPpm: latest.ratePpm,
       fundingTimestampSeconds: fundingTimestamp,
       fundingPriceUsdMicros: positive(
         decimal(candle.markClose, 6, "floor", "funding mark close"),
         "funding mark close",
       ),
+      fundingHistory,
       slots: [parsedBook.slot, integer(stats.slot, "market stats slot")],
-      raw: [marketResponse.raw, bookResponse.raw, fundingResponse.raw].join("\n"),
+      raw: [
+        marketResponse.raw,
+        bookResponse.raw,
+        fundingResponse.raw,
+        candleResponse.raw,
+      ].join("\n"),
       endpoint,
     };
   });
@@ -687,7 +710,7 @@ export async function buildAuthoritativeEvents(
     throw new Error("authoritative source capture requires authoritative mode");
   }
   const [perp, pool] = await Promise.all([
-    phoenix(config),
+    phoenix(config, observedAtMs),
     solana(config),
   ]);
   const navLamports = pool.totalPoolLamports * billion / pool.supplyAtoms;
@@ -745,6 +768,10 @@ export async function buildAuthoritativeEvents(
   const maintenance = ceilDiv(
     initialMargin * perp.maintenanceBps,
     10_000n,
+  );
+  const maintenanceMarginPpm = ceilDiv(
+    million * million * perp.maintenanceBps,
+    leverageTier.maxLeveragePpm * 10_000n,
   );
   const liquidationDistance =
     config.paperCollateralUsdMicros <= maintenance
@@ -817,7 +844,7 @@ export async function buildAuthoritativeEvents(
     schemaVersion: 1,
     eventId: `phoenix-SOL-funding-${perp.fundingTimestampSeconds}`,
     eventType: "FundingSettlement",
-    source: "phoenix-funding:SOL",
+    source: "phoenix-funding-settlement:SOL",
     observedAtMs: fundingAtMs.toString(),
     sourceSlot: perp.fundingTimestampSeconds.toString(),
     sourceSequence: `funding-${perp.fundingTimestampSeconds}`,
@@ -830,14 +857,41 @@ export async function buildAuthoritativeEvents(
       solPriceUsdMicros: perp.fundingPriceUsdMicros.toString(),
     },
   }) as FundingSettlementEvent;
+  const fundingObservation: FundingObservationRow = {
+    venue: "phoenix",
+    asset: "SOL",
+    instrument: "SOL-PERP",
+    sourceObservedAtMs: "0",
+    sourceStatus: "valid",
+    fundingRatePpmPerHour: perp.fundingPpm.toString(),
+    fundingHistory: perp.fundingHistory.map(({ atMs, ratePpm }) => ({
+      observedAtMs: atMs.toString(),
+      ratePpm: ratePpm.toString(),
+    })),
+    realizedFundingRatePpm: perp.fundingPpm.toString(),
+    realizedFundingAtMs: fundingAtMs.toString(),
+    markPriceUsdMicros: perp.askPrice.toString(),
+    openInterestUsdMicros: "0",
+    spotBidPriceUsdMicros: "0",
+    spotAskPriceUsdMicros: "0",
+    perpBidPriceUsdMicros: perp.bidPrice.toString(),
+    perpAskPriceUsdMicros: perp.askPrice.toString(),
+    spotExitDepthAtoms: "0",
+    perpExitDepthAtoms: perp.depthLamports.toString(),
+    depthQualified: false,
+    marginStatus: "valid",
+    maintenanceMarginPpm: maintenanceMarginPpm.toString(),
+    raw: perp.raw,
+  };
   return {
     snapshot,
     funding,
+    fundingObservation,
     navLamports,
     endpoints: {
-      phoenix: perp.endpoint,
-      solana: pool.endpoint,
-      jupiter: spot.endpoint,
+      phoenix: publicEndpoint(perp.endpoint),
+      solana: publicEndpoint(pool.endpoint),
+      jupiter: publicEndpoint(spot.endpoint),
     },
   };
 }

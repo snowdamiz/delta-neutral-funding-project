@@ -19,6 +19,8 @@ usage() {
     '  build    rebuild the images, then start everything' \
     '  status   show service state and the local URLs' \
     '  down     stop the stack (paper evidence and Prometheus history are kept)' \
+    '  reset-db --approve-paper-reset' \
+    '           permanently clear PostgreSQL paper data and restart the stack' \
     '  logs     follow collector and adapter logs' \
     '' \
     'ADAPTER_MODE=authoritative dev.sh   captures live Phoenix/RPC/Jupiter data' \
@@ -71,8 +73,46 @@ start_stack() {
     docker compose ps >&2 || true
     printf '\n--- collector ---\n' >&2
     docker compose logs --tail=40 collector >&2 || true
+    if docker compose logs --no-color collector 2>/dev/null |
+      grep -Fq 'running paper strategy build does not match pinned release'; then
+      printf '\ndev.sh: the database belongs to another build; to discard its paper evidence, run:\n  ./dev.sh reset-db --approve-paper-reset\n' >&2
+    fi
     exit 1
   fi
+}
+
+reset_database() {
+  if [ "$#" -ne 1 ] || [ "$1" != '--approve-paper-reset' ]; then
+    printf 'dev.sh: reset-db requires --approve-paper-reset\n' >&2
+    return 2
+  fi
+
+  require docker
+  docker info >/dev/null 2>&1 || {
+    printf 'dev.sh: the Docker daemon is not running\n' >&2
+    return 1
+  }
+
+  local volume=delta-neutral-funding_postgres_data_v38
+  if docker volume inspect "$volume" >/dev/null 2>&1; then
+    local project_label volume_label
+    project_label=$(docker volume inspect --format \
+      '{{index .Labels "com.docker.compose.project"}}' "$volume")
+    volume_label=$(docker volume inspect --format \
+      '{{index .Labels "com.docker.compose.volume"}}' "$volume")
+    if [ "$project_label" != 'delta-neutral-funding' ] ||
+      [ "$volume_label" != 'postgres_data_v38' ]; then
+      printf 'dev.sh: refusing to delete an unverified database volume\n' >&2
+      return 1
+    fi
+  fi
+
+  docker compose down
+  if docker volume inspect "$volume" >/dev/null 2>&1; then
+    docker volume rm "$volume" >/dev/null
+    printf 'deleted %s; its paper data cannot be recovered\n' "$volume"
+  fi
+  start_stack
 }
 
 install_console() {
@@ -124,6 +164,11 @@ case ${1:-up} in
     # Never -v: the paper ledger, soak evidence and Prometheus history live in
     # named volumes and a dev script has no business deleting them.
     docker compose down
+    ;;
+  reset-db)
+    shift
+    reset_database "$@"
+    urls
     ;;
   logs)
     docker compose logs -f collector adapter

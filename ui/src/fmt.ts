@@ -94,6 +94,24 @@ export function age(ms: string | number | null | undefined): string {
 export const num = (v: unknown): string =>
   v == null ? "—" : Number(v).toLocaleString("en-US");
 
+/**
+ * Epoch milliseconds from either shape the read API uses: a millisecond string
+ * (`observedAtMs`) or an ISO timestamp (`createdAt`). `0` means "no time" —
+ * every caller renders that as "never", so an unparseable value never becomes
+ * 1970.
+ */
+export function ms(v: string | number | null | undefined): number {
+  if (v == null || v === "") return 0;
+  const n = Number(v);
+  if (Number.isFinite(n)) return n;
+  const parsed = Date.parse(String(v));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Newest epoch-ms across a set of rows, or 0 when there are none. */
+export const latest = <T,>(rows: T[], at: (row: T) => string | number | null | undefined): number =>
+  rows.reduce((max, row) => Math.max(max, ms(at(row))), 0);
+
 /** The read API's micro-denominated integers are a {atoms, scale: 6} pair. */
 export const micros = (atoms: string): Fixed => ({ atoms, scale: 6 });
 

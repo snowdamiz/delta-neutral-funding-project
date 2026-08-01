@@ -1,8 +1,9 @@
 import { createHmac } from "node:crypto";
+export { approvedDatabaseReset } from "./reset";
 
 /**
- * Sign the bounded paper controls the browser may reach; destructive operator
- * routes stay unreachable from the console.
+ * Sign the bounded collector controls the browser may reach. The one local
+ * database reset never reaches the collector and is guarded separately.
  *
  * `?strategy=<id>` names the card the control was pressed from. The collector's
  * pause state is a singleton, so the scope does not change what the command

@@ -1136,7 +1136,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 39
+      schemaVersion : 41
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end

@@ -1,11 +1,20 @@
 import { useState, type FormEvent } from "react";
 import { configureWallets, type Snapshot, type WalletTracking } from "../api";
-import { fmt, micros, pct } from "../fmt";
-import { Chip, Empty, Panel, Section } from "../ui";
+import { fmt, micros, ms, pct } from "../fmt";
+import { Chip, Empty, Panel, Section, Since, Spin } from "../ui";
 
 const signedPpm = (value: string) => `${Number(value) >= 0 ? "+" : ""}${value}`;
 const shortWallet = (wallet: string) => `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
 const WALLET = /^0x[0-9a-f]{40}$/;
+
+/** Each scan's own clock, beside its gate. A stale table and a quiet market
+ *  look identical without it. */
+const ScanAside = ({ at, gate }: { at: string | undefined; gate?: string }) => (
+  <span className="scan-aside">
+    {gate && <span className="micro">{gate}</span>}
+    <Since at={ms(at)} verb="scanned" />
+  </span>
+);
 
 /** Every scan table ends in the same three-state verdict, so it renders once. */
 const State = ({ eligible, ready, depth = true }: { eligible: boolean; ready: boolean; depth?: boolean }) => (
@@ -66,8 +75,13 @@ export function WalletConfig({ config }: { config: WalletTracking["config"] }) {
         placeholder="0x…"
       />
       <div className="wallet-config-actions">
-        <span role="status">{status || `${config.wallets.length}/${maximum} configured`}</span>
-        <button type="submit" disabled={saving}>{saving ? "Saving…" : "Save cohort"}</button>
+        <span role="status">
+          {saving ? "Sending the cohort to the collector…" : status || `${config.wallets.length}/${maximum} configured`}
+        </span>
+        <button type="submit" disabled={saving} aria-busy={saving}>
+          {saving && <Spin on />}
+          {saving ? "Saving…" : "Save cohort"}
+        </button>
       </div>
     </form>
   );
@@ -102,7 +116,7 @@ export function Markets({ snap }: { snap: Snapshot }) {
       <Panel
         label="Funding rates"
         hint="Funding paid to shorts. The carry strategies enter when a market beats the gate and stays there."
-        aside={funding && <span className="micro">gate {signedPpm(funding.gateThresholdPpm)} ppm/h</span>}
+        aside={funding && <ScanAside at={funding.asOfMs} gate={`gate ${signedPpm(funding.gateThresholdPpm)} ppm/h`} />}
       >
         {items.length === 0 ? (
           <Empty msg="Waiting for the first complete cross-asset funding scan." />
@@ -143,7 +157,7 @@ export function Markets({ snap }: { snap: Snapshot }) {
       <Panel
         label="Reverse carry"
         hint="Markets where funding is negative, so shorts pay longs. The strategy takes the long side and borrows to hold spot — worth it only while the receipt beats the borrow rate."
-        aside={reverse && <span className="micro">cost gate +{reverse.costThresholdPpm} ppm/h</span>}
+        aside={reverse && <ScanAside at={reverse.asOfMs} gate={`cost gate +${reverse.costThresholdPpm} ppm/h`} />}
       >
         {reverseItems.length === 0 ? (
           <Empty msg="Waiting for qualified negative funding and live Kamino borrow snapshots." />
@@ -186,7 +200,7 @@ export function Markets({ snap }: { snap: Snapshot }) {
       <Panel
         label="Cross-venue spread"
         hint="The same market on two venues, shorted on one and held long on the other. The edge is the realised funding spread; both legs carry their own margin."
-        aside={crossVenue && <span className="micro">gate +{crossVenue.gateThresholdPpm} ppm/h</span>}
+        aside={crossVenue && <ScanAside at={crossVenue.asOfMs} gate={`gate +${crossVenue.gateThresholdPpm} ppm/h`} />}
       >
         {crossVenueItems.length === 0 ? (
           <Empty msg="Waiting for two venues with realised funding, executable depth, and margin evidence." />
@@ -233,10 +247,10 @@ export function Markets({ snap }: { snap: Snapshot }) {
         label="Wallet consistency"
         hint="Tracked Hyperliquid wallets scored on realised profit after fees and drawdown. Each mode needs 60 days of paper evidence before it could ever go live."
         aside={wallet && (
-          <span className="micro">
-            mirror {wallet.assessment.modes.mirror.evidenceDays}/
-            {wallet.assessment.modes.mirror.minimumDays} days
-          </span>
+          <ScanAside
+            at={wallet.scores.asOfMs}
+            gate={`mirror ${wallet.assessment.modes.mirror.evidenceDays}/${wallet.assessment.modes.mirror.minimumDays} days`}
+          />
         )}
       >
         <WalletConfig key={walletConfig.version} config={walletConfig} />

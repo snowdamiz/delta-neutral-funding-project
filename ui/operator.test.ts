@@ -1,11 +1,18 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { operatorRequest } from "./operator";
+import { approvedDatabaseReset, operatorRequest } from "./operator";
 
 const signature = (key: string, body: string) =>
   createHmac("sha256", "operator-secret").update(`${key}\n${body}`).digest("hex");
 
 describe("operator proxy request", () => {
+  it("requires the exact destructive reset approval", () => {
+    expect(approvedDatabaseReset('{"approval":"WIPE PAPER DATABASE"}')).toBe(true);
+    expect(approvedDatabaseReset('{"approval":"wipe paper database"}')).toBe(false);
+    expect(approvedDatabaseReset('{"approval":"WIPE PAPER DATABASE","extra":true}')).toBe(false);
+    expect(approvedDatabaseReset("not json")).toBe(false);
+  });
+
   it("only signs the bounded browser controls", () => {
     const request = operatorRequest("/operator/pause-all", "operator-secret", "console-test");
 

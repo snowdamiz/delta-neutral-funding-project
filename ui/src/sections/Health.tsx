@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { control, type Snapshot } from "../api";
-import { age, fmt, num } from "../fmt";
-import { health } from "../status";
-import { Chip, Panel, Section, Stat } from "../ui";
+import { DATABASE_RESET_APPROVAL } from "../../reset";
+import { control, resetDatabase, type Snapshot } from "../api";
+import { age, fmt, latest, ms, num } from "../fmt";
+import { freshLimit, health } from "../status";
+import { Chip, Panel, Section, Since, Spin, Stat } from "../ui";
 
 /**
  * The one paper control. `strategy` scopes it to the card it was pressed from:
@@ -29,12 +30,102 @@ export function Control({ paused, strategy }: { paused: boolean; strategy?: stri
 
   return (
     <div className="controls">
-      <button type="button" className={paused ? "go" : ""} onClick={press} disabled={busy}>
-        {busy ? "Working…" : paused ? "Start entries" : "Stop entries"}
+      <button
+        type="button"
+        className={paused ? "go" : ""}
+        onClick={press}
+        disabled={busy}
+        aria-busy={busy}
+      >
+        {busy && <Spin on />}
+        {busy ? "Sending…" : paused ? "Start entries" : "Stop entries"}
       </button>
       <span role="status">
-        {feedback || (paused ? "Resumes opening new positions." : "Halts new positions; open ones keep settling.")}
+        {busy
+          ? `Waiting for the collector to acknowledge ${paused ? "resume" : "pause"}…`
+          : feedback || (paused ? "Resumes opening new positions." : "Halts new positions; open ones keep settling.")}
       </span>
+    </div>
+  );
+}
+
+export function DatabaseReset() {
+  const [approval, setApproval] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setFeedback("Stopping the stack, clearing PostgreSQL, and restarting operations…");
+    try {
+      await resetDatabase(approval);
+      setApproval("");
+      setFeedback("Paper database cleared. Operations restarted.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Database reset failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="database-reset" onSubmit={submit}>
+      <label htmlFor="database-reset-approval">
+        Type <code>{DATABASE_RESET_APPROVAL}</code> to permanently delete all paper data.
+      </label>
+      <div>
+        <input
+          id="database-reset-approval"
+          value={approval}
+          onChange={(event) => setApproval(event.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <button
+          type="submit"
+          disabled={busy || approval !== DATABASE_RESET_APPROVAL}
+          aria-busy={busy}
+        >
+          {busy ? "Restarting…" : "Wipe database and restart"}
+        </button>
+      </div>
+      <span role="status">{feedback || "The deleted paper ledger cannot be recovered."}</span>
+    </form>
+  );
+}
+
+/**
+ * The collector's work loop, as live counters. A dashboard of final numbers
+ * cannot distinguish "nothing is happening because nothing qualifies" from
+ * "nothing is happening because the loop died" — these can, because they count
+ * up when work stops and reset when it does not.
+ */
+export function Activity({ snap }: { snap: Snapshot }) {
+  const feedAgeMs = Number(snap.adapter?.latest?.ageMs ?? NaN);
+  // The feed's own freshness limit is the honest threshold for the loop that
+  // runs on every tick: inside it the collector is working, past it it is not.
+  const fresh = freshLimit(snap);
+  const scans = [
+    snap.fundingLeaderboard?.asOfMs,
+    snap.reverseCarryLeaderboard?.asOfMs,
+    snap.crossVenueLeaderboard?.asOfMs,
+  ];
+
+  return (
+    <div className="activity rise" aria-label="Recent collector activity">
+      <span className="lbl">Activity</span>
+      <Since
+        at={Number.isFinite(feedAgeMs) && snap.polledAt ? snap.polledAt - feedAgeMs : 0}
+        verb="market tick"
+        freshMs={fresh}
+      />
+      <Since at={scans.reduce<number>((max, v) => Math.max(max, ms(v)), 0)} verb="scan" freshMs={fresh} />
+      <Since at={latest(snap.opportunities, (o) => o.observedAtMs)} verb="priced" freshMs={fresh} />
+      <Since at={latest(snap.decisions, (d) => d.createdAt)} verb="risk check" freshMs={fresh} />
+      <Since at={latest(snap.orders, (o) => o.createdAt)} verb="order" freshMs={60_000} />
+      <Since at={latest(snap.fills, (f) => f.createdAt)} verb="fill" freshMs={60_000} />
+      <Since at={latest(snap.funding, (f) => f.effectiveAtMs)} verb="funding" freshMs={60_000} />
     </div>
   );
 }
@@ -46,16 +137,19 @@ export function Control({ paused, strategy }: { paused: boolean; strategy?: stri
 export function StatusBanner({ snap }: { snap: Snapshot }) {
   const h = health(snap);
   return (
-    <div className="banner rise" style={{ ["--st" as string]: `var(--${h.tone})` }}>
-      <div className="banner-l">
-        <div className="state">{h.word}</div>
-        <div>
-          <p className="state-sub">{h.detail}</p>
-          {h.extra && <p className="state-extra">{h.extra}</p>}
+    <>
+      <div className="banner rise" style={{ ["--st" as string]: `var(--${h.tone})` }}>
+        <div className="banner-l">
+          <div className="state">{h.word}</div>
+          <div>
+            <p className="state-sub">{h.detail}</p>
+            {h.extra && <p className="state-extra">{h.extra}</p>}
+          </div>
         </div>
+        {h.controllable && <Control paused={h.paused} />}
       </div>
-      {h.controllable && <Control paused={h.paused} />}
-    </div>
+      <Activity snap={snap} />
+    </>
   );
 }
 
@@ -83,7 +177,7 @@ export function SystemHealth({ snap }: { snap: Snapshot }) {
   }
 
   const ageMs = Number(adapter?.latest?.ageMs ?? NaN);
-  const maxAge = Number(cfg?.maxSourceAgeMs ?? 60000);
+  const maxAge = freshLimit(snap);
   const stale = Number.isFinite(ageMs) && ageMs > maxAge;
   const leaseLost = s.pauseReason === "leader_lease_lost";
 
@@ -127,6 +221,13 @@ export function SystemHealth({ snap }: { snap: Snapshot }) {
       <Panel
         label="Market data"
         hint={`Entries gate off automatically once the feed passes ${num(maxAge / 1000)}s old.`}
+        aside={
+          <Since
+            at={Number.isFinite(ageMs) && snap.polledAt ? snap.polledAt - ageMs : 0}
+            verb="last tick"
+            freshMs={maxAge}
+          />
+        }
       >
         <div className="grid">
           <Stat
@@ -199,11 +300,19 @@ export function SystemHealth({ snap }: { snap: Snapshot }) {
       </Panel>
 
       {s.deploymentEnvironment === "local" && s.executionMode === "paper" && (
-        <Panel label="Operator control" hint="Collector-wide. Paper mode, local deployment — no signer route exists.">
-          <div className="pad">
-            <Control paused={s.paused || s.pauseAll || s.pauseEntries} />
-          </div>
-        </Panel>
+        <>
+          <Panel label="Operator control" hint="Collector-wide. Paper mode, local deployment — no signer route exists.">
+            <div className="pad">
+              <Control paused={s.paused || s.pauseAll || s.pauseEntries} />
+            </div>
+          </Panel>
+          <Panel
+            label="Reset paper database"
+            hint="Starts a brand-new paper ledger, reapplies migrations, and restarts the collector and adapter."
+          >
+            <DatabaseReset />
+          </Panel>
+        </>
       )}
     </Section>
   );

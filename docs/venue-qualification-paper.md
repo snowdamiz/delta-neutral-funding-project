@@ -94,6 +94,11 @@ settles only from a unique authoritative funding record or reconciled account
 delta. Phoenix settlement timestamps can arrive seconds after the hour, so the
 adapter retains that exact settlement identity while aligning its preceding
 mark-candle lookup to the closed hourly boundary.
+The same capture now contributes its 169-hour realized history, executable SOL
+perp depth, and size-tiered maintenance rate to the cross-venue paper scan. The
+matching Hyperliquid SOL perp is queried only because that second qualified
+asset exists; this does not weaken the separate spot-plus-perp depth gate used
+by cash-and-carry strategies.
 
 Source timeout, non-2xx responses, invalid account owners, stale stake-pool
 epochs, mint-supply mismatches, crossed or empty books, incoherent slots,

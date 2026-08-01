@@ -5,11 +5,11 @@ import type { Strategy } from "./catalog";
 import { narrow, strategyOf } from "./catalog";
 import { clock } from "./fmt";
 import { health } from "./status";
-import { CatalogProvider, Key, StrategyName } from "./ui";
+import { CatalogProvider, Key, Live, StrategyName } from "./ui";
 import { Attribution } from "./sections/Attribution";
 import { Benchmark } from "./sections/Benchmark";
 import { Book } from "./sections/Book";
-import { StatusBanner, SystemHealth } from "./sections/Health";
+import { Activity, StatusBanner, SystemHealth } from "./sections/Health";
 import { Ledger } from "./sections/Ledger";
 import { Markets } from "./sections/Markets";
 import { Alerts, Overview, Summary } from "./sections/Overview";
@@ -95,7 +95,12 @@ export default function App() {
                 {h.openAlerts} open alert{h.openAlerts === 1 ? "" : "s"}
               </span>
             )}
-            <span className="micro">{snap.polledAt ? `updated ${clock(snap.polledAt)}` : "connecting"}</span>
+            <Live
+              polling={snap.polling}
+              at={snap.polledAt}
+              reachable={snap.reachable}
+              everyMs={snap.intervalMs}
+            />
           </div>
         </div>
 
@@ -151,6 +156,7 @@ export default function App() {
           <Markets snap={snap} />
         ) : tab === "system" ? (
           <>
+            <Activity snap={snap} />
             <SystemHealth snap={snap} />
             <Platform snap={snap} />
           </>

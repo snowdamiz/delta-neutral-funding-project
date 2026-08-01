@@ -1,7 +1,8 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { Strategy } from "./catalog";
 import { accentOf, nameOf } from "./catalog";
+import { age } from "./fmt";
 
 export type Tone = "ok" | "warn" | "crit" | "mute";
 
@@ -29,6 +30,70 @@ export const Key = ({ id }: { id: string }) => (
 );
 
 export const StrategyName = ({ id }: { id: string }) => <>{nameOf(useCatalog(), id)}</>;
+
+/**
+ * A 1 Hz clock. Without it every "3s ago" on the page freezes until the next
+ * poll lands and then jumps five seconds — which reads as a stalled console,
+ * not a live one.
+ */
+export function useNow(intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+/** In-flight marker. Steady ring at rest, rotating arc while `on`. */
+export const Spin = ({ on }: { on?: boolean }) => (
+  <i className={on ? "spin on" : "spin"} aria-hidden="true" />
+);
+
+/**
+ * When something last happened, counting up live. Inside `freshMs` it reads as
+ * current and animates; past that it is a plain age. This is the one answer to
+ * "is this strategy still being checked, or did it stop?".
+ */
+export function Since({
+  at, verb, freshMs = 30_000,
+}: { at: number; verb: string; freshMs?: number }) {
+  const now = useNow();
+  if (!at) return <span className="since idle"><i className="tick" aria-hidden="true" />{verb} never</span>;
+  const elapsed = Math.max(0, now - at);
+  const fresh = elapsed < freshMs;
+  return (
+    <span className={fresh ? "since fresh" : "since"} title={new Date(at).toLocaleString()}>
+      <i className="tick" aria-hidden="true" />
+      {verb} {elapsed < 2000 ? "just now" : `${age(elapsed)} ago`}
+    </span>
+  );
+}
+
+/**
+ * The console's own heartbeat: whether a fetch is in flight, how old the data
+ * on screen is, and — via the sweep, restarted by the `key` on each snapshot —
+ * how long until the next one. Every number on the page is as old as this says.
+ */
+export function Live({
+  polling, at, reachable, everyMs,
+}: { polling: boolean; at: number; reachable: boolean; everyMs: number }) {
+  const now = useNow(500);
+  const word = !at ? "connecting" : polling ? "fetching" : reachable ? "live" : "unreachable";
+  const tone: Tone = !at ? "mute" : reachable ? "ok" : "crit";
+  return (
+    <span className={`heartbeat t-${tone}${polling ? " busy" : ""}`} role="status" aria-live="polite">
+      <Spin on={polling} />
+      <span className="w">{word}</span>
+      {at > 0 && (
+        <span className="ago">{now - at < 1500 ? "just now" : `${age(now - at)} ago`}</span>
+      )}
+      <span className="sweep" key={at}>
+        <i style={{ animationDuration: `${everyMs}ms` }} />
+      </span>
+    </span>
+  );
+}
 
 export const reasonName = (reason: string) =>
   ({

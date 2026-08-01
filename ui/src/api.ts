@@ -347,7 +347,14 @@ export type Snapshot = {
   reconciliation: Reconciliation;
   reachable: boolean;
   polledAt: number;
+  /** A read is in flight right now. Rides on the snapshot so every section can
+   *  show it without a second context. */
+  polling: boolean;
+  /** Poll cadence, so the console can show when the next read is due. */
+  intervalMs: number;
 };
+
+const POLL_MS = 5000;
 
 const EMPTY: Snapshot = {
   status: null, build: null, config: null, adapter: null, executor: null,
@@ -355,6 +362,7 @@ const EMPTY: Snapshot = {
   opportunities: [], orders: [], fills: [], funding: [], fundingLeaderboard: null,
   reverseCarryLeaderboard: null, crossVenueLeaderboard: null, walletTracking: null, capabilities: [],
   buildManifestId: "", reconciliation: null, reachable: false, polledAt: 0,
+  polling: true, intervalMs: POLL_MS,
 };
 
 async function get<T>(path: string, fallback: T): Promise<T> {
@@ -399,6 +407,17 @@ export async function configureWallets(wallets: string[]): Promise<void> {
   if (response.ok) return;
   const error = await response.json().catch(() => null) as { message?: string } | null;
   throw new Error(error?.message ?? `wallet update failed (${response.status})`);
+}
+
+export async function resetDatabase(approval: string): Promise<void> {
+  const response = await fetch("/operator/reset-database", {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ approval }),
+  });
+  if (response.ok) return;
+  const error = await response.json().catch(() => null) as { message?: string } | null;
+  throw new Error(error?.message ?? `database reset failed (${response.status})`);
 }
 
 export async function pull(): Promise<Snapshot> {
@@ -452,10 +471,12 @@ export async function pull(): Promise<Snapshot> {
     reconciliation,
     reachable: status !== null,
     polledAt: Date.now(),
+    polling: false,
+    intervalMs: POLL_MS,
   };
 }
 
-export function useSnapshot(intervalMs = 5000): Snapshot {
+export function useSnapshot(intervalMs = POLL_MS): Snapshot {
   const [snap, setSnap] = useState<Snapshot>(EMPTY);
 
   useEffect(() => {
@@ -464,9 +485,10 @@ export function useSnapshot(intervalMs = 5000): Snapshot {
     // Chained timeout rather than setInterval: a slow collector must not have
     // overlapping polls stacking up against it.
     const loop = async () => {
+      setSnap((current) => ({ ...current, polling: true }));
       const next = await pull();
       if (!live) return;
-      setSnap(next);
+      setSnap({ ...next, intervalMs });
       timer = window.setTimeout(loop, intervalMs);
     };
     void loop();

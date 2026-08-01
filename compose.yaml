@@ -147,6 +147,7 @@ services:
       <<: *paper-environment
       COLLECTOR_URL: http://collector:8080/v1/events
       REQUEST_TIMEOUT_MS: 3000
+      COLLECTOR_REQUEST_TIMEOUT_MS: 120000
       HEALTH_PORT: 8090
       PHOENIX_URLS: ${PHOENIX_URLS:-https://perp-api.phoenix.trade}
       PHOENIX_BEARER_TOKEN: ${PHOENIX_BEARER_TOKEN:-}

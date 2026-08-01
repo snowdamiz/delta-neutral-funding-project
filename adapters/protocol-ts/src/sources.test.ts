@@ -105,6 +105,12 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
         return;
       }
       if (url.pathname === "/phoenix/v1/funding/SOL/rates") {
+        assert.equal(url.searchParams.get("limit"), "169");
+        assert.equal(
+          BigInt(url.searchParams.get("endTime") ?? "0") -
+            BigInt(url.searchParams.get("startTime") ?? "0"),
+          608_400_000n,
+        );
         json(response, {
           marketId: 1,
           symbol: "SOL",
@@ -380,8 +386,20 @@ test("normalizes a slotted source bundle, fails over, and rejects corrupt pool s
     );
     assert.equal(captured.navLamports, 1_234_567_890n);
     assert.equal(captured.funding.payload.venuePaymentId, "phoenix:SOL:1785020401");
+    assert.equal(captured.funding.source, "phoenix-funding-settlement:SOL");
     assert.equal(captured.funding.payload.realizedShortRatePpm, "250");
     assert.equal(captured.funding.payload.solPriceUsdMicros, "149940000");
+    assert.equal(captured.fundingObservation.venue, "phoenix");
+    assert.equal(captured.fundingObservation.asset, "SOL");
+    assert.equal(captured.fundingObservation.realizedFundingRatePpm, "250");
+    assert.equal(captured.fundingObservation.perpExitDepthAtoms, "80000000000");
+    assert.equal(captured.fundingObservation.depthQualified, false);
+    assert.equal(captured.fundingObservation.maintenanceMarginPpm, "50000");
+    assert.deepEqual(captured.endpoints, {
+      phoenix: backup.url,
+      solana: backup.url,
+      jupiter: backup.url,
+    });
     assert(
       jupiterRequests.has(
         `${solMint}:${usdcMint}:${doubledSolAtoms}:ExactIn`,

@@ -1,5 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { toDecimalString, round, fmt, age, diff, negate, sum } from "./fmt";
+import { toDecimalString, round, fmt, age, diff, latest, ms, negate, sum } from "./fmt";
+
+describe("timestamps", () => {
+  it("reads both shapes the read API emits", () => {
+    expect(ms("1753900000000")).toBe(1753900000000); // observedAtMs
+    expect(ms(1753900000000)).toBe(1753900000000);
+    expect(ms("2026-07-31T09:00:00.000Z")).toBe(Date.parse("2026-07-31T09:00:00.000Z"));
+  });
+
+  it("returns 0 rather than 1970 for anything unreadable", () => {
+    expect(ms(null)).toBe(0);
+    expect(ms(undefined)).toBe(0);
+    expect(ms("")).toBe(0);
+    expect(ms("not a date")).toBe(0);
+  });
+
+  it("takes the newest of a set, mixed shapes included", () => {
+    expect(latest([{ t: "1000" }, { t: "2026-01-01T00:00:00Z" }, { t: null }], (r) => r.t))
+      .toBe(Date.parse("2026-01-01T00:00:00Z"));
+    expect(latest([], (r: { t: string }) => r.t)).toBe(0);
+  });
+});
 
 describe("fixed-point conversion", () => {
   it("is exact, including atoms shorter than the scale", () => {

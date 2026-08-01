@@ -1,8 +1,9 @@
 import type { Snapshot } from "../api";
 import type { Strategy } from "../catalog";
 import { benchmarkRows, familiesOf, netOf } from "../catalog";
-import { fmt, micros, sum, toNumber } from "../fmt";
-import { Chip, Empty, Key, Panel, reasonName, Section, Stat, StrategyName, type Tone } from "../ui";
+import { fmt, micros, ms, sum, toNumber } from "../fmt";
+import { freshLimit } from "../status";
+import { Chip, Empty, Key, Panel, reasonName, Section, Since, Stat, StrategyName, type Tone } from "../ui";
 import { Control } from "./Health";
 import { EventFeed } from "./Risk";
 
@@ -94,8 +95,15 @@ function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; 
     !!s && s.deploymentEnvironment === "local" && s.executionMode === "paper" &&
     strategy.runState !== "unregistered" && strategy.controlScope === "strategy";
 
+  const checkedAt = ms(latest?.observedAtMs);
+
   return (
     <article className="card">
+      {/* Remounted whenever this strategy's evaluation timestamp changes, which
+          restarts the one-shot flash. That is the whole mechanism: a card that
+          lights up is a card the collector just re-priced. */}
+      <i className="flash" key={checkedAt} aria-hidden="true" />
+
       <button type="button" className="open" onClick={onOpen}>
         <span className="who">
           <Key id={strategy.id} />
@@ -142,6 +150,10 @@ function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; 
               : unavailable || "No market evaluated yet"}
           </dd>
         </dl>
+
+        <div className="card-when">
+          <Since at={checkedAt} verb="priced" freshMs={freshLimit(snap)} />
+        </div>
 
         {controllable && <Control paused={paused} strategy={strategy.id} />}
       </div>

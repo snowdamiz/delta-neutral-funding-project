@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { loadConfig } from "./config.js";
-import { captureFundingObservations } from "./funding-sources.js";
+import {
+  captureFundingObservations,
+  type FundingObservationRow,
+} from "./funding-sources.js";
 
 function json(response: import("node:http").ServerResponse, value: unknown): void {
   response.writeHead(200, { "content-type": "application/json" });
@@ -85,6 +88,16 @@ test("captures every venue market and depth-qualifies only executable spot pairs
           });
           return;
         }
+        if (body.type === "l2Book" && body.coin === "kPEPE") {
+          json(response, {
+            coin: "kPEPE",
+            levels: [
+              [{ px: "1.99", sz: "1000", n: 1 }],
+              [{ px: "2.01", sz: "1000", n: 1 }],
+            ],
+          });
+          return;
+        }
         if (body.type === "fundingHistory" && body.coin === "BTC") {
           assert.equal(body.startTime, 1_784_415_600_000);
           json(response, Array.from({ length: 169 }, (_, index) => ({
@@ -93,6 +106,15 @@ test("captures every venue market and depth-qualifies only executable spot pairs
             premium: "0.000005",
             time: 1_784_415_600_000 + index * 3_600_000,
           })));
+          return;
+        }
+        if (body.type === "fundingHistory" && body.coin === "kPEPE") {
+          json(response, [{
+            coin: "kPEPE",
+            fundingRate: "0.00002",
+            premium: "0",
+            time: 1_785_020_400_000,
+          }]);
           return;
         }
       }
@@ -130,18 +152,50 @@ test("captures every venue market and depth-qualifies only executable spot pairs
       PAPER_SLIPPAGE_BPS: "50",
       REQUEST_TIMEOUT_MS: "30000",
     });
+    const phoenix: FundingObservationRow = {
+      venue: "phoenix",
+      asset: "KPEPE",
+      instrument: "KPEPE-PERP",
+      sourceObservedAtMs: "0",
+      sourceStatus: "valid",
+      fundingRatePpmPerHour: "5",
+      fundingHistory: [{ observedAtMs: "1785020400000", ratePpm: "5" }],
+      realizedFundingRatePpm: "5",
+      realizedFundingAtMs: "1785020400000",
+      markPriceUsdMicros: "2000000",
+      openInterestUsdMicros: "0",
+      spotBidPriceUsdMicros: "0",
+      spotAskPriceUsdMicros: "0",
+      perpBidPriceUsdMicros: "1990000",
+      perpAskPriceUsdMicros: "2010000",
+      spotExitDepthAtoms: "0",
+      perpExitDepthAtoms: "1000000000000",
+      depthQualified: false,
+      marginStatus: "valid",
+      maintenanceMarginPpm: "50000",
+      raw: "phoenix-kpepe",
+    };
     const observations = await captureFundingObservations(
       config,
       7n,
       1_785_024_000_000n,
+      [phoenix],
     );
 
-    assert.equal(observations.length, 2);
+    assert.equal(observations.length, 3);
+    assert.deepEqual(
+      observations.map((event) => event.source),
+      [
+        "hyperliquid-funding-observation:BTC",
+        "hyperliquid-funding-observation:KPEPE",
+        "phoenix-funding-observation:KPEPE",
+      ],
+    );
     assert(observations.every((event) => event.sourceSequence === "test-session:scan-7"));
-    assert(observations.every((event) => event.payload.scanSize === "2"));
+    assert(observations.every((event) => event.payload.scanSize === "3"));
     assert.deepEqual(
       observations.map((event) => `${event.payload.venue}:${event.payload.asset}`),
-      ["hyperliquid:BTC", "hyperliquid:KPEPE"],
+      ["hyperliquid:BTC", "hyperliquid:KPEPE", "phoenix:KPEPE"],
     );
     assert.equal(observations[1]?.payload.instrument, "KPEPE-PERP");
     assert.equal(observations[0]?.payload.fundingRatePpmPerHour, "12");
@@ -164,6 +218,8 @@ test("captures every venue market and depth-qualifies only executable spot pairs
     assert.equal(observations[1]?.payload.marginStatus, "valid");
     assert.equal(observations[1]?.payload.maintenanceMarginPpm, "100000");
     assert.equal(observations[1]?.payload.depthQualified, false);
+    assert.equal(observations[1]?.payload.perpExitDepthAtoms, "1000000000000");
+    assert.equal(observations[1]?.payload.realizedFundingRatePpm, "20");
     const btcBorrow = observations[0]?.payload as unknown as Record<string, unknown>;
     assert.equal(btcBorrow.borrowSourceStatus, "unavailable");
   } finally {

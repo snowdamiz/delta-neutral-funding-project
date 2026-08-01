@@ -77,7 +77,7 @@ while (!stopping) {
     if (!pending) {
       const currentWalletConfig = await fetchWalletConfig(
         config.collectorUrl,
-        config.requestTimeoutMs,
+        config.collectorRequestTimeoutMs,
       );
       if (currentWalletConfig.version !== walletConfig.version) {
         log("info", "wallet_config_loaded", {
@@ -123,15 +123,20 @@ while (!stopping) {
           endpoints: undefined,
         };
       } else {
-        const [captured, fundingObservations, walletObservations] = await Promise.all([
-          buildAuthoritativeEvents(
-            config,
-            sequence,
-            observedAtMs,
-            previousNavLamports,
-          ),
+        const captured = await buildAuthoritativeEvents(
+          config,
+          sequence,
+          observedAtMs,
+          previousNavLamports,
+        );
+        const [fundingObservations, walletObservations] = await Promise.all([
           fundingScanDue
-            ? captureFundingObservations(config, sequence, observedAtMs)
+            ? captureFundingObservations(
+                config,
+                sequence,
+                observedAtMs,
+                [captured.fundingObservation],
+              )
             : Promise.resolve([]),
           walletScanDue
             ? captureWalletObservations(
@@ -165,7 +170,7 @@ while (!stopping) {
       config.collectorUrl,
       config.hmacSecret,
       capture.snapshot,
-      config.requestTimeoutMs,
+      config.collectorRequestTimeoutMs,
     );
     if (!response.ok) {
       throw new Error(`collector returned ${response.status}: ${await response.text()}`);
@@ -179,7 +184,7 @@ while (!stopping) {
         config.collectorUrl,
         config.hmacSecret,
         capture.funding,
-        config.requestTimeoutMs,
+        config.collectorRequestTimeoutMs,
       );
       if (!fundingResponse.ok) {
         throw new Error(
@@ -197,7 +202,7 @@ while (!stopping) {
         config.collectorUrl,
         config.hmacSecret,
         observation,
-        config.requestTimeoutMs,
+        config.collectorRequestTimeoutMs,
       );
       if (!fundingResponse.ok) {
         throw new Error(
@@ -216,7 +221,7 @@ while (!stopping) {
         config.collectorUrl,
         config.hmacSecret,
         observation,
-        config.requestTimeoutMs,
+        config.collectorRequestTimeoutMs,
       );
       if (!walletResponse.ok) {
         throw new Error(

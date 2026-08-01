@@ -22,6 +22,15 @@ export type Health = {
   criticalAlerts: number;
 };
 
+/**
+ * The collector's own source-freshness limit — the line at which it stops
+ * trusting the feed and gates entries. Every "is this still live?" indicator
+ * on the surface uses it, so the console and the collector agree on what
+ * counts as current.
+ */
+export const freshLimit = (snap: Snapshot): number =>
+  Number(snap.config?.maxSourceAgeMs ?? 60_000);
+
 export function health(snap: Snapshot): Health {
   const s = snap.status;
   const open = snap.events.filter((e) => !e.resolvedAt);
@@ -45,7 +54,7 @@ export function health(snap: Snapshot): Health {
   const paused = s.paused || s.pauseAll || s.pauseEntries;
   const controllable = s.deploymentEnvironment === "local" && s.executionMode === "paper";
   const ageMs = Number(snap.adapter?.latest?.ageMs ?? NaN);
-  const maxAge = Number(snap.config?.maxSourceAgeMs ?? 60000);
+  const maxAge = freshLimit(snap);
   const stale = Number.isFinite(ageMs) && ageMs > maxAge;
 
   if (paused) {
