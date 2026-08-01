@@ -26,14 +26,13 @@ describe("operator proxy request", () => {
 
   it("carries the strategy scope into the signed reason", () => {
     const request = operatorRequest(
-      "/operator/resume?strategy=jitosol_carry",
+      "/operator/strategies/jitosol_carry/start",
       "operator-secret",
       "console-scoped",
     );
 
     expect(JSON.parse(request?.body ?? "{}")).toEqual({
       reason: "started from local operator console (strategy: jitosol_carry)",
-      strategy: "jitosol_carry",
     });
     expect(request?.headers["x-operator-signature"]).toBe(
       signature("console-scoped", request?.body ?? ""),
@@ -43,16 +42,13 @@ describe("operator proxy request", () => {
     );
   });
 
-  it("drops a scope the collector would not recognise", () => {
+  it("rejects malformed strategy control paths", () => {
     for (const url of [
-      "/operator/pause-all",
-      "/operator/pause-all?strategy=",
-      "/operator/pause-all?strategy=DROP%20TABLE",
-      `/operator/pause-all?strategy=${"a".repeat(65)}`,
+      "/operator/strategies//stop",
+      "/operator/strategies/DROP%20TABLE/stop",
+      `/operator/strategies/${"a".repeat(65)}/stop`,
     ]) {
-      expect(JSON.parse(operatorRequest(url, "operator-secret", "k")?.body ?? "{}")).toEqual({
-        reason: "stopped from local operator console",
-      });
+      expect(operatorRequest(url, "operator-secret", "k")).toBeNull();
     }
   });
 

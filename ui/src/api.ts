@@ -320,7 +320,7 @@ export type Reconciliation = {
   completedAt: string;
 } | null;
 
-export type OperatorAction = "pause-all" | "resume";
+export type OperatorAction = "pause-all" | "resume" | "start" | "stop";
 
 type Page<T> = { items: T[]; limit: number; offset: number };
 
@@ -386,14 +386,14 @@ async function get<T>(path: string, fallback: T): Promise<T> {
 const page = <T,>(p: Page<T> | null): T[] => (Array.isArray(p?.items) ? p.items : []);
 
 /**
- * `strategy` scopes the control to the card it was pressed from. The signing
- * proxy carries it into the operator command's reason, so the evidence trail
- * records which strategy the operator acted on even while the collector's own
- * pause state is a singleton (`controlScope: "global"` in the catalog).
+ * Strategy controls use their own bounded resource path. Collector-wide pause
+ * and resume remain the emergency switch in the status banner.
  */
 export async function control(action: OperatorAction, strategy?: string): Promise<void> {
-  const query = strategy ? `?strategy=${encodeURIComponent(strategy)}` : "";
-  const response = await fetch(`/operator/${action}${query}`, {
+  const path = strategy
+    ? `/operator/strategies/${encodeURIComponent(strategy)}/${action}`
+    : `/operator/${action}`;
+  const response = await fetch(path, {
     method: "POST",
     headers: { accept: "application/json" },
   });

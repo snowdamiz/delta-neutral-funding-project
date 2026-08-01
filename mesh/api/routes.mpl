@@ -11,7 +11,7 @@ from Packages.ReadModels import adapter_status, cross_venue_funding_leaderboard,
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
 from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, parse_solana_wallet_flow_event, persist_solana_validation, persist_solana_wallet_config, persist_solana_wallet_flow_event, solana_followed_wallets, solana_wallet_flow_state
 from Packages.StateMachine import PortfolioState
-from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_observation, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_synchronized_paper_entries, persist_synchronized_position_plans, persist_wallet_config, persist_wallet_observation, run_cross_asset_paper_scan, run_cross_venue_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
+from Packages.Storage import FundingPersistence, PendingPaperAction, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, load_paper_position, load_paper_runtime, load_pending_paper_action, persist_funding_observation, persist_funding_settlement, persist_operator_command, persist_opportunities, persist_paper_plan, persist_paper_reset, persist_position_plan, persist_shadow_result, persist_strategy_control, persist_synchronized_paper_entries, persist_synchronized_position_plans, persist_wallet_config, persist_wallet_observation, run_cross_asset_paper_scan, run_cross_venue_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
 fn error_response(status :: Int, code :: String, message :: String) do
@@ -880,7 +880,7 @@ fn operator_response(request :: Request, action :: String, target :: String) do
   if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
     return error_response(400, "invalid_request", "invalid idempotency key")
   end
-  if action == "resume" do
+  if action == "resume" || action == "strategy_start" do
     case lease_held(get_pool()) do
       Ok(true) -> ()
       Ok(false) -> do
@@ -901,15 +901,27 @@ fn operator_response(request :: Request, action :: String, target :: String) do
       if String.length(reason) == 0 || String.length(reason) > 500 do
         return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
       end
-      case ("${idempotency_key}\n${body}"
-        |> Crypto.sha256
-        |6> persist_operator_command(
+      let request_hash = "${idempotency_key}\n${body}" |> Crypto.sha256
+      let persisted = if action == "strategy_start" || action == "strategy_stop" do
+        persist_strategy_control(
+          get_pool(),
+          target,
+          action == "strategy_start",
+          idempotency_key,
+          reason,
+          request_hash
+        )
+      else
+        persist_operator_command(
           get_pool(),
           action,
           target,
           idempotency_key,
-          reason
-        )) do
+          reason,
+          request_hash
+        )
+      end
+      case persisted do
         Ok(result) -> do
           info("operator_command_applied", "{\"action\":\"${action}\",\"idempotencyKey\":\"${idempotency_key}\"}")
           HTTP.response(202, result)
@@ -918,7 +930,11 @@ fn operator_response(request :: Request, action :: String, target :: String) do
           if String.contains(error, "idempotency key reused") do
             error_response(409, "idempotency_conflict", "idempotency key reused for a different command")
           else
-            error_response(500, "operator_command_failed", error)
+            if String.contains(error, "unknown strategy") do
+              error_response(404, "not_found", "strategy not found")
+            else
+              error_response(500, "operator_command_failed", error)
+            end
           end
         end
       end
@@ -1180,6 +1196,20 @@ pub fn handle_resume(request :: Request) -> Response do
   operator_response(request, "resume", "")
 end
 
+pub fn handle_strategy_start(request :: Request) -> Response do
+  case Request.param(request, "strategy") do
+    Some(strategy) -> operator_response(request, "strategy_start", strategy)
+    None -> error_response(400, "invalid_request", "missing strategy")
+  end
+end
+
+pub fn handle_strategy_stop(request :: Request) -> Response do
+  case Request.param(request, "strategy") do
+    Some(strategy) -> operator_response(request, "strategy_stop", strategy)
+    None -> error_response(400, "invalid_request", "missing strategy")
+  end
+end
+
 pub fn handle_reconcile(request :: Request) -> Response do
   operator_response(request, "reconcile", "")
 end
@@ -1240,7 +1270,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 47
+      schemaVersion : 48
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -1547,7 +1577,7 @@ pub fn handle_config(_request :: Request) -> Response do
       directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
       directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
       protocolSchemaVersion : 1,
-      databaseSchemaVersion : 47,
+      databaseSchemaVersion : 48,
       liveEnabled : false
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)

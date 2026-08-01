@@ -1,4 +1,4 @@
-from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_cross_venue_funding_leaderboard, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_funding_leaderboard, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_paper_reset, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_reverse_carry_leaderboard, handle_risk_decisions, handle_risk_events, handle_shadow_result, handle_shadow_results, handle_solana_validation_evidence, handle_solana_validation_start, handle_solana_wallet_config, handle_solana_wallet_config_update, handle_solana_wallet_flow, handle_status, handle_strategies, handle_wallet_config, handle_wallet_config_update, handle_wallet_tracking
+from Api.Routes import handle_adapter_status, handle_alerts_test, handle_build, handle_capabilities, handle_config, handle_cross_venue_funding_leaderboard, handle_emergency_flatten, handle_event, handle_executor_status, handle_fills, handle_funding, handle_funding_leaderboard, handle_health, handle_jitosol, handle_latest_reconciliation, handle_metrics, handle_opportunities, handle_orders, handle_paper_reset, handle_pause_all, handle_pause_entries, handle_pnl, handle_pnl_comparison, handle_portfolio, handle_portfolio_exit, handle_portfolios, handle_positions, handle_reconcile, handle_resume, handle_reverse_carry_leaderboard, handle_risk_decisions, handle_risk_events, handle_shadow_result, handle_shadow_results, handle_solana_validation_evidence, handle_solana_validation_start, handle_solana_wallet_config, handle_solana_wallet_config_update, handle_solana_wallet_flow, handle_status, handle_strategies, handle_strategy_start, handle_strategy_stop, handle_wallet_config, handle_wallet_config_update, handle_wallet_tracking
 
 pub fn build_router() do
   HTTP.router()
@@ -37,6 +37,8 @@ pub fn build_router() do
     |> HTTP.on_post("/v1/pause-entries", handle_pause_entries)
     |> HTTP.on_post("/v1/pause-all", handle_pause_all)
     |> HTTP.on_post("/v1/resume", handle_resume)
+    |> HTTP.on_post("/v1/strategies/:strategy/start", handle_strategy_start)
+    |> HTTP.on_post("/v1/strategies/:strategy/stop", handle_strategy_stop)
     |> HTTP.on_post("/v1/reconcile", handle_reconcile)
     |> HTTP.on_post("/v1/portfolios/:portfolio/exit", handle_portfolio_exit)
     |> HTTP.on_post("/v1/emergency-flatten", handle_emergency_flatten)

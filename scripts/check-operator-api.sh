@@ -53,6 +53,20 @@ post resume "$run_id-resume" '{"reason":"paper reconciliation passed"}' |
   jq -e '.pauseEntries == false and .pauseAll == false and (.reconciliationId | length) > 0' >/dev/null
 post reconcile "$run_id-reconcile" '{"reason":"standalone paper reconciliation"}' |
   jq -e '(.reconciliationId | length) > 0' >/dev/null
+
+post strategies/sol_control/stop "$run_id-sol-stop-first" \
+  '{"reason":"isolation setup"}' >/dev/null
+post strategies/jitosol_carry/stop "$run_id-jito-stop" \
+  '{"reason":"isolation setup"}' >/dev/null
+post strategies/sol_control/start "$run_id-sol-start" \
+  '{"reason":"independent strategy check"}' |
+  jq -e '.strategy == "sol_control" and .enabled == true' >/dev/null
+curl -fsS "$base_url/v1/strategies" |
+  jq -e '([.strategies[] | select(.enabled) | .id] == ["sol_control"])' >/dev/null
+post strategies/sol_control/stop "$run_id-sol-stop" \
+  '{"reason":"independent strategy check complete"}' |
+  jq -e '.strategy == "sol_control" and .enabled == false' >/dev/null
+
 curl -fsS "$base_url/v1/status" |
   jq -e '.paused == false and .pauseEntries == false and .pauseAll == false' >/dev/null
 

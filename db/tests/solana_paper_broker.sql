@@ -98,6 +98,16 @@ BEGIN
   IF EXISTS (SELECT 1 FROM solana_paper_positions) THEN
     RAISE EXCEPTION 'broker entered on the decision quote without latency';
   END IF;
+  UPDATE strategy_controls
+  SET enabled = false
+  WHERE strategy_id = 'solana_wallet_flow_quant';
+  v_plan := plan_solana_paper_action('broker-snapshot-1', 201001);
+  IF v_plan->>'status' <> 'REJECTED' OR v_plan->>'reason' <> 'STRATEGY_STOPPED' THEN
+    RAISE EXCEPTION 'stopped Solana strategy planned an entry: %', v_plan;
+  END IF;
+  UPDATE strategy_controls
+  SET enabled = true
+  WHERE strategy_id = 'solana_wallet_flow_quant';
   v_plan := plan_solana_paper_action('broker-snapshot-1', 231001);
   IF v_plan->>'status' <> 'REJECTED' OR v_plan->>'reason' <> 'QUOTE_EXPIRED' THEN
     RAISE EXCEPTION 'expired entry quote was not rejected: %', v_plan;

@@ -5,11 +5,9 @@ export { approvedDatabaseReset } from "./reset";
  * Sign the bounded collector controls the browser may reach. The one local
  * database reset never reaches the collector and is guarded separately.
  *
- * `?strategy=<id>` names the card the control was pressed from. The collector's
- * pause state is a singleton, so the scope does not change what the command
- * does — it goes into the reason, which `operator_commands` persists, so the
- * evidence trail answers "which strategy was the operator acting on?". The
- * signature covers the body, so the scope cannot be edited in flight.
+ * Strategy identity is part of the bounded path and the signature covers the
+ * generated reason body, so neither can become a browser-controlled text
+ * channel.
  */
 export function operatorRequest(
   url: string | undefined,
@@ -17,7 +15,7 @@ export function operatorRequest(
   key: string,
   requestBody = "",
 ) {
-  const [path, query] = (url ?? "").split("?", 2);
+  const [path] = (url ?? "").split("?", 2);
   const solanaWalletConfig =
     path === "/operator/solana-wallets/config" || path === "/v1/solana-wallet-flow/config";
   if (solanaWalletConfig || path === "/operator/wallets/config" || path === "/v1/wallets/config") {
@@ -51,6 +49,16 @@ export function operatorRequest(
       return null;
     }
   }
+  const strategyControl = path?.match(
+    /^\/(?:operator|v1)\/strategies\/([a-z0-9_]{1,64})\/(start|stop)$/,
+  );
+  if (strategyControl) {
+    const [, strategy, action] = strategyControl;
+    return signed(JSON.stringify({
+      reason: `${action === "start" ? "started" : "stopped"} from local operator console (strategy: ${strategy})`,
+    }), secret, key);
+  }
+
   const action =
     path === "/operator/pause-all" || path === "/v1/pause-all"
       ? "pause-all"
@@ -59,14 +67,9 @@ export function operatorRequest(
         : null;
   if (!action) return null;
 
-  const strategy = new URLSearchParams(query ?? "").get("strategy") ?? "";
   const verb = action === "resume" ? "started" : "stopped";
-  // Unrecognised scopes are dropped, not passed through: the reason is operator
-  // evidence, not a free-text channel from the browser.
-  const scoped = /^[a-z0-9_]{1,64}$/.test(strategy);
   const body = JSON.stringify({
-    reason: `${verb} from local operator console${scoped ? ` (strategy: ${strategy})` : ""}`,
-    ...(scoped ? { strategy } : {}),
+    reason: `${verb} from local operator console`,
   });
   return signed(body, secret, key);
 }

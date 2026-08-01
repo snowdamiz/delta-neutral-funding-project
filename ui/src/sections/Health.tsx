@@ -6,21 +6,22 @@ import { freshLimit, health } from "../status";
 import { Chip, Panel, Section, Since, Spin, Stat } from "../ui";
 
 /**
- * The one paper control. `strategy` scopes it to the card it was pressed from:
- * the signing proxy carries it into the operator command's reason, so the
- * evidence trail records which strategy the operator acted on even while the
- * collector's own pause state is a singleton.
+ * One button serves the collector-wide emergency switch and each independent
+ * strategy switch. The path, labels, and feedback follow the supplied scope.
  */
 export function Control({ paused, strategy }: { paused: boolean; strategy?: string }) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const scoped = strategy !== undefined;
 
   const press = async () => {
     setBusy(true);
     setFeedback("");
     try {
-      await control(paused ? "resume" : "pause-all", strategy);
-      setFeedback(paused ? "Entries resumed." : "Entries halted.");
+      await control(strategy ? paused ? "start" : "stop" : paused ? "resume" : "pause-all", strategy);
+      setFeedback(scoped
+        ? paused ? "Strategy started." : "Strategy stopped."
+        : paused ? "Entries resumed." : "Entries halted.");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Operator request failed.");
     } finally {
@@ -38,12 +39,14 @@ export function Control({ paused, strategy }: { paused: boolean; strategy?: stri
         aria-busy={busy}
       >
         {busy && <Spin on />}
-        {busy ? "Sending…" : paused ? "Start entries" : "Stop entries"}
+        {busy ? "Sending…" : paused ? scoped ? "Start strategy" : "Start entries" : scoped ? "Stop strategy" : "Stop entries"}
       </button>
       <span role="status">
         {busy
-          ? `Waiting for the collector to acknowledge ${paused ? "resume" : "pause"}…`
-          : feedback || (paused ? "Resumes opening new positions." : "Halts new positions; open ones keep settling.")}
+          ? `Waiting for the collector to acknowledge ${paused ? "start" : "stop"}…`
+          : feedback || (paused
+            ? scoped ? "Allows this strategy to open positions." : "Resumes opening new positions."
+            : "Halts new positions; open ones keep settling.")}
       </span>
     </div>
   );

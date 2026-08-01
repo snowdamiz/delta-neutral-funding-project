@@ -13,8 +13,8 @@ export type Strategy = {
   legs: string[];
   benchmarkStrategyId: string | null;
   mode: string;
-  /** `global` while the collector's pause state is a singleton. */
   controlScope: string;
+  enabled: boolean;
   runState: string;
   portfolioRunIds: string[];
 };

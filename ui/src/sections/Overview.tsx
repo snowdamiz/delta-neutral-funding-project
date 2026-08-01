@@ -17,6 +17,7 @@ const RUN_TONE: Record<string, Tone> = {
 const RUN_WORD: Record<string, string> = {
   idle: "no position",
   active: "in position",
+  paused: "off",
   unregistered: "not registered",
 };
 
@@ -75,7 +76,6 @@ export function Summary({ snap }: { snap: Snapshot }) {
 
 function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; onOpen: () => void }) {
   const s = snap.status;
-  const paused = !!s && (s.paused || s.pauseAll || s.pauseEntries);
   const latest = snap.opportunities.find((o) => o.variant === strategy.id);
   const unavailable =
     strategy.id === "cross_venue_funding" &&
@@ -84,13 +84,12 @@ function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; 
       : strategy.id.startsWith("hyperliquid_wallet_") &&
           (snap.walletTracking?.config?.wallets.length ?? 0) === 0
         ? "wallets not configured"
+        : strategy.id === "solana_wallet_flow_quant" &&
+            (snap.solanaWalletConfig?.wallets.length ?? 0) === 0
+          ? "wallets not configured"
         : "";
   const lead = benchmarkRows(snap, strategy)[0];
   const net = netOf(snap, strategy);
-  // A card only offers a control the collector can actually honour. While a
-  // strategy declares `controlScope: "global"` the pause state is a singleton,
-  // so the only switch is the collector-wide one at the top of this page —
-  // nine buttons that each stop everything would be a lie about scope.
   const controllable =
     !!s && s.deploymentEnvironment === "local" && s.executionMode === "paper" &&
     strategy.runState !== "unregistered" && strategy.controlScope === "strategy";
@@ -155,7 +154,7 @@ function Card({ snap, strategy, onOpen }: { snap: Snapshot; strategy: Strategy; 
           <Since at={checkedAt} verb="priced" freshMs={freshLimit(snap)} />
         </div>
 
-        {controllable && <Control paused={paused} strategy={strategy.id} />}
+        {controllable && <Control paused={!strategy.enabled} strategy={strategy.id} />}
       </div>
     </article>
   );
@@ -172,7 +171,7 @@ export function Overview({ snap, onOpen }: { snap: Snapshot; onOpen: (id: string
   return (
     <Section
       title="Strategies"
-      note="Every registered strategy runs simultaneously on paper capital. Open one for its positions, costs, and execution record."
+      note="Strategies start off. Start only the paper strategies you want; each switch is independent."
     >
       {catalog.length === 0 ? (
         <Panel label="Catalog">

@@ -121,18 +121,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "wallets": wallets,
             }
             action = "solana-wallet-flow/config" if solana else "wallets/config"
+        elif strategy_control := re.fullmatch(
+            r"/operator/strategies/([a-z0-9_]{1,64})/(start|stop)",
+            requested.path,
+        ):
+            strategy, verb = strategy_control.groups()
+            action = f"strategies/{strategy}/{verb}"
+            payload = {
+                "reason": (
+                    f"{'started' if verb == 'start' else 'stopped'} "
+                    f"from local operator console (strategy: {strategy})"
+                )
+            }
         elif requested.path in ("/operator/pause-all", "/operator/resume"):
             action = requested.path.removeprefix("/operator/")
-            strategy = urllib.parse.parse_qs(requested.query).get("strategy", [""])[0]
-            # `?strategy=` names the card the control was pressed from. The collector's
-            # pause state is a singleton, so it only rides along in the reason, which
-            # the operator command persists. Unrecognised scopes are dropped.
-            scoped = bool(re.fullmatch(r"[a-z0-9_]{1,64}", strategy))
             verb = "started" if action == "resume" else "stopped"
-            reason = f"{verb} from local operator console"
-            payload = {"reason": f"{reason} (strategy: {strategy})" if scoped else reason}
-            if scoped:
-                payload["strategy"] = strategy
+            payload = {"reason": f"{verb} from local operator console"}
         else:
             self.send_error(404)
             return
