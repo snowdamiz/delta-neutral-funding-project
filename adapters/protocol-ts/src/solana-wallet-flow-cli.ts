@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import {
   createJupiterQuote,
@@ -515,9 +516,28 @@ async function main(): Promise<void> {
     onResubscribed: () => { sweepDue = true; },
   });
 
+  // A dead or disconnected observer is otherwise invisible: it holds no
+  // inbound port and its silence looks exactly like a quiet cohort. Report
+  // liveness so the stack can wait on it and an operator can see it.
+  let lastTickMs = Date.now();
+  let lastTickFailed = false;
+  const health = createServer((_request, response) => {
+    const stalled = Date.now() - lastTickMs > Math.max(30_000, monitorIntervalMs * 4);
+    const healthy = subscriber.connected() && !stalled && !lastTickFailed;
+    response.writeHead(healthy ? 200 : 503, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      status: healthy ? "ok" : "degraded",
+      connected: subscriber.connected(),
+      subscriptions: subscriber.subscribedWallets().length,
+      lastTickMs,
+      stalled,
+    }));
+  });
+  health.listen(positiveInteger(process.env.HEALTH_PORT, 8090, "HEALTH_PORT"), "0.0.0.0");
+
   let stopping = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.on(signal, () => { stopping = true; subscriber.close(); });
+    process.on(signal, () => { stopping = true; subscriber.close(); health.close(); });
   }
 
   let lastSweepMs = 0;
@@ -538,18 +558,22 @@ async function main(): Promise<void> {
           lastSweepMs = Date.now();
         }
         await monitorCandidates(config, state, rpc, result, batchRpc);
+        lastTickMs = Date.now();
+        lastTickFailed = false;
         log("solana_wallet_tick", {
           ...result,
           connected: subscriber.connected(),
           subscriptions: subscriber.subscribedWallets().length,
         });
       } catch (error) {
+        lastTickFailed = true;
         fail("solana_wallet_tick_failed", error);
       }
     });
     await new Promise((resolve) => setTimeout(resolve, monitorIntervalMs));
   }
   subscriber.close();
+  health.close();
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -128,6 +128,11 @@ snapshot measures ~0.43s eligible and ~0.12s rejected, from ~3.2s for both.
 The follow-up quote that clears the broker's decision-latency gate is taken
 as soon as that gate allows instead of at the next monitor tick.
 
+The observer reports liveness on `HEALTH_PORT` (8090 inside its container):
+`ok` only while the socket is connected, the last tick is recent, and that
+tick succeeded. `dev.sh` starts it with the stack and waits on that
+healthcheck, so a stack that comes up is a stack that is capturing.
+
 Endpoints: `SOLANA_RPC_URL` falls back to `SOLANA_RPC_URLS`, so one paid key
 configures the adapter and the observer. `SOLANA_WS_URL` defaults to that
 URL with the `wss` scheme, which is correct for Alchemy and most providers;
