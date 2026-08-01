@@ -86,7 +86,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             finally:
                 RESET_LOCK.release()
             return
-        if requested.path == "/operator/wallets/config":
+        if requested.path in ("/operator/wallets/config", "/operator/solana-wallets/config"):
+            solana = requested.path == "/operator/solana-wallets/config"
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 if length > 8192:
@@ -94,11 +95,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return
                 incoming = json.loads(self.rfile.read(length))
                 wallets = incoming["wallets"]
-                if set(incoming) != {"wallets"} or not isinstance(wallets, list) or len(wallets) > 50:
-                    raise ValueError
-                wallets = [wallet.strip().lower() for wallet in wallets]
+                maximum = 100 if solana else 50
                 if (
-                    any(not re.fullmatch(r"0x[0-9a-f]{40}", wallet) for wallet in wallets)
+                    set(incoming) != {"wallets"}
+                    or not isinstance(wallets, list)
+                    or len(wallets) > maximum
+                    or any(not isinstance(wallet, str) for wallet in wallets)
+                ):
+                    raise ValueError
+                wallets = [wallet.strip() if solana else wallet.strip().lower() for wallet in wallets]
+                pattern = r"[1-9A-HJ-NP-Za-km-z]{32,44}" if solana else r"0x[0-9a-f]{40}"
+                if (
+                    any(not re.fullmatch(pattern, wallet) for wallet in wallets)
                     or len(set(wallets)) != len(wallets)
                 ):
                     raise ValueError
@@ -106,10 +114,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.respond(b'{"error":"invalid_wallet_config"}', 400, "application/json")
                 return
             payload = {
-                "reason": "wallet cohort updated from local operator console",
+                "reason": (
+                    "Solana wallet cohort updated from local operator console"
+                    if solana else "wallet cohort updated from local operator console"
+                ),
                 "wallets": wallets,
             }
-            action = "wallets/config"
+            action = "solana-wallet-flow/config" if solana else "wallets/config"
         elif requested.path in ("/operator/pause-all", "/operator/resume"):
             action = requested.path.removeprefix("/operator/")
             strategy = urllib.parse.parse_qs(requested.query).get("strategy", [""])[0]

@@ -5,13 +5,18 @@ no route that can submit a Solana transaction.
 
 ## Start capture
 
-Set `SOLANA_FOLLOWED_WALLETS` to a comma-separated cohort and start the opt-in
-profile:
+Start the opt-in profile:
 
 ```sh
 docker compose --profile solana-wallet-flow up --build
 ./bin/collector solana-wallet-flow
 ```
+
+Add or remove wallets under **Market scans → Solana wallet flow** in the local
+console. Each change atomically replaces the durable Postgres cohort; the
+observer reads the new version on its next poll and does not need a restart.
+Removing the final wallet stops new acquisition capture while existing paper
+positions continue to receive exit checks.
 
 Do not start a validation window until every configured cursor reports
 `captureComplete: true`. A gap permanently fails capture continuity for the

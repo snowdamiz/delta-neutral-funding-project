@@ -1,11 +1,18 @@
 import { useState, type FormEvent } from "react";
-import { configureWallets, type Snapshot, type WalletTracking } from "../api";
+import {
+  configureSolanaWallets,
+  configureWallets,
+  type Snapshot,
+  type WalletCohort,
+  type WalletTracking,
+} from "../api";
 import { fmt, micros, ms, pct } from "../fmt";
 import { Chip, Empty, Panel, Section, Since, Spin } from "../ui";
 
 const signedPpm = (value: string) => `${Number(value) >= 0 ? "+" : ""}${value}`;
 const shortWallet = (wallet: string) => `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
 const WALLET = /^0x[0-9a-f]{40}$/;
+const SOLANA_WALLET = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 /** Each scan's own clock, beside its gate. A stale table and a quiet market
  *  look identical without it. */
@@ -87,6 +94,98 @@ export function WalletConfig({ config }: { config: WalletTracking["config"] }) {
   );
 }
 
+export function SolanaWalletConfig({ config }: { config: WalletCohort }) {
+  const [wallets, setWallets] = useState(config.wallets);
+  const [value, setValue] = useState("");
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+  const maximum = Number(config.maximumWallets) || 100;
+
+  const update = async (next: string[], success: string) => {
+    setSaving(true);
+    setStatus("");
+    try {
+      await configureSolanaWallets(next);
+      setWallets(next);
+      setStatus(success);
+      return true;
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Solana wallet update failed.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const add = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const wallet = value.trim();
+    if (!SOLANA_WALLET.test(wallet)) {
+      setStatus("Enter a valid base58 Solana public key.");
+      return;
+    }
+    if (wallets.includes(wallet)) {
+      setStatus("That wallet is already followed.");
+      return;
+    }
+    if (wallets.length >= maximum) {
+      setStatus(`At most ${maximum} wallets can be followed.`);
+      return;
+    }
+    if (await update([...wallets, wallet], `Now following ${shortWallet(wallet)}.`)) setValue("");
+  };
+
+  return (
+    <div className="wallet-config solana-wallet-config">
+      <form className="solana-wallet-add" onSubmit={add}>
+        <label htmlFor="solana-wallet">Solana public key</label>
+        <input
+          id="solana-wallet"
+          aria-describedby="solana-wallet-help"
+          autoComplete="off"
+          disabled={saving || wallets.length >= maximum}
+          spellCheck={false}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="Base58 public key"
+        />
+        <button type="submit" disabled={saving || wallets.length >= maximum}>
+          {saving && <Spin on />}
+          Follow wallet
+        </button>
+        <span id="solana-wallet-help">
+          Changes are durable and reach the observer on its next poll.
+        </span>
+      </form>
+      {wallets.length > 0 ? (
+        <ul className="solana-wallet-list" aria-label="Followed Solana wallets">
+          {wallets.map((wallet) => (
+            <li key={wallet}>
+              <code>{wallet}</code>
+              <button
+                type="button"
+                aria-label={`Remove ${wallet}`}
+                disabled={saving}
+                onClick={() => void update(
+                  wallets.filter((candidate) => candidate !== wallet),
+                  `Stopped following ${shortWallet(wallet)}.`,
+                )}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <span className="solana-wallet-empty">No Solana wallets followed.</span>
+      )}
+      <span className="solana-wallet-status" role="status" aria-live="polite">
+        {saving ? "Updating the live cohort…" : status || `${wallets.length}/${maximum} followed`}
+      </span>
+    </div>
+  );
+}
+
 /**
  * What the collector can see, before any strategy acts on it. Split out of the
  * overview: these are four dense research tables and they were burying the
@@ -105,6 +204,12 @@ export function Markets({ snap }: { snap: Snapshot }) {
     version: "0",
     wallets: [],
     maximumWallets: "50",
+    updatedAt: "",
+  };
+  const solanaWalletConfig = snap.solanaWalletConfig ?? {
+    version: "0",
+    wallets: [],
+    maximumWallets: "100",
     updatedAt: "",
   };
 
@@ -241,6 +346,14 @@ export function Markets({ snap }: { snap: Snapshot }) {
             </table>
           </div>
         )}
+      </Panel>
+
+      <Panel
+        label="Solana wallet flow"
+        hint="Confirmed acquisitions from followed wallets feed paper-only candidate monitoring. Add or remove wallets without restarting the observer."
+        aside={<Since at={ms(solanaWalletConfig.updatedAt)} verb="configured" />}
+      >
+        <SolanaWalletConfig key={solanaWalletConfig.version} config={solanaWalletConfig} />
       </Panel>
 
       <Panel

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Snapshot } from "../api";
-import { Markets, WalletConfig } from "./Markets";
+import { Markets, SolanaWalletConfig, WalletConfig } from "./Markets";
 
 describe("market scans", () => {
   it("edits the live wallet cohort without environment variables", () => {
@@ -18,6 +18,23 @@ describe("market scans", () => {
     expect(html).toContain("0x1111111111111111111111111111111111111111");
     expect(html).toContain("Save cohort");
     expect(html).not.toContain("HYPERLIQUID_WALLETS");
+  });
+
+  it("adds and removes followed Solana wallets on the fly", () => {
+    const wallet = "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ";
+    const html = renderToStaticMarkup(
+      <SolanaWalletConfig config={{
+        version: "3",
+        wallets: [wallet],
+        maximumWallets: "100",
+        updatedAt: "2026-08-01T12:00:00Z",
+      }} />,
+    );
+
+    expect(html).toContain("Follow wallet");
+    expect(html).toContain(wallet);
+    expect(html).toContain("Remove");
+    expect(html).toContain("1/100 followed");
   });
 
   it("renders ranked funding, EMA, and gate distance", () => {

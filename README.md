@@ -68,13 +68,15 @@ The Solana wallet-flow strategy is a separate paper-only profile. It has no
 signer and only uses read RPC plus Jupiter quotes:
 
 ```sh
-SOLANA_FOLLOWED_WALLETS=wallet1,wallet2 \
 SOLANA_SANCTIONED_ADDRESSES=address1,address2 \
 docker compose --profile solana-wallet-flow up --build
 ```
 
-It backfills confirmed acquisitions, refreshes WATCH/ENTER candidates, and
-quotes the whole paper position on every exit check. `JUPITER_URL`,
+Add or remove followed wallets under **Market scans → Solana wallet flow** in
+the local console. The cohort is stored in Postgres and the observer picks up
+changes on its next poll without a restart. It backfills confirmed acquisitions,
+refreshes WATCH/ENTER candidates, and quotes the whole paper position on every
+exit check. `JUPITER_URL`,
 `JUPITER_API_KEY`, and `SOLANA_RPC_URL` configure its data-only providers. See
 the [paper validation runbook](docs/runbooks/solana-wallet-flow.md) before
 freezing a 90-day window.

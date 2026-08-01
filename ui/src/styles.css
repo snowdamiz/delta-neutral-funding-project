@@ -351,6 +351,19 @@ details.cfg summary:hover { color:var(--ink1) }
 .wallet-config-actions button:focus-visible { outline:2px solid var(--ok); outline-offset:2px }
 .wallet-config-actions button:disabled { cursor:wait; opacity:.55 }
 @media (max-width:640px) { .wallet-config > div:first-child { align-items:flex-start; flex-direction:column } }
+.solana-wallet-add { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.5rem .75rem }
+.solana-wallet-add label, .solana-wallet-add > span { grid-column:1/-1 }
+.solana-wallet-add > span, .solana-wallet-status, .solana-wallet-empty { color:var(--ink4); font:10.5px/1.5 var(--mono) }
+.solana-wallet-add input { min-width:0; border:1px solid var(--line-hi); border-radius:2px; background:var(--s0); color:var(--ink1); padding:.65rem .75rem; font:11.5px var(--mono) }
+.solana-wallet-add button, .solana-wallet-list button { display:inline-flex; align-items:center; justify-content:center; gap:.45rem; border:1px solid var(--line-hi); border-radius:2px; background:var(--s1); color:var(--ink1); padding:.55rem .8rem; font:600 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; cursor:pointer }
+.solana-wallet-add input:focus-visible, .solana-wallet-add button:focus-visible, .solana-wallet-list button:focus-visible { outline:2px solid var(--ok); outline-offset:2px }
+.solana-wallet-add button:hover, .solana-wallet-list button:hover { background:white; color:var(--s0) }
+.solana-wallet-add button:disabled, .solana-wallet-list button:disabled { cursor:wait; opacity:.55 }
+.solana-wallet-list { display:grid; gap:1px; margin:0; padding:0; list-style:none; background:var(--line) }
+.solana-wallet-list li { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.65rem .75rem; background:var(--s1) }
+.solana-wallet-list code { min-width:0; color:var(--ink2); font:11px/1.45 var(--mono); overflow-wrap:anywhere }
+.solana-wallet-list button { flex:none; color:var(--crit); border-color:#e6676744; background:#e667670a }
+@media (max-width:640px) { .solana-wallet-add { grid-template-columns:1fr } .solana-wallet-add button { grid-column:1 } }
 
 /* ─── empty states: intentional, not broken ──────────────────────────── */
 .empty-state { padding:2.4rem 1.15rem; text-align:center; color:var(--ink4); font-family:var(--mono); font-size:11.5px; letter-spacing:.04em; line-height:1.7 }

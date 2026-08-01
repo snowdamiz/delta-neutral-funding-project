@@ -66,53 +66,58 @@ export default defineConfig(({ mode }) => {
               );
             });
           });
-          server.middlewares.use("/operator/wallets/config", (request, response) => {
-            if (request.method !== "POST") {
-              response.statusCode = 405;
-              response.end();
-              return;
-            }
-            const chunks: Buffer[] = [];
-            let size = 0;
-            request.on("data", (chunk) => {
-              size += chunk.length;
-              if (size <= 8192) chunks.push(Buffer.from(chunk));
-            });
-            request.on("end", async () => {
-              if (size > 8192) {
-                response.statusCode = 413;
-                response.end('{"error":"request_too_large"}');
+          for (const [path, upstreamPath] of [
+            ["/operator/wallets/config", "/v1/wallets/config"],
+            ["/operator/solana-wallets/config", "/v1/solana-wallet-flow/config"],
+          ] as const) {
+            server.middlewares.use(path, (request, response) => {
+              if (request.method !== "POST") {
+                response.statusCode = 405;
+                response.end();
                 return;
               }
-              const signed = operatorRequest(
-                "/operator/wallets/config",
-                operatorSecret,
-                `console-${Date.now()}-${randomUUID()}`,
-                Buffer.concat(chunks).toString(),
-              );
-              if (!signed) {
-                response.statusCode = 400;
-                response.end('{"error":"invalid_wallet_config"}');
-                return;
-              }
-              try {
-                const upstream = await fetch(`${COLLECTOR}/v1/wallets/config`, {
-                  method: "POST",
-                  headers: signed.headers,
-                  body: signed.body,
-                });
-                response.statusCode = upstream.status;
-                response.setHeader(
-                  "content-type",
-                  upstream.headers.get("content-type") ?? "application/json",
+              const chunks: Buffer[] = [];
+              let size = 0;
+              request.on("data", (chunk) => {
+                size += chunk.length;
+                if (size <= 8192) chunks.push(Buffer.from(chunk));
+              });
+              request.on("end", async () => {
+                if (size > 8192) {
+                  response.statusCode = 413;
+                  response.end('{"error":"request_too_large"}');
+                  return;
+                }
+                const signed = operatorRequest(
+                  path,
+                  operatorSecret,
+                  `console-${Date.now()}-${randomUUID()}`,
+                  Buffer.concat(chunks).toString(),
                 );
-                response.end(await upstream.text());
-              } catch {
-                response.statusCode = 502;
-                response.end('{"error":"collector_unreachable"}');
-              }
+                if (!signed) {
+                  response.statusCode = 400;
+                  response.end('{"error":"invalid_wallet_config"}');
+                  return;
+                }
+                try {
+                  const upstream = await fetch(`${COLLECTOR}${upstreamPath}`, {
+                    method: "POST",
+                    headers: signed.headers,
+                    body: signed.body,
+                  });
+                  response.statusCode = upstream.status;
+                  response.setHeader(
+                    "content-type",
+                    upstream.headers.get("content-type") ?? "application/json",
+                  );
+                  response.end(await upstream.text());
+                } catch {
+                  response.statusCode = 502;
+                  response.end('{"error":"collector_unreachable"}');
+                }
+              });
             });
-          });
+          }
         },
       },
     ],

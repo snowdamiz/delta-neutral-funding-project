@@ -258,13 +258,15 @@ export type CrossVenueLeaderboard = {
   items: CrossVenueRank[];
 };
 
+export type WalletCohort = {
+  version: string;
+  wallets: string[];
+  maximumWallets: string;
+  updatedAt: string;
+};
+
 export type WalletTracking = {
-  config: {
-    version: string;
-    wallets: string[];
-    maximumWallets: string;
-    updatedAt: string;
-  };
+  config: WalletCohort;
   scores: {
     asOfMs: string;
     minimumDecisions: string;
@@ -342,6 +344,7 @@ export type Snapshot = {
   reverseCarryLeaderboard: ReverseCarryLeaderboard | null;
   crossVenueLeaderboard: CrossVenueLeaderboard | null;
   walletTracking: WalletTracking | null;
+  solanaWalletConfig: WalletCohort | null;
   capabilities: Capability[];
   buildManifestId: string;
   reconciliation: Reconciliation;
@@ -360,7 +363,8 @@ const EMPTY: Snapshot = {
   status: null, build: null, config: null, adapter: null, executor: null,
   strategies: [], portfolios: [], positions: [], pnl: [], decisions: [], events: [],
   opportunities: [], orders: [], fills: [], funding: [], fundingLeaderboard: null,
-  reverseCarryLeaderboard: null, crossVenueLeaderboard: null, walletTracking: null, capabilities: [],
+  reverseCarryLeaderboard: null, crossVenueLeaderboard: null, walletTracking: null,
+  solanaWalletConfig: null, capabilities: [],
   buildManifestId: "", reconciliation: null, reachable: false, polledAt: 0,
   polling: true, intervalMs: POLL_MS,
 };
@@ -398,8 +402,8 @@ export async function control(action: OperatorAction, strategy?: string): Promis
   throw new Error(error?.message ?? `operator request failed (${response.status})`);
 }
 
-export async function configureWallets(wallets: string[]): Promise<void> {
-  const response = await fetch("/operator/wallets/config", {
+async function configureWalletCohort(path: string, wallets: string[]): Promise<void> {
+  const response = await fetch(path, {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({ wallets }),
@@ -408,6 +412,12 @@ export async function configureWallets(wallets: string[]): Promise<void> {
   const error = await response.json().catch(() => null) as { message?: string } | null;
   throw new Error(error?.message ?? `wallet update failed (${response.status})`);
 }
+
+export const configureWallets = (wallets: string[]) =>
+  configureWalletCohort("/operator/wallets/config", wallets);
+
+export const configureSolanaWallets = (wallets: string[]) =>
+  configureWalletCohort("/operator/solana-wallets/config", wallets);
 
 export async function resetDatabase(approval: string): Promise<void> {
   const response = await fetch("/operator/reset-database", {
@@ -424,7 +434,7 @@ export async function pull(): Promise<Snapshot> {
   const [
     status, build, config, adapter, executor, catalog, portfolios, positions, pnl,
     decisions, events, opportunities, orders, fills, funding, fundingLeaderboard,
-    reverseCarryLeaderboard, crossVenueLeaderboard, walletTracking,
+    reverseCarryLeaderboard, crossVenueLeaderboard, walletTracking, solanaWalletConfig,
     capabilities, reconciliation,
   ] = await Promise.all([
     get<Status | null>("/v1/status", null),
@@ -446,6 +456,7 @@ export async function pull(): Promise<Snapshot> {
     get<ReverseCarryLeaderboard | null>("/v1/reverse-carry/leaderboard", null),
     get<CrossVenueLeaderboard | null>("/v1/cross-venue/leaderboard", null),
     get<WalletTracking | null>("/v1/wallets", null),
+    get<WalletCohort | null>("/v1/solana-wallet-flow/config", null),
     get<{ results: Capability[]; buildManifestId: string } | null>("/v1/capabilities", null),
     get<Reconciliation>("/v1/reconciliations/latest", null),
   ]);
@@ -466,6 +477,7 @@ export async function pull(): Promise<Snapshot> {
     reverseCarryLeaderboard,
     crossVenueLeaderboard,
     walletTracking,
+    solanaWalletConfig,
     capabilities: capabilities?.results ?? [],
     buildManifestId: capabilities?.buildManifestId ?? "",
     reconciliation,
