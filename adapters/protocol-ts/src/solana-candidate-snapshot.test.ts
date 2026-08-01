@@ -97,8 +97,8 @@ test("snapshots token control, concentration, cluster inventory, and round trip"
       inputMint,
       outputMint,
       inAmount: amount,
-      outAmount: amount === 250_000n ? 9_500_000n : 80_000_000n,
-      priceImpactBps: amount === 250_000n ? 200 : 900,
+      outAmount: amount === 250_000n ? 9_500_000n : amount === 100_000n ? 3_800_000n : 80_000_000n,
+      priceImpactBps: amount === 2_000_000n ? 900 : 200,
       contextSlot: 13n,
       routeLabels: ["Pump.fun"],
     };
@@ -112,6 +112,7 @@ test("snapshots token control, concentration, cluster inventory, and round trip"
     quote,
     cohortWallets: [wallet, clusterWallet],
     sanctionedAddresses: new Set(),
+    paperPositionAtoms: 100_000n,
   });
 
   assert.equal(event.payload.snapshotStatus, "complete");
@@ -126,6 +127,9 @@ test("snapshots token control, concentration, cluster inventory, and round trip"
   assert.equal(event.payload.roundTripLossBps, "500");
   assert.equal(event.payload.exitDepthUsdMicros, "100000000");
   assert.equal(event.payload.exitDepthImpactBps, "900");
+  assert.equal(event.payload.positionSellInputAtoms, "100000");
+  assert.equal(event.payload.positionSellOutputUsdMicros, "3800000");
+  assert.equal(event.payload.positionSellImpactBps, "200");
   assert.deepEqual(event.payload.routeLabels, ["Pump.fun"]);
   assert.equal(event.payload.migrationStatus, "pre_migration");
   assert.equal(event.payload.sanctionsHit, false);

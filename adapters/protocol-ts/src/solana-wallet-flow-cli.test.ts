@@ -17,7 +17,34 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
       if (request.method === "GET") {
         assert.equal(request.url, "/v1/solana-wallet-flow");
         response.writeHead(200, { "content-type": "application/json" });
-        response.end('{"cursors":[],"openMints":[]}');
+        response.end(JSON.stringify({ cursors: [], openMints: [{
+          decision: "WATCH",
+          snapshotEventId: "snapshot-old",
+          snapshotObservedAtMs: "150000",
+          positionAtoms: "100000",
+          acquisition: {
+            schemaVersion: 1,
+            eventId: "acquisition-old",
+            eventType: "SolanaWalletAcquisition",
+            source: `solana-wallet:${wallet}:${outputMint}`,
+            observedAtMs: "150000",
+            sourceSlot: "9",
+            sourceSequence: "swap-old",
+            idempotencyKey: "acquisition-old",
+            rawPayloadHash: "a".repeat(64),
+            payload: {
+              wallet,
+              signature: "swap-old",
+              confirmedAtMs: "100000",
+              inputMint,
+              inputAmountAtoms: "100000",
+              outputMint,
+              outputAmountAtoms: "250000",
+              outputDecimals: "6",
+              routePrograms: ["JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"],
+            },
+          },
+        }] }));
         return;
       }
       const chunks: Buffer[] = [];
@@ -141,12 +168,13 @@ test("delivers read-only acquisitions before the durable checkpoint", async () =
       quote,
       sanctionedAddresses: new Set(),
     });
-    assert.deepEqual(result, { acquisitions: 1, snapshots: 1, checkpoints: 1, gaps: 0 });
+    assert.deepEqual(result, { acquisitions: 1, snapshots: 2, checkpoints: 1, gaps: 0 });
     assert(rpcMethods.every((method) => method !== "sendTransaction"));
     assert.deepEqual(delivered, [
       { eventType: "SolanaWalletAcquisition", signature: "swap-1" },
       { eventType: "SolanaCandidateSnapshot", signature: "swap-1" },
       { eventType: "SolanaWalletCheckpoint", signature: "swap-1" },
+      { eventType: "SolanaCandidateSnapshot", signature: "swap-old" },
     ]);
   } finally {
     server.close();

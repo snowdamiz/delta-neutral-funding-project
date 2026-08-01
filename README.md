@@ -64,6 +64,19 @@ complete six-request capture cycle. `JUPITER_API_KEY` enables a separately
 managed higher-rate quota. Comma-separated `PHOENIX_URLS`, `SOLANA_RPC_URLS`,
 and `JUPITER_URLS` provide ordered failover.
 
+The Solana wallet-flow strategy is a separate paper-only profile. It has no
+signer and only uses read RPC plus Jupiter quotes:
+
+```sh
+SOLANA_FOLLOWED_WALLETS=wallet1,wallet2 \
+SOLANA_SANCTIONED_ADDRESSES=address1,address2 \
+docker compose --profile solana-wallet-flow up --build
+```
+
+It backfills confirmed acquisitions, refreshes WATCH/ENTER candidates, and
+quotes the whole paper position on every exit check. `JUPITER_URL`,
+`JUPITER_API_KEY`, and `SOLANA_RPC_URL` configure its data-only providers.
+
 The Phase 2 paper path also reads pinned Kamino reserve metrics. It subtracts
 live variable borrow APY from negative funding, requires 2× notional in
 available borrow liquidity, and exits on the current observation when borrow

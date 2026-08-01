@@ -54,6 +54,11 @@ type SnapshotPayload = {
   exitDepthUsdMicros: string;
   exitDepthImpactBps: string;
   quoteContextSlot: string;
+  paperPositionAtoms: string;
+  positionTransferFeeAtoms: string;
+  positionSellInputAtoms: string;
+  positionSellOutputUsdMicros: string;
+  positionSellImpactBps: string;
   flowCoverageComplete: boolean;
   unlinkedBuyerCount: string;
   unlinkedBuyerCount1m: string;
@@ -199,6 +204,11 @@ function defaultPayload(
     exitDepthUsdMicros: "0",
     exitDepthImpactBps: "10000",
     quoteContextSlot: "0",
+    paperPositionAtoms: "0",
+    positionTransferFeeAtoms: "0",
+    positionSellInputAtoms: "0",
+    positionSellOutputUsdMicros: "0",
+    positionSellImpactBps: "10000",
     flowCoverageComplete: false,
     unlinkedBuyerCount: "0",
     unlinkedBuyerCount1m: "0",
@@ -225,13 +235,13 @@ function event(
   const raw = JSON.stringify(payload);
   return {
     schemaVersion: 1,
-    eventId: `${sessionId}:solana-snapshot:${acquisition.payload.signature}:${acquisition.payload.outputMint}`,
+    eventId: `${sessionId}:solana-snapshot:${acquisition.payload.signature}:${acquisition.payload.outputMint}:${observedAtMs}`,
     eventType: "SolanaCandidateSnapshot",
     source: `solana-candidate:${acquisition.payload.outputMint}`,
     observedAtMs: observedAtMs.toString(),
     sourceSlot: acquisition.sourceSlot,
     sourceSequence: acquisition.payload.signature,
-    idempotencyKey: `solana-snapshot:${acquisition.payload.signature}:${acquisition.payload.outputMint}`,
+    idempotencyKey: `solana-snapshot:${acquisition.payload.signature}:${acquisition.payload.outputMint}:${observedAtMs}`,
     rawPayloadHash: createHash("sha256").update(raw).digest("hex"),
     payload,
   };
@@ -334,6 +344,7 @@ export async function snapshotSolanaCandidate(input: {
   quote: JupiterQuote;
   cohortWallets: string[];
   sanctionedAddresses: Set<string>;
+  paperPositionAtoms?: bigint;
 }): Promise<SolanaCandidateSnapshotEvent> {
   const payload = defaultPayload(input.acquisition, input.observedAtMs);
   const mint = input.acquisition.payload.outputMint;
@@ -475,6 +486,7 @@ export async function snapshotSolanaCandidate(input: {
     let sell: JupiterQuoteResult;
     let depthBuy: JupiterQuoteResult;
     let depthSell: JupiterQuoteResult;
+    let positionSell: JupiterQuoteResult | undefined;
     try {
       buy = await input.quote(usdc, mint, buyUsdMicros);
       payload.transferFeeBuyAtoms = transferFee(buy.outAmount, fee.bps, fee.maximum).toString();
@@ -499,10 +511,36 @@ export async function snapshotSolanaCandidate(input: {
     payload.exitDepthUsdMicros = depthSell.priceImpactBps <= 1000
       ? depthUsdMicros.toString()
       : "0";
-    payload.quoteContextSlot = [buy.contextSlot, sell.contextSlot, depthBuy.contextSlot, depthSell.contextSlot]
+    if (input.paperPositionAtoms !== undefined && input.paperPositionAtoms > 0n) {
+      payload.paperPositionAtoms = input.paperPositionAtoms.toString();
+      const positionFee = transferFee(input.paperPositionAtoms, fee.bps, fee.maximum);
+      payload.positionTransferFeeAtoms = positionFee.toString();
+      const sellablePosition = input.paperPositionAtoms - positionFee;
+      payload.positionSellInputAtoms = sellablePosition > 0n ? sellablePosition.toString() : "0";
+      if (sellablePosition > 0n) {
+        try {
+          positionSell = await input.quote(mint, usdc, sellablePosition);
+          payload.positionSellOutputUsdMicros = positionSell.outAmount.toString();
+          payload.positionSellImpactBps = String(positionSell.priceImpactBps);
+        } catch {
+          // A missing full-position exit is durable evidence for the paper broker.
+        }
+      }
+    }
+    payload.quoteContextSlot = [
+      buy.contextSlot,
+      sell.contextSlot,
+      depthBuy.contextSlot,
+      depthSell.contextSlot,
+      ...(positionSell ? [positionSell.contextSlot] : []),
+    ]
       .reduce((lowest, slot) => slot < lowest ? slot : lowest)
       .toString();
-    payload.routeLabels = [...new Set([...buy.routeLabels, ...sell.routeLabels])];
+    payload.routeLabels = [...new Set([
+      ...buy.routeLabels,
+      ...sell.routeLabels,
+      ...(positionSell?.routeLabels ?? []),
+    ])];
     if (payload.routeLabels.some((label) => !knownRouteLabel.test(label))) {
       rejectReason ||= "UNKNOWN_ROUTE_PROGRAM";
     }

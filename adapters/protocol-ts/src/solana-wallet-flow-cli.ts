@@ -7,6 +7,7 @@ import {
 import {
   captureSolanaWalletFlow,
   type SolanaRpc,
+  type SolanaWalletAcquisitionEvent,
   type SolanaWalletCursor,
 } from "./solana-wallet-flow.js";
 import { signBody } from "./transport.js";
@@ -34,6 +35,7 @@ type PollResult = {
 
 const publicKey = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const unsigned = /^(0|[1-9][0-9]*)$/;
+const positive = /^[1-9][0-9]*$/;
 
 function object(value: unknown, field: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -66,6 +68,70 @@ function cursors(value: unknown): Map<string, SolanaWalletCursor> {
     });
   }
   return result;
+}
+
+function openMints(value: unknown): Array<{
+  acquisition: SolanaWalletAcquisitionEvent;
+  paperPositionAtoms?: bigint;
+}> {
+  const root = object(value, "Solana wallet-flow state");
+  if (!Array.isArray(root.openMints) || root.openMints.length > 100) {
+    throw new Error("collector returned invalid open Solana candidates");
+  }
+  return root.openMints.map((raw) => {
+    const item = object(raw, "open Solana candidate");
+    if (item.decision !== "WATCH" && item.decision !== "ENTER"
+      && !(item.decision === "REJECT" && item.positionAtoms !== undefined && item.positionAtoms !== null)) {
+      throw new Error("collector returned invalid open Solana decision");
+    }
+    const acquisition = object(item.acquisition, "open Solana acquisition");
+    const payload = object(acquisition.payload, "open Solana acquisition payload");
+    if (
+      acquisition.schemaVersion !== 1
+      || acquisition.eventType !== "SolanaWalletAcquisition"
+      || typeof acquisition.eventId !== "string"
+      || acquisition.eventId.length === 0
+      || typeof acquisition.sourceSlot !== "string"
+      || !unsigned.test(acquisition.sourceSlot)
+      || typeof acquisition.observedAtMs !== "string"
+      || !unsigned.test(acquisition.observedAtMs)
+      || typeof acquisition.rawPayloadHash !== "string"
+      || !/^[0-9a-f]{64}$/.test(acquisition.rawPayloadHash)
+      || typeof payload.wallet !== "string"
+      || !publicKey.test(payload.wallet)
+      || typeof payload.signature !== "string"
+      || payload.signature.length === 0
+      || typeof payload.confirmedAtMs !== "string"
+      || !unsigned.test(payload.confirmedAtMs)
+      || typeof payload.inputMint !== "string"
+      || !publicKey.test(payload.inputMint)
+      || typeof payload.inputAmountAtoms !== "string"
+      || !positive.test(payload.inputAmountAtoms)
+      || typeof payload.outputMint !== "string"
+      || !publicKey.test(payload.outputMint)
+      || typeof payload.outputAmountAtoms !== "string"
+      || !positive.test(payload.outputAmountAtoms)
+      || typeof payload.outputDecimals !== "string"
+      || !unsigned.test(payload.outputDecimals)
+      || !Array.isArray(payload.routePrograms)
+      || payload.routePrograms.length === 0
+      || payload.routePrograms.length > 32
+      || payload.routePrograms.some((program) => typeof program !== "string" || !publicKey.test(program))
+    ) {
+      throw new Error("collector returned invalid open Solana acquisition");
+    }
+    const positionAtoms = item.positionAtoms;
+    if (positionAtoms !== undefined && positionAtoms !== null
+      && (typeof positionAtoms !== "string" || !positive.test(positionAtoms))) {
+      throw new Error("collector returned invalid Solana paper position");
+    }
+    return {
+      acquisition: acquisition as unknown as SolanaWalletAcquisitionEvent,
+      ...(positionAtoms === undefined || positionAtoms === null
+        ? {}
+        : { paperPositionAtoms: BigInt(positionAtoms as string) }),
+    };
+  });
 }
 
 async function post(
@@ -107,7 +173,9 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
     signal: AbortSignal.timeout(config.timeoutMs),
   });
   if (!stateResponse.ok) throw new Error(`collector state returned ${stateResponse.status}`);
-  const durableCursors = cursors(await stateResponse.json());
+  const state = await stateResponse.json();
+  const durableCursors = cursors(state);
+  const openCandidates = openMints(state);
   let rpcId = 0;
   const rpc: SolanaRpc = async (method, params) => {
     const response = await fetch(config.rpcUrl, {
@@ -157,6 +225,26 @@ export async function pollSolanaWalletFlow(config: PollConfig): Promise<PollResu
     await post(config.collectorUrl, config.hmacSecret, config.timeoutMs, capture.checkpoint);
     result.checkpoints += 1;
     if (capture.checkpoint.payload.status === "gap") result.gaps += 1;
+  }
+  for (const [index, candidate] of openCandidates.entries()) {
+    await post(
+      config.collectorUrl,
+      config.hmacSecret,
+      config.timeoutMs,
+      await snapshotSolanaCandidate({
+        acquisition: candidate.acquisition,
+        observedAtMs: config.observedAtMs,
+        sessionId: `${config.sessionId}-monitor-${index}`,
+        rpc,
+        quote: config.quote,
+        cohortWallets: config.wallets,
+        sanctionedAddresses: config.sanctionedAddresses,
+        ...(candidate.paperPositionAtoms === undefined
+          ? {}
+          : { paperPositionAtoms: candidate.paperPositionAtoms }),
+      }),
+    );
+    result.snapshots += 1;
   }
   return result;
 }
