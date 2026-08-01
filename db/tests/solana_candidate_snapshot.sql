@@ -97,9 +97,37 @@ BEGIN
       WHERE event_id = 'solana-snapshot-a') <> 4000 THEN
     RAISE EXCEPTION 'snapshot safety fields were not preserved';
   END IF;
+  IF (SELECT decision FROM solana_candidate_decisions
+      WHERE snapshot_event_id = 'solana-snapshot-a') <> 'ENTER' THEN
+    RAISE EXCEPTION 'safe organic candidate was not selected for paper entry';
+  END IF;
+  IF (SELECT evidence FROM solana_candidate_decisions
+      WHERE snapshot_event_id = 'solana-snapshot-a')
+      <> evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v1') THEN
+    RAISE EXCEPTION 'historical candidate replay changed its decision';
+  END IF;
   IF record_solana_candidate_snapshot(v_snapshot)->>'inserted' <> 'false' THEN
     RAISE EXCEPTION 'snapshot retry was not idempotent';
   END IF;
+
+  UPDATE solana_candidate_snapshots
+  SET unlinked_buyer_count = 9
+  WHERE event_id = 'solana-snapshot-a';
+  v_result := evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v1');
+  IF v_result->>'decision' <> 'WATCH'
+     OR v_result->>'reason' <> 'WATCH_INDEPENDENT_CONFIRMATION' THEN
+    RAISE EXCEPTION 'incomplete confirmation was not watched: %', v_result;
+  END IF;
+  UPDATE solana_candidate_snapshots
+  SET entry_price_impact_bps = 201
+  WHERE event_id = 'solana-snapshot-a';
+  v_result := evaluate_solana_candidate('solana-snapshot-a', 'solana-wallet-flow-v1');
+  IF v_result->>'decision' <> 'REJECT' OR v_result->>'reason' <> 'ENTRY_IMPACT' THEN
+    RAISE EXCEPTION 'unsafe impact was not rejected: %', v_result;
+  END IF;
+  UPDATE solana_candidate_snapshots
+  SET unlinked_buyer_count = 10, entry_price_impact_bps = 100
+  WHERE event_id = 'solana-snapshot-a';
 
   BEGIN
     PERFORM record_solana_candidate_snapshot(

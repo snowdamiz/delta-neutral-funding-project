@@ -92,7 +92,7 @@ end
 pub fn solana_wallet_flow_state(pool :: PoolHandle) -> String ! String do
   let rows = Pool.query(
     pool,
-    "WITH cursors AS (SELECT jsonb_build_object('wallet', wallet, 'latestSignature', latest_signature, 'latestSlot', latest_slot::text, 'captureComplete', capture_complete, 'gapReason', gap_reason, 'observedAtMs', observed_at_ms::text) AS item FROM solana_wallet_cursors ORDER BY wallet) SELECT jsonb_build_object('cursors', COALESCE(jsonb_agg(item), '[]'::jsonb), 'openMints', '[]'::jsonb)::text AS body FROM cursors",
+    "WITH cursor_items AS (SELECT jsonb_build_object('wallet', wallet, 'latestSignature', latest_signature, 'latestSlot', latest_slot::text, 'captureComplete', capture_complete, 'gapReason', gap_reason, 'observedAtMs', observed_at_ms::text) AS item FROM solana_wallet_cursors ORDER BY wallet), latest_candidates AS (SELECT DISTINCT ON (s.acquisition_event_id) jsonb_build_object('acquisition', e.canonical_payload, 'snapshotEventId', d.snapshot_event_id, 'snapshotObservedAtMs', s.observed_at_ms::text, 'decision', d.decision, 'reason', d.reason, 'configId', d.config_id) AS item, s.acquisition_event_id, s.observed_at_ms FROM solana_candidate_decisions d JOIN solana_candidate_snapshots s ON s.event_id = d.snapshot_event_id JOIN normalized_events e ON e.id = s.acquisition_event_id WHERE d.decision IN ('WATCH', 'ENTER') ORDER BY s.acquisition_event_id, s.observed_at_ms DESC, s.event_id DESC) SELECT jsonb_build_object('cursors', COALESCE((SELECT jsonb_agg(item) FROM cursor_items), '[]'::jsonb), 'openMints', COALESCE((SELECT jsonb_agg(item ORDER BY observed_at_ms, acquisition_event_id) FROM latest_candidates), '[]'::jsonb))::text AS body",
     []
   ) ?
   if List.length(rows) != 1 do
