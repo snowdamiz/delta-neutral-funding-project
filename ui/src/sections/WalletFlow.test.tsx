@@ -119,6 +119,7 @@ const FLOW: WalletFlowState = {
   followedWallets: {
     version: "3",
     wallets: ["11111111111111111111111111111111"],
+    labels: { "11111111111111111111111111111111": "Gasp (#1 monthly)" },
     maximumWallets: "100",
     updatedAt: "2026-08-01T12:00:00Z",
   },
@@ -237,19 +238,30 @@ describe("wallet flow", () => {
     expect(html).toContain("Disarm live trading");
   });
 
-  it("adds and removes followed Solana wallets on the fly", () => {
+  it("adds and removes followed Solana wallets on the fly, under their names", () => {
     const wallet = "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ";
     const html = renderToStaticMarkup(
       <SolanaWalletConfig config={{
         version: "3",
         wallets: [wallet],
+        labels: { [wallet]: "Pain (#2 monthly)" },
         maximumWallets: "100",
         updatedAt: "2026-08-01T12:00:00Z",
       }} />,
     );
     expect(html).toContain("Follow wallet");
     expect(html).toContain(wallet);
+    expect(html).toContain("Pain (#2 monthly)");
     expect(html).toContain("Remove");
     expect(html).toContain("1/100 followed");
+  });
+
+  it("groups candidates under the trader whose buy triggered them", () => {
+    const html = renderToStaticMarkup(
+      <WalletFlow snap={{ walletFlow: FLOW } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,
+    );
+    // The cohort name, not the base58 key, is how a trader is identified.
+    expect(html).toContain("group-row");
+    expect(html.match(/Gasp \(#1 monthly\)/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });

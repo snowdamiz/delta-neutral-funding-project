@@ -330,6 +330,13 @@ tbody tr:hover { background:#ffffff05 }
 td.n, th.n { text-align:right }
 td strong { color:var(--ink1); font-weight:500 }
 
+/* candidates read as "what is this trader doing", so each wallet owns a band */
+.group-row td { background:var(--s2); border-bottom:1px solid var(--line-hi); padding:.55rem 1rem }
+.group-row strong { color:var(--ink1); font-weight:500; margin-right:.7rem }
+.group-row code { color:var(--ink4); margin-right:.7rem }
+.wallet-id { display:flex; flex-direction:column; gap:.15rem; min-width:0 }
+.wallet-id strong { color:var(--ink1); font-weight:500 }
+
 /* a measurement is coloured only where it breached the gate that rejected it */
 .gate-bad { color:var(--crit); font-weight:500 }
 .row-pick { cursor:pointer }

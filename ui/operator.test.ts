@@ -109,6 +109,32 @@ describe("operator proxy request", () => {
         '{"wallets":["0x1111111111111111111111111111111111111111"]}',
       ),
     ).toBeNull();
+    // A named wallet keeps its name; an unnamed one stays a bare address, so
+    // the collector sees the same shape it always did.
+    expect(JSON.parse(operatorRequest(
+      "/operator/solana-wallets/config",
+      "operator-secret",
+      "named-solana-wallet-config",
+      JSON.stringify({ wallets: [{ wallet, label: "  Gasp (#1 monthly) " }, { wallet: wallet.replace(/J$/, "K") }] }),
+    )?.body ?? "{}")).toEqual({
+      reason: "Solana wallet cohort updated from local operator console",
+      wallets: [{ wallet, label: "Gasp (#1 monthly)" }, wallet.replace(/J$/, "K")],
+    });
+    for (const wallets of [
+      [{ wallet, label: "a".repeat(41) }],          // label beyond the column
+      [{ wallet, label: "two\nlines" }],            // labels are single-line
+      [{ wallet, nickname: "Gasp" }],               // an unknown field is a typo
+      [{ wallet, label: 7 }],                       // a label is text
+      [{ label: "no address" }],                    // an entry needs its wallet
+      [[wallet]],                                   // not an entry at all
+    ]) {
+      expect(operatorRequest(
+        "/operator/solana-wallets/config",
+        "operator-secret",
+        "rejected-solana-wallet-config",
+        JSON.stringify({ wallets }),
+      )).toBeNull();
+    }
     // The retired Hyperliquid cohort path has no collector route left.
     expect(
       operatorRequest(

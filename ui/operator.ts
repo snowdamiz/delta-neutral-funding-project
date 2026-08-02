@@ -26,16 +26,30 @@ export function operatorRequest(
         !Array.isArray(parsed.wallets) ||
         parsed.wallets.length > 100
       ) return null;
-      const wallets = parsed.wallets.map((wallet) =>
-        typeof wallet === "string" ? wallet.trim() : "",
-      );
+      // A wallet is an address, optionally named. The proxy rebuilds each
+      // entry field by field, so nothing the browser sends reaches the
+      // collector except an address and a label of bounded, single-line text.
+      const entries = parsed.wallets.map((entry) => {
+        if (typeof entry === "string") return { wallet: entry.trim(), label: "" };
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+        const { wallet, label, ...rest } = entry as Record<string, unknown>;
+        if (Object.keys(rest).length > 0) return null;
+        if (typeof wallet !== "string") return null;
+        if (label !== undefined && typeof label !== "string") return null;
+        return { wallet: wallet.trim(), label: (label ?? "").trim() };
+      });
+      if (entries.some((entry) => entry === null)) return null;
+      const clean = entries as { wallet: string; label: string }[];
       if (
-        wallets.some((wallet) => !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet)) ||
-        new Set(wallets).size !== wallets.length
+        clean.some(({ wallet, label }) =>
+          !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet)
+          || label.length > 40
+          || /[\n\r\t]/.test(label)) ||
+        new Set(clean.map(({ wallet }) => wallet)).size !== clean.length
       ) return null;
       return signed(JSON.stringify({
         reason: "Solana wallet cohort updated from local operator console",
-        wallets,
+        wallets: clean.map(({ wallet, label }) => label ? { wallet, label } : wallet),
       }), secret, key);
     } catch {
       return null;

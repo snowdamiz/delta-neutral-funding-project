@@ -236,9 +236,13 @@ export type ReverseCarryLeaderboard = {
 export type WalletCohort = {
   version: string;
   wallets: string[];
+  /** Operator-given names, by address. Absent for wallets left unnamed. */
+  labels: Record<string, string>;
   maximumWallets: string;
   updatedAt: string;
 };
+
+export type WalletEntry = { wallet: string; label: string };
 
 export type WalletFlowExitLeg = {
   legNo: number;
@@ -421,7 +425,7 @@ export type Snapshot = {
   intervalMs: number;
 };
 
-const POLL_MS = 5000;
+const POLL_MS = 1000;
 
 const EMPTY: Snapshot = {
   status: null, build: null, config: null, adapter: null, executor: null,
@@ -466,18 +470,20 @@ export async function control(action: OperatorAction, strategy?: string): Promis
   throw new Error(error?.message ?? `operator request failed (${response.status})`);
 }
 
-async function configureWalletCohort(path: string, wallets: string[]): Promise<void> {
+async function configureWalletCohort(path: string, wallets: WalletEntry[]): Promise<void> {
   const response = await fetch(path, {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
-    body: JSON.stringify({ wallets }),
+    body: JSON.stringify({
+      wallets: wallets.map(({ wallet, label }) => label ? { wallet, label } : wallet),
+    }),
   });
   if (response.ok) return;
   const error = await response.json().catch(() => null) as { message?: string } | null;
   throw new Error(error?.message ?? `wallet update failed (${response.status})`);
 }
 
-export const configureSolanaWallets = (wallets: string[]) =>
+export const configureSolanaWallets = (wallets: WalletEntry[]) =>
   configureWalletCohort("/operator/solana-wallets/config", wallets);
 
 export async function resetDatabase(approval: string): Promise<void> {

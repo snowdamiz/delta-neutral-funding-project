@@ -5,7 +5,7 @@ import type { Strategy } from "./catalog";
 import { familiesOf, narrow, netOf, strategyOf } from "./catalog";
 import { clock, fmt, toNumber } from "./fmt";
 import { health } from "./status";
-import { CatalogProvider, Key, Live, StrategyName, VerboseProvider } from "./ui";
+import { CatalogProvider, Key, StrategyName, VerboseProvider } from "./ui";
 import { Attribution } from "./sections/Attribution";
 import { Benchmark } from "./sections/Benchmark";
 import { Book } from "./sections/Book";
@@ -128,21 +128,21 @@ export default function App() {
               <button type="button" className="brand" onClick={() => go("")}>
                 Delta&#8209;Neutral <em>Funding</em>
               </button>
-              <span className={`pill p-${h.tone}`}>
-                <span className={`dot${h.tone === "ok" ? "" : " bad"}`} />
-                {h.word}
-              </span>
+              {/* Nothing here in the normal case. A poll clock and a "waiting"
+                  badge that is true almost always are noise beside the data
+                  they describe; the panels carry their own arrival state. Only
+                  a state worth acting on still shows. */}
+              {h.tone !== "ok" && (
+                <span className={`pill p-${h.tone}`}>
+                  <span className="dot bad" />
+                  {h.word}
+                </span>
+              )}
               {h.openAlerts > 0 && (
                 <span className={`pill p-${h.criticalAlerts > 0 ? "crit" : "warn"}`}>
                   {h.openAlerts} alert{h.openAlerts === 1 ? "" : "s"}
                 </span>
               )}
-              <Live
-                polling={snap.polling}
-                at={snap.polledAt}
-                reachable={snap.reachable}
-                everyMs={snap.intervalMs}
-              />
             </div>
 
             {/* The strategies are the navigation. They used to be reachable only

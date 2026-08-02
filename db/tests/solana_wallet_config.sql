@@ -48,6 +48,44 @@ BEGIN
     END IF;
   END;
 
+  -- A named wallet and a bare address may arrive in the same cohort, and the
+  -- name must never displace the address the observer reads.
+  result := apply_solana_wallet_config(
+    'solana-wallet-config-labelled',
+    'named the cohort',
+    repeat('d', 64),
+    '[
+      {"wallet": "11111111111111111111111111111111", "label": "Gasp (#1 monthly)"},
+      "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ"
+    ]'::jsonb
+  );
+  IF result->>'count' <> '2'
+     OR solana_wallet_config()->'wallets' <> '[
+          "11111111111111111111111111111111",
+          "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ"
+        ]'::jsonb
+     OR solana_wallet_config()->'labels'->>'11111111111111111111111111111111'
+        <> 'Gasp (#1 monthly)'
+     OR solana_wallet_config()->'labels' ? '4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ' THEN
+    RAISE EXCEPTION 'wallet labels were not stored beside their addresses: %',
+      solana_wallet_config();
+  END IF;
+
+  -- An unknown key is a typo, not configuration.
+  BEGIN
+    PERFORM apply_solana_wallet_config(
+      'solana-wallet-config-straykey',
+      'stray key',
+      repeat('e', 64),
+      '[{"wallet": "11111111111111111111111111111111", "nickname": "Gasp"}]'::jsonb
+    );
+    RAISE EXCEPTION 'an unrecognised wallet field was accepted';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'invalid Solana wallet cohort' THEN
+      RAISE;
+    END IF;
+  END;
+
   -- A cursor latches closed on the first capture gap and never reopens, so an
   -- unfollowed wallet must not leave one behind: re-following it would resume
   -- a gap it can never clear, and removing the wallet is the only remedy an
@@ -66,7 +104,7 @@ BEGIN
     repeat('c', 64),
     '[]'::jsonb
   );
-  IF result->>'version' <> '2'
+  IF result->>'version' <> '3'
      OR result->>'count' <> '0'
      OR jsonb_array_length(solana_wallet_config()->'wallets') <> 0 THEN
     RAISE EXCEPTION 'empty Solana cohort did not stop capture: %', result;

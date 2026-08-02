@@ -4,6 +4,7 @@ import {
   control,
   type Snapshot,
   type WalletCohort,
+  type WalletEntry,
   type WalletFlow as WalletFlowState,
   type WalletFlowPosition,
 } from "../api";
@@ -14,6 +15,16 @@ import {
 
 const shortMint = (mint: string) => `${mint.slice(0, 4)}…${mint.slice(-4)}`;
 const shortWallet = (wallet: string) => `${wallet.slice(0, 6)}…${wallet.slice(-4)}`;
+
+/**
+ * Whose trade was this. A cohort of base58 keys tells an operator nothing, so
+ * every wallet reads as the name it was followed under, falling back to the
+ * truncated address for wallets added before naming or since removed.
+ */
+function walletNamer(flow: WalletFlowState): (wallet: string) => string {
+  const labels = flow.followedWallets?.labels ?? {};
+  return (wallet) => labels[wallet] || shortWallet(wallet);
+}
 const SOLANA_WALLET = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 // A gap reason is a capture verdict, and two of them say something about the
@@ -42,18 +53,21 @@ function returnBps(position: WalletFlowPosition): number | null {
 }
 
 export function SolanaWalletConfig({ config }: { config: WalletCohort }) {
-  const [wallets, setWallets] = useState(config.wallets);
+  const [entries, setEntries] = useState<WalletEntry[]>(
+    config.wallets.map((wallet) => ({ wallet, label: config.labels?.[wallet] ?? "" })),
+  );
   const [value, setValue] = useState("");
+  const [name, setName] = useState("");
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const maximum = Number(config.maximumWallets) || 100;
 
-  const update = async (next: string[], success: string) => {
+  const update = async (next: WalletEntry[], success: string) => {
     setSaving(true);
     setStatus("");
     try {
       await configureSolanaWallets(next);
-      setWallets(next);
+      setEntries(next);
       setStatus(success);
       return true;
     } catch (error) {
@@ -67,55 +81,73 @@ export function SolanaWalletConfig({ config }: { config: WalletCohort }) {
   const add = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const wallet = value.trim();
+    const label = name.trim().slice(0, 40);
     if (!SOLANA_WALLET.test(wallet)) {
       setStatus("Enter a valid base58 Solana public key.");
       return;
     }
-    if (wallets.includes(wallet)) {
+    if (entries.some((entry) => entry.wallet === wallet)) {
       setStatus("That wallet is already followed.");
       return;
     }
-    if (wallets.length >= maximum) {
+    if (entries.length >= maximum) {
       setStatus(`At most ${maximum} wallets can be followed.`);
       return;
     }
-    if (await update([...wallets, wallet], `Now following ${shortWallet(wallet)}.`)) setValue("");
+    if (await update([...entries, { wallet, label }], `Now following ${label || shortWallet(wallet)}.`)) {
+      setValue("");
+      setName("");
+    }
   };
 
   return (
     <div className="wallet-config solana-wallet-config">
       <form className="solana-wallet-add" onSubmit={add}>
+        <label htmlFor="solana-wallet-name">Name</label>
+        <input
+          id="solana-wallet-name"
+          autoComplete="off"
+          disabled={saving || entries.length >= maximum}
+          maxLength={40}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Gasp (#1 monthly)"
+        />
         <label htmlFor="solana-wallet">Solana public key</label>
         <input
           id="solana-wallet"
           aria-describedby="solana-wallet-help"
           autoComplete="off"
-          disabled={saving || wallets.length >= maximum}
+          disabled={saving || entries.length >= maximum}
           spellCheck={false}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="Base58 public key"
         />
-        <button type="submit" disabled={saving || wallets.length >= maximum}>
+        <button type="submit" disabled={saving || entries.length >= maximum}>
           {saving && <Spin on />}
           Follow wallet
         </button>
         <span id="solana-wallet-help">
-          Changes are durable and reach the observer on its next poll.
+          The name is yours — it labels this wallet everywhere in the console. Changes
+          are durable and reach the observer on its next poll.
         </span>
       </form>
-      {wallets.length > 0 ? (
+      {entries.length > 0 ? (
         <ul className="solana-wallet-list" aria-label="Followed Solana wallets">
-          {wallets.map((wallet) => (
+          {entries.map(({ wallet, label }) => (
             <li key={wallet}>
-              <code>{wallet}</code>
+              <span className="wallet-id">
+                {label && <strong>{label}</strong>}
+                <code>{wallet}</code>
+              </span>
               <button
                 type="button"
-                aria-label={`Remove ${wallet}`}
+                aria-label={`Remove ${label || wallet}`}
                 disabled={saving}
                 onClick={() => void update(
-                  wallets.filter((candidate) => candidate !== wallet),
-                  `Stopped following ${shortWallet(wallet)}.`,
+                  entries.filter((entry) => entry.wallet !== wallet),
+                  `Stopped following ${label || shortWallet(wallet)}.`,
                 )}
               >
                 Remove
@@ -127,7 +159,7 @@ export function SolanaWalletConfig({ config }: { config: WalletCohort }) {
         <span className="solana-wallet-empty">No Solana wallets followed.</span>
       )}
       <span className="solana-wallet-status" role="status" aria-live="polite">
-        {saving ? "Updating the live cohort…" : status || `${wallets.length}/${maximum} followed`}
+        {saving ? "Updating the live cohort…" : status || `${entries.length}/${maximum} followed`}
       </span>
     </div>
   );
@@ -263,6 +295,7 @@ function Stream({ flow }: { flow: WalletFlowState }) {
 
 function Positions({ flow }: { flow: WalletFlowState }) {
   const arrivals = useArrivals(flow.positions, (position) => `${position.id}:${position.status}`);
+  const nameOf = walletNamer(flow);
   const open = flow.positions.filter((p) => p.status === "open");
   const closed = flow.positions.filter((p) => p.status === "closed").slice(0, 12);
   const maxSlots = Number(flow.brokerConfig?.values.maxOpenPositions ?? 0) || 0;
@@ -281,6 +314,7 @@ function Positions({ flow }: { flow: WalletFlowState }) {
             <thead>
               <tr>
                 <th scope="col">Mint</th>
+                <th scope="col">Trader</th>
                 <th scope="col">State</th>
                 <th scope="col" className="n">Age</th>
                 <th scope="col" className="n">Entry cost</th>
@@ -301,7 +335,8 @@ function Positions({ flow }: { flow: WalletFlowState }) {
                     key={position.id}
                     className={arrivals.fresh.has(`${position.id}:${position.status}`) ? "arrived" : undefined}
                   >
-                    <td><code>{shortMint(position.mint)}</code></td>
+                    <td><code title={position.mint}>{shortMint(position.mint)}</code></td>
+                    <td title={position.wallet}>{nameOf(position.wallet)}</td>
                     <td>
                       <Chip tone={position.status === "open" ? (position.recouped ? "ok" : "warn") : "mute"}>
                         {position.status === "open"
@@ -351,6 +386,17 @@ const tokens = (atoms: string, decimals: number): string =>
 function Candidates({ flow }: { flow: WalletFlowState }) {
   const [open, setOpen] = useState<string | null>(null);
   const arrivals = useArrivals(flow.candidates, (candidate) => candidate.snapshotEventId);
+  const nameOf = walletNamer(flow);
+  // Grouped by the wallet whose buy triggered the snapshot: the question is
+  // always "what is this trader doing", never "what happened chronologically
+  // across six unrelated traders". Insertion order keeps the most recently
+  // active trader first, since candidates arrive newest-first.
+  const groups = new Map<string, typeof flow.candidates>();
+  for (const candidate of flow.candidates) {
+    const group = groups.get(candidate.wallet);
+    if (group) group.push(candidate);
+    else groups.set(candidate.wallet, [candidate]);
+  }
   const gates = flow.strategyConfig?.values ?? {};
   const limit = (name: string) => Number(gates[name] ?? 0);
   const positionUsd = Number(gates.positionUsdMicros ?? 0);
@@ -387,7 +433,19 @@ function Candidates({ flow }: { flow: WalletFlowState }) {
               </tr>
             </thead>
             <tbody>
-              {flow.candidates.map((candidate) => {
+              {[...groups.entries()].flatMap(([wallet, candidates]) => [
+                <tr key={`group:${wallet}`} className="group-row">
+                  <td colSpan={11}>
+                    <strong>{nameOf(wallet)}</strong>
+                    <code title={wallet}>{shortWallet(wallet)}</code>
+                    <span className="micro">
+                      {candidates.length} scored
+                      {candidates.filter((c) => c.decision === "ENTER").length > 0 &&
+                        ` · ${candidates.filter((c) => c.decision === "ENTER").length} entered`}
+                    </span>
+                  </td>
+                </tr>,
+                ...candidates.map((candidate) => {
                 const depthMultiple = positionUsd
                   ? Number(candidate.exitDepthUsdMicros) / positionUsd
                   : 0;
@@ -447,7 +505,11 @@ function Candidates({ flow }: { flow: WalletFlowState }) {
                       <td colSpan={11}>
                         <dl className="facts">
                           <dt>Mint</dt><dd><code>{candidate.mint}</code></dd>
-                          <dt>Bought by</dt><dd><code>{candidate.wallet}</code></dd>
+                          <dt>Bought by</dt>
+                          <dd>
+                            <strong>{nameOf(candidate.wallet)}</strong>{" "}
+                            <code>{candidate.wallet}</code>
+                          </dd>
                           <dt>Token program</dt>
                           <dd>
                             {candidate.tokenProgram} · {candidate.decimals} decimals ·{" "}
@@ -501,7 +563,8 @@ function Candidates({ flow }: { flow: WalletFlowState }) {
                     </tr>
                   ),
                 ];
-              })}
+                }),
+              ])}
             </tbody>
           </table>
         </div>
@@ -511,7 +574,10 @@ function Candidates({ flow }: { flow: WalletFlowState }) {
 }
 
 function Discovery({ flow }: { flow: WalletFlowState }) {
-  const cohort = flow.followedWallets?.wallets ?? [];
+  const config = flow.followedWallets;
+  const cohort: WalletEntry[] = (config?.wallets ?? []).map((wallet) => ({
+    wallet, label: config?.labels?.[wallet] ?? "",
+  }));
   const [busy, setBusy] = useState("");
   const [status, setStatus] = useState("");
 
@@ -519,7 +585,8 @@ function Discovery({ flow }: { flow: WalletFlowState }) {
     setBusy(wallet);
     setStatus("");
     try {
-      await configureSolanaWallets([...cohort, wallet]);
+      // Nominated by evidence, so it is named for the run that earned it.
+      await configureSolanaWallets([...cohort, { wallet, label: "" }]);
       setStatus(`Now following ${shortWallet(wallet)}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Follow failed.");
@@ -691,7 +758,7 @@ export function WalletFlow({ snap, strategy }: { snap: Snapshot; strategy: strin
   const account = flow.paperAccount;
   const gaps = flow.cursors.filter((cursor) => !cursor.captureComplete);
   const cohort = flow.followedWallets ?? {
-    version: "0", wallets: [], maximumWallets: "100", updatedAt: "",
+    version: "0", wallets: [], labels: {}, maximumWallets: "100", updatedAt: "",
   };
 
   return (

@@ -93,20 +93,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     self.respond(b'{"error":"request_too_large"}', 413, "application/json")
                     return
                 incoming = json.loads(self.rfile.read(length))
-                wallets = incoming["wallets"]
+                submitted = incoming["wallets"]
                 if (
                     set(incoming) != {"wallets"}
-                    or not isinstance(wallets, list)
-                    or len(wallets) > 100
-                    or any(not isinstance(wallet, str) for wallet in wallets)
+                    or not isinstance(submitted, list)
+                    or len(submitted) > 100
                 ):
                     raise ValueError
-                wallets = [wallet.strip() for wallet in wallets]
+                # A wallet is an address, optionally named. Each entry is
+                # rebuilt field by field so only an address and a bounded,
+                # single-line label can reach the collector.
+                wallets = []
+                for entry in submitted:
+                    if isinstance(entry, str):
+                        wallets.append((entry.strip(), ""))
+                        continue
+                    if not isinstance(entry, dict) or set(entry) - {"wallet", "label"}:
+                        raise ValueError
+                    wallet, label = entry.get("wallet"), entry.get("label", "")
+                    if not isinstance(wallet, str) or not isinstance(label, str):
+                        raise ValueError
+                    wallets.append((wallet.strip(), label.strip()))
                 if (
-                    any(not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", wallet) for wallet in wallets)
-                    or len(set(wallets)) != len(wallets)
+                    any(
+                        not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", wallet)
+                        or len(label) > 40
+                        or re.search(r"[\n\r\t]", label)
+                        for wallet, label in wallets
+                    )
+                    or len({wallet for wallet, _ in wallets}) != len(wallets)
                 ):
                     raise ValueError
+                wallets = [
+                    {"wallet": wallet, "label": label} if label else wallet
+                    for wallet, label in wallets
+                ]
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 self.respond(b'{"error":"invalid_wallet_config"}', 400, "application/json")
                 return
