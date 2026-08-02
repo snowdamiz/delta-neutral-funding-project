@@ -249,8 +249,12 @@ function Stream({ flow }: { flow: WalletFlowState }) {
   const gapped = flow.cursors.filter((cursor) => !cursor.captureComplete).length;
   const receivedMs = Math.max(arrivals.lastAtMs, 0);
   const receiving = receivedMs > 0 && now - receivedMs < 30_000;
+  // An hour, not five minutes. A five-minute window read ~25 while the monitor
+  // was re-quoting rejected candidates in a loop; with only genuine candidates
+  // scored it reads 0 almost always, which looks like a stall and is not one.
+  // The "Decision … ago" row above is what proves liveness; this is throughput.
   const recentDecisions = flow.actions.filter(
-    (action) => now - ms(action.processedAtMs) < 300_000,
+    (action) => now - ms(action.processedAtMs) < 3_600_000,
   ).length;
 
   return (
@@ -279,7 +283,7 @@ function Stream({ flow }: { flow: WalletFlowState }) {
           <Since at={lastCaptureMs} verb="" freshMs={120_000} />
         </div>
         <div className="stream-item">
-          <span className="lbl">Last 5 min</span>
+          <span className="lbl">Last hour</span>
           <span className="stream-count">
             {recentDecisions} decision{recentDecisions === 1 ? "" : "s"}
           </span>

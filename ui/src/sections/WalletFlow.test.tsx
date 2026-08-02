@@ -196,6 +196,10 @@ describe("wallet flow", () => {
     // Nothing has arrived on a first read, so the strip must not claim it has.
     expect(html).toContain("idle");
     expect(html).toContain("1 candidate");
+    // Throughput is counted over an hour: genuine candidates arrive a few per
+    // hour, so a five-minute window read zero and looked like a stall.
+    expect(html).toContain("Last hour");
+    expect(html).not.toContain("Last 5 min");
   });
 
   it("shows the evidence behind each candidate and marks only the breached gate", () => {
