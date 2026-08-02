@@ -328,6 +328,18 @@ BEGIN
     RAISE EXCEPTION 'snapshot retry duplicated a paper action';
   END IF;
 
+  -- The monitor set is what gets re-quoted, so what leaves it matters as much
+  -- as what enters. Candidate 1 has just been closed by the flat time stop and
+  -- was WATCHed earlier in this test; selecting it on that stale WATCH row is
+  -- what kept 65 mints being re-quoted every few seconds for a day.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(solana_wallet_flow_read_model()->'openMints') o
+    WHERE o->'acquisition'->>'eventId' = 'acq-1'
+  ) THEN
+    RAISE EXCEPTION 'a closed, last-rejected candidate stayed in the monitor set: %',
+      solana_wallet_flow_read_model()->'openMints';
+  END IF;
+
   -- Account totals across every scenario.
   IF solana_wallet_flow_read_model()->'paperAccount'->>'cashBalanceUsdMicros'
       <> (1000000000 + 98979999 - 51040000 - 1540000 - 100520000

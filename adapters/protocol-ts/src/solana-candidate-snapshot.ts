@@ -348,6 +348,14 @@ function migrationFrom(routeLabels: string[]): SnapshotPayload["migrationStatus"
       : "not_applicable";
 }
 
+/**
+ * The quote could not be obtained — a rate limit, a timeout, a bad gateway.
+ * This says nothing about the token, and must never be recorded as though it
+ * did: 13,451 candidates were written off as untradeable by a bare `catch`
+ * that could not tell "the venue refuses this pair" from "we were throttled".
+ */
+export class QuoteUnavailableError extends Error {}
+
 export function createJupiterQuote(
   endpoint: string,
   apiKey: string,
@@ -360,11 +368,27 @@ export function createJupiterQuote(
     url.searchParams.set("amount", amount.toString());
     url.searchParams.set("swapMode", "ExactIn");
     url.searchParams.set("slippageBps", "1000");
-    const response = await fetch(url, {
-      headers: apiKey ? { "x-api-key": apiKey } : {},
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!response.ok) throw new Error(`Jupiter quote returned ${response.status}`);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: apiKey ? { "x-api-key": apiKey } : {},
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      // A timeout or a dropped connection is ours, not the token's.
+      throw new QuoteUnavailableError(
+        `Jupiter quote unreachable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!response.ok) {
+      // 400 carries the venue's verdict on the pair — `TOKEN_NOT_TRADABLE` and
+      // its siblings are answers. Every other status is a failure to ask:
+      // 429 above all, which this strategy provokes by re-quoting.
+      if (response.status !== 400 && response.status !== 404) {
+        throw new QuoteUnavailableError(`Jupiter quote returned ${response.status}`);
+      }
+      throw new Error(`Jupiter quote returned ${response.status}`);
+    }
     const body = object(await response.json(), "Jupiter quote");
     if (body.inputMint !== inputMint || body.outputMint !== outputMint) {
       throw new Error("Jupiter quote identity mismatch");
@@ -631,8 +655,14 @@ export async function snapshotSolanaCandidate(input: {
       payload.transferFeeBuyAtoms = entryLadder.buyFee.toString();
       payload.transferFeeSellAtoms =
         transferFee(entryLadder.sellable, fee.bps, fee.maximum).toString();
-    } catch {
-      payload.rejectReason = "REJECT_NO_ROUND_TRIP";
+    } catch (error) {
+      // "We could not get a quote" and "this token cannot be round-tripped"
+      // are different claims. Only the second is evidence about the mint, and
+      // recording the first as the second wrote off thousands of candidates
+      // that quote perfectly well the moment the throttling stops.
+      payload.rejectReason = error instanceof QuoteUnavailableError
+        ? "SNAPSHOT_SOURCE_FAILED"
+        : "REJECT_NO_ROUND_TRIP";
       if (positionSell) {
         payload.quoteContextSlot = positionSell.contextSlot.toString();
         payload.routeLabels = [...new Set(positionSell.routeLabels)];

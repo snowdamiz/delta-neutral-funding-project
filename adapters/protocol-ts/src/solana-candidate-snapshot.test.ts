@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  QuoteUnavailableError,
+  createJupiterQuote,
   snapshotSolanaCandidate,
   type JupiterQuote,
 } from "./solana-candidate-snapshot.js";
@@ -152,6 +154,57 @@ test("persists a no-round-trip reject instead of throwing", async () => {
   assert.equal(event.payload.snapshotStatus, "rejected");
   assert.equal(event.payload.rejectReason, "REJECT_NO_ROUND_TRIP");
   assert.equal(event.payload.buyInputUsdMicros, "10000000");
+});
+
+test("a throttled quote is a source failure, not a verdict on the token", async () => {
+  const event = await snapshotSolanaCandidate({
+    acquisition,
+    observedAtMs: 201_000n,
+    sessionId: "test",
+    rpc: rpc(),
+    quote: async () => { throw new QuoteUnavailableError("Jupiter quote returned 429"); },
+    cohortWallets: [wallet],
+    sanctionedAddresses: new Set(),
+    positionUsdMicros: 10_000_000n,
+    exitDepthMultiple: 10n,
+  });
+  // Recording this as REJECT_NO_ROUND_TRIP wrote off 13,451 candidates that
+  // were routable the whole time.
+  assert.equal(event.payload.rejectReason, "SNAPSHOT_SOURCE_FAILED");
+  assert.notEqual(event.payload.rejectReason, "REJECT_NO_ROUND_TRIP");
+});
+
+test("classifies Jupiter responses into answers and failures", async () => {
+  const statuses = new Map<number, string>();
+  for (const status of [400, 404, 429, 500, 502, 503]) {
+    const quote = createJupiterQuote("https://jupiter.invalid", "", 1000);
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ error: "nope", errorCode: "TOKEN_NOT_TRADABLE" }),
+      { status },
+    )) as typeof fetch;
+    try {
+      await quote("So11111111111111111111111111111111111111112", "mint", 1n);
+      statuses.set(status, "resolved");
+    } catch (error) {
+      statuses.set(status, error instanceof QuoteUnavailableError ? "unavailable" : "verdict");
+    }
+  }
+  // 400/404 are the venue answering about the pair; the rest are our problem.
+  assert.equal(statuses.get(400), "verdict");
+  assert.equal(statuses.get(404), "verdict");
+  assert.equal(statuses.get(429), "unavailable");
+  assert.equal(statuses.get(500), "unavailable");
+  assert.equal(statuses.get(502), "unavailable");
+  assert.equal(statuses.get(503), "unavailable");
+});
+
+test("a dropped connection is a source failure", async () => {
+  const quote = createJupiterQuote("https://jupiter.invalid", "", 1000);
+  globalThis.fetch = (async () => { throw new TypeError("fetch failed"); }) as typeof fetch;
+  await assert.rejects(
+    () => quote("So11111111111111111111111111111111111111112", "mint", 1n),
+    QuoteUnavailableError,
+  );
 });
 
 test("applies the active Token-2022 transfer fee in both directions", async () => {
