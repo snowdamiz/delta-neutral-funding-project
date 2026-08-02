@@ -330,6 +330,30 @@ tbody tr:hover { background:#ffffff05 }
 td.n, th.n { text-align:right }
 td strong { color:var(--ink1); font-weight:500 }
 
+/* ─── tuning presets ─────────────────────────────────────────────────────
+   A named experiment states its measured effect on the cohort's own
+   candidates; the ? carries the reasoning so the button is never a guess. */
+.presets { display:flex; flex-direction:column; gap:.6rem; padding:1.15rem 1.15rem 0 }
+.preset-row { display:flex; flex-wrap:wrap; gap:.5rem }
+.preset { display:inline-flex; align-items:stretch; border:1px solid var(--line-hi); border-radius:3px; overflow:hidden; background:var(--s1) }
+.preset > button:first-child {
+  display:flex; flex-direction:column; align-items:flex-start; gap:.15rem; cursor:pointer;
+  padding:.5rem .75rem; border:0; background:none; color:var(--ink1);
+  font:500 12px var(--sans); text-align:left;
+}
+.preset > button:first-child em { font-style:normal; font-family:var(--mono); font-size:10px; letter-spacing:.06em; color:var(--ink3) }
+.preset > button:first-child:hover:not(:disabled) { background:#2bc4a012; color:var(--ok) }
+.preset > button:disabled { opacity:.45; cursor:not-allowed }
+.preset .why {
+  cursor:pointer; border:0; border-left:1px solid var(--line-hi); background:var(--s2);
+  color:var(--ink3); font:500 11px var(--mono); padding:0 .6rem;
+}
+.preset .why:hover { color:var(--ok) }
+.preset .why[aria-expanded="true"] { background:var(--ok); color:var(--s0) }
+.preset button:focus-visible { outline:2px solid var(--ok); outline-offset:-2px }
+.preset-detail { font-size:12.5px; line-height:1.6; color:var(--ink2); max-width:78ch; border-left:2px solid var(--line-hi); padding-left:.9rem }
+.preset-reach { font-family:var(--mono); font-size:11px; line-height:1.6; color:var(--warn); max-width:78ch }
+
 /* ─── tuning ─────────────────────────────────────────────────────────────
    The slider's track IS the guardrail: its ends are this adjustment's limits,
    so the control cannot express a change the database would refuse. */

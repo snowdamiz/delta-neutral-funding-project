@@ -313,6 +313,37 @@ describe("wallet flow", () => {
     expect(html).toContain("solana-wallet-flow-v2");
   });
 
+  it("offers named experiments that carry their own reasoning", () => {
+    const html = renderToStaticMarkup(
+      <WalletFlow snap={{ walletFlow: FLOW } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,
+    );
+    expect(html).toContain("Experiments");
+    expect(html).toContain("As shipped");
+    expect(html).toContain("Unblock the two real gates");
+    expect(html).toContain("Wide open");
+    expect(html).toContain("Half size");
+    // Each button states its measured effect on this cohort's own candidates.
+    expect(html).toContain("1 of 26 would enter");
+    expect(html).toContain("about 5 of 26 — expect losses");
+    // The explanation is behind a ? rather than shouted on the button.
+    expect(html).toContain('aria-label="What As shipped does"');
+    expect(html).not.toContain("Use this to get back to a known floor");
+  });
+
+  it("keeps presets inside the guardrail rather than arguing with it", () => {
+    // The panel's own clamp: a preset is a target, and the slider bounds are
+    // this adjustment's limit. "Wide open" asks 600 of a knob at 200.
+    const knob = FLOW.tuning!.knobs[0]!;
+    expect(knob.knob).toBe("maxEntryImpactBps");
+    expect(Number(knob.allowedMaximum)).toBe(300);
+    const landed = Math.max(
+      Number(knob.allowedMinimum),
+      Math.min(Number(knob.allowedMaximum), 600),
+    );
+    expect(landed).toBe(300);
+    expect(landed).toBeLessThan(600);
+  });
+
   it("refuses to offer tuning while it is locked", () => {
     const locked = {
       ...FLOW,

@@ -575,6 +575,121 @@ function Candidates({ flow }: { flow: WalletFlowState }) {
   );
 }
 
+/**
+ * Named experiments, each stating what it did to the candidates this strategy
+ * has actually seen. The counts are measured over the 26 mints a followed
+ * wallet bought that returned a real quote, scored at each mint's best
+ * observation — they are what this cohort offered, not a forecast.
+ *
+ * A preset is a target, not a jump: the guardrail still clamps every knob to
+ * what it may move this adjustment, so an ambitious preset lands over several
+ * applications and says so.
+ */
+type Preset = {
+  id: string;
+  label: string;
+  summary: string;
+  detail: string;
+  targets: Record<string, number>;
+};
+
+const PRESETS: Preset[] = [
+  {
+    id: "shipped",
+    label: "As shipped",
+    summary: "1 of 26 would enter",
+    detail:
+      "The frozen v2 settings: $100 positions, 2% entry impact, 10x exit depth, "
+      + "10 organic buyers, 40% top-ten concentration. Measured against the mints "
+      + "this cohort actually bought, exactly one clears every gate — which is why "
+      + "nothing has traded. Use this to get back to a known floor after an "
+      + "experiment.",
+    targets: {
+      positionUsdMicros: 100000000, maxEntryImpactBps: 200, maxRoundTripLossBps: 800,
+      minimumExitDepthMultiple: 10, minimumOrganicBuyerCount: 10,
+      maxTopTenHolderConcentrationBps: 4000,
+    },
+  },
+  {
+    id: "unblock",
+    label: "Unblock the two real gates",
+    summary: "about 4 of 26",
+    detail:
+      "Concentration and exit depth are doing nearly all the rejecting: only 2 of "
+      + "26 mints are under 40% top-ten concentration and only 3 have $1,000 "
+      + "exitable. This raises concentration to 65% and drops depth to 5x, leaving "
+      + "impact and round-trip where they are. The narrowest change that produces "
+      + "any flow at all.",
+    targets: {
+      maxTopTenHolderConcentrationBps: 6500, minimumExitDepthMultiple: 5,
+      minimumOrganicBuyerCount: 5,
+    },
+  },
+  {
+    id: "wide",
+    label: "Wide open",
+    summary: "about 5 of 26 — expect losses",
+    detail:
+      "Every economic gate at or near its loosest: 6% entry impact, 15% round-trip, "
+      + "3x depth, 3 organic buyers, 70% concentration. This admits tokens where ten "
+      + "wallets hold 70% of supply and getting in and out costs 6%. It exists to "
+      + "make the exit engine run so you can watch the recoup ladder, trailing stop "
+      + "and time stops fire — not because these are good trades.",
+    targets: {
+      maxEntryImpactBps: 600, maxRoundTripLossBps: 1500, minimumExitDepthMultiple: 3,
+      minimumOrganicBuyerCount: 3, maxTopTenHolderConcentrationBps: 7000,
+    },
+  },
+  {
+    id: "smaller",
+    label: "Half size",
+    summary: "the one nobody can predict",
+    detail:
+      "Drops the position to $50. Every impact figure on record was quoted at "
+      + "$100, so what this does cannot be computed from stored data — pushing half "
+      + "as much through the pool should lower measured impact, and the exit-depth "
+      + "requirement halves with it. The only way to find out is to run it and read "
+      + "the next batch of snapshots. Paper is where that is free.",
+    targets: { positionUsdMicros: 50000000 },
+  },
+  {
+    id: "bank",
+    label: "Bank early",
+    summary: "recoup at 1.5x, give back 20%",
+    detail:
+      "Sells enough to recover the entry cost at 1.5x instead of 2x, and trails the "
+      + "remainder 20% below its high-water mark instead of 30%. On thin tokens, "
+      + "getting your cost off the table sooner is usually worth more than the extra "
+      + "ride. Compare realised P&L per trade against 'Ride longer'.",
+    targets: { takeProfitMultipleBps: 15000, trailingStopBps: 2000 },
+  },
+  {
+    id: "ride",
+    label: "Ride longer",
+    summary: "recoup at 3x, give back 45%",
+    detail:
+      "The opposite bet: recoup later and tolerate a deeper drawdown from the peak, "
+      + "so a genuine runner is still held when it runs. Costs more on the many "
+      + "candidates that never run. Watch peak return against where you actually "
+      + "exited to see which side of this you are on.",
+    targets: { takeProfitMultipleBps: 30000, trailingStopBps: 4500 },
+  },
+  {
+    id: "samples",
+    label: "More samples",
+    summary: "5 concurrent positions",
+    detail:
+      "Raises the slot cap from 3 to 5. Nothing about which candidates qualify "
+      + "changes — you simply hold more at once, so a day produces more completed "
+      + "trades to judge. $1,000 of paper capital with $300 reserved funds seven "
+      + "$100 slots, so this stays inside the account.",
+    targets: { maxOpenPositions: 5 },
+  },
+];
+
+const clamp = (value: number, low: number, high: number) =>
+  Math.max(low, Math.min(high, value));
+
 /** A knob's value in the unit an operator reads it in. */
 function knobText(knob: TuningKnob, raw: string): string {
   const value = Number(raw);
@@ -594,6 +709,8 @@ function knobText(knob: TuningKnob, raw: string): string {
 function Tuning({ flow }: { flow: WalletFlowState }) {
   const tuning = flow.tuning;
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [explain, setExplain] = useState<string | null>(null);
+  const [reach, setReach] = useState("");
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   if (!tuning) return null;
@@ -603,12 +720,43 @@ function Tuning({ flow }: { flow: WalletFlowState }) {
     ([knob, value]) => value !== tuning.knobs.find((k) => k.knob === knob)?.value,
   );
 
+  /**
+   * Stage a preset. Each knob lands as far toward its target as this
+   * adjustment permits, so the guardrail is never argued with — and what it
+   * held back is said out loud rather than silently dropped.
+   */
+  const stage = (preset: Preset) => {
+    const next: Record<string, string> = {};
+    const short: string[] = [];
+    const settling: string[] = [];
+    for (const knob of tuning.knobs) {
+      const target = preset.targets[knob.knob];
+      if (target === undefined) continue;
+      if (Number(knob.readyInMs) > 0) {
+        if (target !== Number(knob.value)) settling.push(knob.label);
+        continue;
+      }
+      const landed = clamp(target, Number(knob.allowedMinimum), Number(knob.allowedMaximum));
+      next[knob.knob] = String(landed);
+      if (landed !== target) short.push(knob.label);
+    }
+    setDraft(next);
+    setStatus("");
+    setReach([
+      short.length > 0
+        ? `${short.join(", ")} can only move part of the way — apply again after the cooldown to continue.`
+        : "",
+      settling.length > 0 ? `${settling.join(", ")} still settling and left alone.` : "",
+    ].filter(Boolean).join(" "));
+  };
+
   const apply = async () => {
     setSaving(true);
     setStatus("");
     try {
       await tuneStrategy(Object.fromEntries(pending));
       setDraft({});
+      setReach("");
       setStatus("Applied. The new configuration is frozen and live.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Tuning failed.");
@@ -631,6 +779,38 @@ function Tuning({ flow }: { flow: WalletFlowState }) {
           Tuning is unavailable while {locked}.
         </div>
       )}
+      <div className="presets">
+        <span className="lbl">Experiments</span>
+        <div className="preset-row">
+          {PRESETS.map((preset) => (
+            <span className="preset" key={preset.id}>
+              <button
+                type="button"
+                disabled={saving || Boolean(locked)}
+                onClick={() => stage(preset)}
+              >
+                {preset.label}
+                <em>{preset.summary}</em>
+              </button>
+              <button
+                type="button"
+                className="why"
+                aria-expanded={explain === preset.id}
+                aria-label={`What ${preset.label} does`}
+                onClick={() => setExplain(explain === preset.id ? null : preset.id)}
+              >
+                ?
+              </button>
+            </span>
+          ))}
+        </div>
+        {explain && (
+          <p className="preset-detail">
+            {PRESETS.find((preset) => preset.id === explain)?.detail}
+          </p>
+        )}
+        {reach && <p className="preset-reach">{reach}</p>}
+      </div>
       <div className="tune-grid">
         {tuning.knobs.map((knob) => {
           const value = draft[knob.knob] ?? knob.value;
