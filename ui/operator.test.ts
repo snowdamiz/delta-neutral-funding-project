@@ -85,6 +85,37 @@ describe("operator proxy request", () => {
     }
   });
 
+  it("signs tuning changes and refuses anything that is not a knob", () => {
+    const request = operatorRequest(
+      "/operator/solana-wallets/tuning",
+      "operator-secret",
+      "tune-1",
+      JSON.stringify({ changes: { maxEntryImpactBps: "300" } }),
+    );
+    expect(JSON.parse(request?.body ?? "{}")).toEqual({
+      reason: "strategy tuned from local operator console",
+      changes: { maxEntryImpactBps: "300" },
+    });
+    // Forwarded to the collector's own path, not the console's.
+    expect(request?.forwardPath).toBe("/v1/solana-wallet-flow/tuning");
+    expect(request?.headers["x-operator-signature"]).toBe(
+      signature("tune-1", request?.body ?? ""),
+    );
+    for (const body of [
+      '{"changes":{}}',                                  // nothing to apply
+      '{"changes":{"maxEntryImpactBps":300}}',           // values are strings
+      '{"changes":{"maxEntryImpactBps":"3.5"}}',         // whole numbers only
+      '{"changes":{"maxEntryImpactBps":"-1"}}',          // no negatives
+      '{"changes":{"drop table":"1"}}',                  // not a knob name
+      '{"changes":[["maxEntryImpactBps","300"]]}',       // not an object
+      '{"changes":{"a":"1"},"reason":"mine"}',           // the proxy owns the reason
+    ]) {
+      expect(operatorRequest(
+        "/operator/solana-wallets/tuning", "operator-secret", "tune-bad", body,
+      )).toBeNull();
+    }
+  });
+
   it("signs a case-sensitive Solana wallet cohort", () => {
     const wallet = "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ";
     const request = operatorRequest(

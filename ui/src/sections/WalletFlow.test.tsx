@@ -124,6 +124,46 @@ const FLOW: WalletFlowState = {
     updatedAt: "2026-08-01T12:00:00Z",
   },
   validation: null,
+  tuning: {
+    knobs: [{
+      knob: "maxEntryImpactBps",
+      scope: "strategy",
+      label: "Maximum entry impact",
+      helper: "How far the quoted buy may move the price before a candidate is refused.",
+      unit: "bps",
+      value: "200",
+      minimum: "50",
+      maximum: "600",
+      maxChangeBps: 5000,
+      raisingLoosens: true,
+      allowedMinimum: "100",
+      allowedMaximum: "300",
+      readyInMs: "0",
+    }, {
+      knob: "positionUsdMicros",
+      scope: "strategy",
+      label: "Position size",
+      helper: "What one entry commits.",
+      unit: "usdMicros",
+      value: "100000000",
+      minimum: "25000000",
+      maximum: "500000000",
+      maxChangeBps: 5000,
+      raisingLoosens: true,
+      allowedMinimum: "50000000",
+      allowedMaximum: "150000000",
+      readyInMs: "600000",
+    }],
+    history: [{
+      knob: "maxEntryImpactBps",
+      previous: "150",
+      next: "200",
+      configId: "solana-wallet-flow-v2",
+      reason: "widened after five impact rejections",
+      changedAtMs: "1785020000000",
+    }],
+    lockedReason: null,
+  },
   discovery: [{
     wallet: "D1scWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1",
     runnerCount: 2,
@@ -254,6 +294,34 @@ describe("wallet flow", () => {
     expect(html).toContain("Pain (#2 monthly)");
     expect(html).toContain("Remove");
     expect(html).toContain("1/100 followed");
+  });
+
+  it("offers each knob only inside the window this adjustment allows", () => {
+    const html = renderToStaticMarkup(
+      <WalletFlow snap={{ walletFlow: FLOW } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,
+    );
+    expect(html).toContain("Tuning");
+    // The slider's ends are the guardrail, not the knob's absolute bounds.
+    expect(html).toContain('min="100"');
+    expect(html).toContain('max="300"');
+    expect(html).toContain("this adjustment: 1.00% – 3.00%");
+    expect(html).toContain("hard limits: 0.50% – 6.00%");
+    // A knob inside its cooldown cannot be moved at all.
+    expect(html).toContain("settling");
+    expect(html).toContain("disabled");
+    // The audit trail names the config each change produced.
+    expect(html).toContain("solana-wallet-flow-v2");
+  });
+
+  it("refuses to offer tuning while it is locked", () => {
+    const locked = {
+      ...FLOW,
+      tuning: { ...FLOW.tuning!, lockedReason: "live trading is armed" },
+    };
+    const html = renderToStaticMarkup(
+      <WalletFlow snap={{ walletFlow: locked } as unknown as Snapshot} strategy="solana_wallet_flow_quant" />,
+    );
+    expect(html).toContain("Tuning is unavailable while live trading is armed");
   });
 
   it("groups candidates under the trader whose buy triggered them", () => {

@@ -330,6 +330,31 @@ tbody tr:hover { background:#ffffff05 }
 td.n, th.n { text-align:right }
 td strong { color:var(--ink1); font-weight:500 }
 
+/* ─── tuning ─────────────────────────────────────────────────────────────
+   The slider's track IS the guardrail: its ends are this adjustment's limits,
+   so the control cannot express a change the database would refuse. */
+.tune-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:1.15rem; padding:1.15rem }
+.tune { display:flex; flex-direction:column; gap:.45rem; padding:.9rem; border:1px solid var(--line); border-radius:3px; background:var(--s1) }
+.tune-moved { border-color:#2bc4a055; background:#2bc4a008 }
+.tune-row { display:flex; align-items:center; gap:.9rem }
+.tune-row input[type=range] { flex:1; min-width:0; accent-color:var(--ok); cursor:pointer }
+.tune-row input[type=range]:disabled { cursor:not-allowed; opacity:.45 }
+.tune-value { font-family:var(--mono); font-size:14px; color:var(--ink1); font-variant-numeric:tabular-nums; text-align:right; min-width:5.5em; display:flex; flex-direction:column; align-items:flex-end }
+.tune-was { font-size:10px; color:var(--ink4); letter-spacing:.04em }
+.tune-meta { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem .9rem; font-family:var(--mono); font-size:10.5px; color:var(--ink3) }
+.tune-help { font-size:12px; line-height:1.55; color:var(--ink3); max-width:56ch }
+.tune-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.7rem; padding:0 1.15rem 1.15rem }
+.tune-actions button {
+  font:500 11.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer;
+  padding:.5rem .95rem; border:1px solid var(--line-hi); border-radius:2px;
+  background:var(--s2); color:var(--ink1);
+}
+.tune-actions button:hover:not(:disabled) { background:var(--ok); color:var(--s0); border-color:var(--ok) }
+.tune-actions button:disabled { opacity:.45; cursor:not-allowed }
+.tune-actions button:focus-visible { outline:2px solid var(--ok); outline-offset:2px }
+.tune-actions [role=status] { font-family:var(--mono); font-size:11.5px; color:var(--ink3) }
+.tune-locked { display:flex; align-items:center; gap:.7rem; padding:.9rem 1.15rem 0; font-size:12.5px; color:var(--ink2) }
+
 /* candidates read as "what is this trader doing", so each wallet owns a band */
 .group-row td { background:var(--s2); border-bottom:1px solid var(--line-hi); padding:.55rem 1rem }
 .group-row strong { color:var(--ink1); font-weight:500; margin-right:.7rem }

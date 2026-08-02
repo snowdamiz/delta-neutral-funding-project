@@ -92,7 +92,7 @@ end
 pub fn solana_wallet_flow_state(pool :: PoolHandle) -> String ! String do
   let rows = Pool.query(
     pool,
-    "SELECT (solana_wallet_flow_read_model() || jsonb_build_object('followedWallets', solana_wallet_config(), 'validation', solana_validation_latest_report(), 'discovery', solana_wallet_discovery(30000, 10, 50), 'live', solana_live_read_model()))::text AS body",
+    "SELECT (solana_wallet_flow_read_model() || jsonb_build_object('followedWallets', solana_wallet_config(), 'validation', solana_validation_latest_report(), 'discovery', solana_wallet_discovery(30000, 10, 50), 'live', solana_live_read_model(), 'tuning', solana_tuning_read_model()))::text AS body",
     []
   ) ?
   if List.length(rows) != 1 do
@@ -129,6 +129,25 @@ pub fn persist_solana_wallet_config(
   ) ?
   if List.length(rows) != 1 do
     Err("database returned invalid Solana wallet configuration result")
+  else
+    Ok(Map.get(List.head(rows), "body"))
+  end
+end
+
+pub fn persist_solana_tuning(
+  pool :: PoolHandle,
+  idempotency_key :: String,
+  reason :: String,
+  request_hash :: String,
+  changes_json :: String
+) -> String ! String do
+  let rows = Pool.query(
+    pool,
+    "SELECT apply_solana_tuning($1, $2, $3, $4::jsonb)::text AS body",
+    [idempotency_key, reason, request_hash, changes_json]
+  ) ?
+  if List.length(rows) != 1 do
+    Err("database returned invalid Solana tuning result")
   else
     Ok(Map.get(List.head(rows), "body"))
   end

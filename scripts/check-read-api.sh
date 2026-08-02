@@ -10,7 +10,7 @@ portfolios=$(curl -fsS "$base_url/v1/portfolios")
 test "$(printf '%s' "$build" | jq -r .configHash)" = \
   "$(printf '%s' "$config" | jq -r .configHash)"
 printf '%s' "$build" |
-  jq -e '.schemaVersion == 54' >/dev/null
+  jq -e '.schemaVersion == 57' >/dev/null
 printf '%s' "$config" |
   jq -e '.configHash | test("^[0-9a-f]{64}$")' >/dev/null
 
@@ -125,7 +125,7 @@ curl -fsS "$base_url/v1/risk-decisions?limit=4&offset=0" |
     )
   ' >/dev/null
 printf '%s' "$config" |
-  jq -e '.executionMode == "paper" and (.adapterMode == "synthetic" or .adapterMode == "authoritative") and .liveEnabled == false and .databaseSchemaVersion == 54 and .fundingScanIntervalMs == 3600000 and .sourceMaxBorrowAgeMs == 7200000 and .targetNotionalUsdMicros == "500000000" and .paperMaximumJitoSolAtoms == "10000000000" and .paperCollateralUsdMicros == "500000000" and .paperCostsUsdMicros == "200000" and .paperRiskHaircutUsdMicros == "50000" and .paperSlippageBps == 50 and .expectedHoldHours == 72 and .maximumBreakEvenHours == 48 and .reverseMinimumNegativeFundingPpm == 10 and .reverseMaximumBorrowUtilizationPpm == 950000 and .jitosolRewardHaircutPpm == 250000 and .maxSourceAgeMs == 60000 and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
+  jq -e '.executionMode == "paper" and (.adapterMode == "synthetic" or .adapterMode == "authoritative") and .liveEnabled == false and .databaseSchemaVersion == 57 and .fundingScanIntervalMs == 3600000 and .sourceMaxBorrowAgeMs == 7200000 and .targetNotionalUsdMicros == "500000000" and .paperMaximumJitoSolAtoms == "10000000000" and .paperCollateralUsdMicros == "500000000" and .paperCostsUsdMicros == "200000" and .paperRiskHaircutUsdMicros == "50000" and .paperSlippageBps == 50 and .expectedHoldHours == 72 and .maximumBreakEvenHours == 48 and .reverseMinimumNegativeFundingPpm == 10 and .reverseMaximumBorrowUtilizationPpm == 950000 and .jitosolRewardHaircutPpm == 250000 and .maxSourceAgeMs == 60000 and .minimumMarginRatioPpm == 1500000 and .minimumLiquidationDistanceBps == 1000 and .executionPolicyProfile == "shadow-v1" and .executionIntentTtlMs == 5000 and .maximumExecutionSlippageBps == 50' >/dev/null
 
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/v1/orders?limit=101")" = "400"
 printf 'read API checks passed\n'

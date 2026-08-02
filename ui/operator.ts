@@ -55,6 +55,35 @@ export function operatorRequest(
       return null;
     }
   }
+  // Tuning. The proxy fixes the reason and passes only whole-number values for
+  // named knobs; every bound, step limit and cooldown is enforced in the
+  // database, which is the only place that knows the value in force.
+  if (path === "/operator/solana-wallets/tuning") {
+    try {
+      const parsed = JSON.parse(requestBody) as { changes?: unknown };
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        Object.keys(parsed).length !== 1 ||
+        !parsed.changes ||
+        typeof parsed.changes !== "object" ||
+        Array.isArray(parsed.changes)
+      ) return null;
+      const entries = Object.entries(parsed.changes as Record<string, unknown>);
+      if (entries.length === 0 || entries.length > 20) return null;
+      if (entries.some(([knob, value]) =>
+        !/^[a-zA-Z][a-zA-Z0-9]{0,60}$/.test(knob)
+        || typeof value !== "string"
+        || !/^(0|[1-9][0-9]{0,18})$/.test(value))) return null;
+      return signed(JSON.stringify({
+        reason: "strategy tuned from local operator console",
+        changes: Object.fromEntries(entries),
+      }), secret, key, "/v1/solana-wallet-flow/tuning");
+    } catch {
+      return null;
+    }
+  }
+
   const strategyControl = path?.match(
     /^\/(?:operator|v1)\/strategies\/([a-z0-9_]{1,64})\/(start|stop)$/,
   );

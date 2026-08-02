@@ -5,7 +5,7 @@ from Packages.Metrics import render
 from Packages.ProtocolContracts import FundingObservation, FundingSettlement, MarketSnapshot, parse_funding_observation, parse_funding_settlement, parse_market_snapshot
 from Packages.ReadModels import adapter_status, fills, funding, funding_leaderboard, jitosol, latest_reconciliation, orders, pnl, portfolio, portfolios, positions, reverse_carry_leaderboard, risk_decisions, risk_events, strategies
 from Packages.RuntimeConfig import load_runtime_config, runtime_config_hash
-from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, claim_solana_live, parse_solana_wallet_flow_event, persist_solana_validation, persist_solana_wallet_config, persist_solana_wallet_flow_event, persist_strategy_execution_mode, record_solana_live, solana_followed_wallets, solana_wallet_flow_state
+from Packages.SolanaWalletFlow import SolanaWalletFlowEvent, claim_solana_live, parse_solana_wallet_flow_event, persist_solana_tuning, persist_solana_validation, persist_solana_wallet_config, persist_solana_wallet_flow_event, persist_strategy_execution_mode, record_solana_live, solana_followed_wallets, solana_wallet_flow_state
 from Packages.Storage import FundingPersistence, advance_direct_unstakes, list_opportunities, load_direct_unstake_funding_payments, persist_funding_observation, persist_funding_settlement, persist_market_snapshot, persist_operator_command, persist_paper_reset, persist_strategy_control, run_cross_asset_paper_scan, run_nav_discount_paper_cycle, run_reverse_carry_paper_scan
 from Runtime.Registry import get_pool, record_accepted, record_rejected
 
@@ -508,6 +508,70 @@ fn wallet_config_response(request :: Request) do
   end
 end
 
+fn tuning_changes(body :: String) -> String ! String do
+  let root = Json.parse(body) ?
+  let changes = (root |> Json.object_get("changes")) ?
+  Ok(changes |> Json.encode)
+end
+
+fn tuning_response(request :: Request) -> Response do
+  let body = Request.body(request)
+  let idempotency_key = request_header(request, "x-idempotency-key")
+  let action = "solana_tuning"
+  if operator_authenticated(request, idempotency_key, body) == false do
+    warn("operator_command_rejected", "{\"action\":\"${action}\",\"reason\":\"authentication\"}")
+    return error_response(401, "unauthorized", "invalid operator signature")
+  end
+  if Regex.is_match(~r/^[A-Za-z0-9:_-]{1,200}$/, idempotency_key) == false do
+    return error_response(400, "invalid_request", "invalid idempotency key")
+  end
+  case lease_held(get_pool()) do
+    Ok(true) -> ()
+    Ok(false) -> do
+      return error_response(409, "leader_required", "cannot tune without the writer lease")
+    end
+    Err(reason) -> do
+      return error_response(503, "lease_unavailable", reason)
+    end
+  end
+  if Json.is_string(body, "reason") == false do
+    return error_response(400, "invalid_request", "reason must be a JSON string")
+  end
+  let reason = String.trim(Json.get(body, "reason"))
+  if String.length(reason) == 0 || String.length(reason) > 500 do
+    return error_response(400, "invalid_request", "reason must contain between 1 and 500 characters")
+  end
+  case tuning_changes(body) do
+    Err(reason) -> error_response(400, "invalid_request", reason)
+    Ok(changes_json) -> do
+      let request_hash = "${idempotency_key}\n${body}" |> Crypto.sha256
+      case persist_solana_tuning(
+        get_pool(),
+        idempotency_key,
+        reason,
+        request_hash,
+        changes_json
+      ) do
+        Ok(result) -> do
+          info("operator_command_applied", "{\"action\":\"${action}\",\"idempotencyKey\":\"${idempotency_key}\"}")
+          HTTP.response(202, result)
+        end
+        Err(error) -> do
+          if String.contains(error, "idempotency key reused") do
+            error_response(409, "idempotency_conflict", "idempotency key reused for a different command")
+          else if String.contains(error, "cannot tune") do
+            error_response(409, "tuning_locked", error)
+          else if String.contains(error, "parameter") || String.contains(error, "invalid Solana tuning") || String.contains(error, "no parameter changed") do
+            error_response(400, "invalid_tuning", error)
+          else
+            error_response(500, "operator_command_failed", error)
+          end
+        end
+      end
+    end
+  end
+end
+
 fn positive_json_integer(body :: String, name :: String) -> Int ! String do
   if Json.is_string(body, name) == false do
     return Err("${name} must be a JSON string")
@@ -870,7 +934,7 @@ pub fn handle_build(_request :: Request) -> Response do
       codeCommit : code_commit(),
       meshCommit : mesh_commit(),
       configHash : config |> runtime_config_hash,
-      schemaVersion : 54
+      schemaVersion : 57
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)
   end
@@ -1039,6 +1103,10 @@ pub fn handle_solana_wallet_config_update(request :: Request) -> Response do
   wallet_config_response(request)
 end
 
+pub fn handle_solana_tuning(request :: Request) -> Response do
+  tuning_response(request)
+end
+
 
 
 pub fn handle_jitosol(_request :: Request) -> Response do
@@ -1106,7 +1174,7 @@ pub fn handle_config(_request :: Request) -> Response do
       directUnstakeCapitalDelayHaircutUsdMicros : config.direct_unstake_capital_delay_haircut_usd_micros,
       directUnstakeFinalHedgeCloseCostUsdMicros : config.direct_unstake_final_hedge_close_cost_usd_micros,
       protocolSchemaVersion : 1,
-      databaseSchemaVersion : 54,
+      databaseSchemaVersion : 57,
       liveEnabled : false
     })
     Err(reason) -> error_response(503, "config_unavailable", reason)

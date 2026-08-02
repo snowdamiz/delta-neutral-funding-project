@@ -68,6 +68,7 @@ export default defineConfig(({ mode }) => {
           });
           for (const [path, upstreamPath] of [
             ["/operator/solana-wallets/config", "/v1/solana-wallet-flow/config"],
+            ["/operator/solana-wallets/tuning", "/v1/solana-wallet-flow/tuning"],
           ] as const) {
             server.middlewares.use(path, (request, response) => {
               if (request.method !== "POST") {

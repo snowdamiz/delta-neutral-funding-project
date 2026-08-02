@@ -318,6 +318,38 @@ export type WalletFlowCandidate = {
   totalScoreBps: number;
 };
 
+export type TuningKnob = {
+  knob: string;
+  scope: "strategy" | "broker";
+  label: string;
+  helper: string;
+  unit: "usdMicros" | "bps" | "count" | "ms" | "multiple";
+  value: string;
+  minimum: string;
+  maximum: string;
+  maxChangeBps: number;
+  raisingLoosens: boolean;
+  /** Already clamped to the absolute bounds: the window for THIS adjustment. */
+  allowedMinimum: string;
+  allowedMaximum: string;
+  readyInMs: string;
+};
+
+export type TuningChange = {
+  knob: string;
+  previous: string;
+  next: string;
+  configId: string;
+  reason: string;
+  changedAtMs: string;
+};
+
+export type Tuning = {
+  knobs: TuningKnob[];
+  history: TuningChange[];
+  lockedReason: string | null;
+};
+
 export type WalletFlowDiscovery = {
   wallet: string;
   runnerCount: number;
@@ -362,6 +394,7 @@ export type WalletFlow = {
   positions: WalletFlowPosition[];
   actions: WalletFlowAction[];
   candidates: WalletFlowCandidate[];
+  tuning: Tuning | null;
   strategyConfig: { id: string; values: Record<string, string> } | null;
   brokerConfig: { id: string; values: Record<string, string> } | null;
   followedWallets: WalletCohort | null;
@@ -457,6 +490,18 @@ const page = <T,>(p: Page<T> | null): T[] => (Array.isArray(p?.items) ? p.items 
  * Strategy controls use their own bounded resource path. Collector-wide pause
  * and resume remain the emergency switch in the status banner.
  */
+/**
+ * A refusal that came from a database constraint arrives with its SQLSTATE
+ * and padding in front of the sentence the operator needs to read.
+ */
+function operatorMessage(body: { message?: string } | null, fallback: string): string {
+  const raw = body?.message?.trim();
+  if (!raw) return fallback;
+  return raw.replace(/^[A-Z0-9]{5}\s+/, "").trim() || fallback;
+}
+
+export const operatorMessageForTest = operatorMessage;
+
 export async function control(action: OperatorAction, strategy?: string): Promise<void> {
   const path = strategy
     ? `/operator/strategies/${encodeURIComponent(strategy)}/${action}`
@@ -467,7 +512,7 @@ export async function control(action: OperatorAction, strategy?: string): Promis
   });
   if (response.ok) return;
   const error = await response.json().catch(() => null) as { message?: string } | null;
-  throw new Error(error?.message ?? `operator request failed (${response.status})`);
+  throw new Error(operatorMessage(error, `operator request failed (${response.status})`));
 }
 
 async function configureWalletCohort(path: string, wallets: WalletEntry[]): Promise<void> {
@@ -480,11 +525,23 @@ async function configureWalletCohort(path: string, wallets: WalletEntry[]): Prom
   });
   if (response.ok) return;
   const error = await response.json().catch(() => null) as { message?: string } | null;
-  throw new Error(error?.message ?? `wallet update failed (${response.status})`);
+  throw new Error(operatorMessage(error, `wallet update failed (${response.status})`));
 }
 
 export const configureSolanaWallets = (wallets: WalletEntry[]) =>
   configureWalletCohort("/operator/solana-wallets/config", wallets);
+
+/** Bounds, step limit and cooldown are enforced in the database, not here. */
+export async function tuneStrategy(changes: Record<string, string>): Promise<void> {
+  const response = await fetch("/operator/solana-wallets/tuning", {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ changes }),
+  });
+  if (response.ok) return;
+  const error = await response.json().catch(() => null) as { message?: string } | null;
+  throw new Error(operatorMessage(error, `tuning failed (${response.status})`));
+}
 
 export async function resetDatabase(approval: string): Promise<void> {
   const response = await fetch("/operator/reset-database", {
@@ -494,7 +551,7 @@ export async function resetDatabase(approval: string): Promise<void> {
   });
   if (response.ok) return;
   const error = await response.json().catch(() => null) as { message?: string } | null;
-  throw new Error(error?.message ?? `database reset failed (${response.status})`);
+  throw new Error(operatorMessage(error, `database reset failed (${response.status})`));
 }
 
 export async function pull(): Promise<Snapshot> {

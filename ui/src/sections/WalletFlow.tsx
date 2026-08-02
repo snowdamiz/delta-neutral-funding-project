@@ -2,7 +2,9 @@ import { useState, type FormEvent } from "react";
 import {
   configureSolanaWallets,
   control,
+  tuneStrategy,
   type Snapshot,
+  type TuningKnob,
   type WalletCohort,
   type WalletEntry,
   type WalletFlow as WalletFlowState,
@@ -573,6 +575,157 @@ function Candidates({ flow }: { flow: WalletFlowState }) {
   );
 }
 
+/** A knob's value in the unit an operator reads it in. */
+function knobText(knob: TuningKnob, raw: string): string {
+  const value = Number(raw);
+  if (knob.unit === "usdMicros") return `$${(value / 1e6).toFixed(0)}`;
+  if (knob.unit === "bps") return `${(value / 100).toFixed(2)}%`;
+  if (knob.unit === "multiple") return `${value}×`;
+  if (knob.unit === "ms") return age(value);
+  return String(value);
+}
+
+/**
+ * The knobs, each inside the window the database will actually accept: the
+ * slider cannot be dragged past this adjustment's limit, so over-adjusting is
+ * not a mistake the console can make. Bounds, step and cooldown are enforced
+ * again on the way in — this is the guardrail made visible, not the guardrail.
+ */
+function Tuning({ flow }: { flow: WalletFlowState }) {
+  const tuning = flow.tuning;
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+  if (!tuning) return null;
+
+  const locked = tuning.lockedReason;
+  const pending = Object.entries(draft).filter(
+    ([knob, value]) => value !== tuning.knobs.find((k) => k.knob === knob)?.value,
+  );
+
+  const apply = async () => {
+    setSaving(true);
+    setStatus("");
+    try {
+      await tuneStrategy(Object.fromEntries(pending));
+      setDraft({});
+      setStatus("Applied. The new configuration is frozen and live.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Tuning failed.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Panel
+      label="Tuning"
+      hint="Adjusting a parameter mints a new frozen configuration and promotes it — nothing is edited in place, so every past decision still names the parameters that produced it. Each knob may move only within the window shown, once per cooldown."
+      aside={pending.length > 0
+        ? <span className="micro">{pending.length} pending</span>
+        : <span className="micro">{flow.strategyConfig?.id ?? "—"}</span>}
+    >
+      {locked && (
+        <div className="tune-locked">
+          <Chip tone="warn">locked</Chip>
+          Tuning is unavailable while {locked}.
+        </div>
+      )}
+      <div className="tune-grid">
+        {tuning.knobs.map((knob) => {
+          const value = draft[knob.knob] ?? knob.value;
+          const low = Number(knob.allowedMinimum);
+          const high = Number(knob.allowedMaximum);
+          const settling = Number(knob.readyInMs) > 0;
+          // Money moves a dollar at a time, not a millionth of one.
+          const moved = value !== knob.value;
+          const loosening = moved
+            && (Number(value) > Number(knob.value)) === knob.raisingLoosens;
+          return (
+            <div className={moved ? "tune tune-moved" : "tune"} key={knob.knob}>
+              <label className="lbl" htmlFor={`tune-${knob.knob}`}>{knob.label}</label>
+              <div className="tune-row">
+                <input
+                  id={`tune-${knob.knob}`}
+                  type="range"
+                  min={low}
+                  max={high}
+                  step={knob.unit === "usdMicros" ? 1000000 : 1}
+                  value={value}
+                  disabled={saving || settling || Boolean(locked)}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, [knob.knob]: event.target.value }))}
+                />
+                <output className="tune-value" htmlFor={`tune-${knob.knob}`}>
+                  {knobText(knob, value)}
+                  {moved && <span className="tune-was">was {knobText(knob, knob.value)}</span>}
+                </output>
+              </div>
+              <div className="tune-meta">
+                <span>
+                  this adjustment: {knobText(knob, knob.allowedMinimum)} –{" "}
+                  {knobText(knob, knob.allowedMaximum)}
+                </span>
+                <span>
+                  hard limits: {knobText(knob, knob.minimum)} – {knobText(knob, knob.maximum)}
+                </span>
+                {settling && <Chip tone="mute">settling {age(Number(knob.readyInMs))}</Chip>}
+                {loosening && <Chip tone="warn">looser</Chip>}
+              </div>
+              <p className="tune-help">{knob.helper}</p>
+            </div>
+          );
+        })}
+      </div>
+      <div className="tune-actions">
+        <button
+          type="button"
+          disabled={saving || pending.length === 0 || Boolean(locked)}
+          onClick={() => void apply()}
+        >
+          {saving && <Spin on />}
+          {pending.length === 0
+            ? "No changes"
+            : `Apply ${pending.length} change${pending.length === 1 ? "" : "s"}`}
+        </button>
+        {pending.length > 0 && (
+          <button type="button" disabled={saving} onClick={() => setDraft({})}>Reset</button>
+        )}
+        <span role="status" aria-live="polite">{status}</span>
+      </div>
+      {tuning.history.length > 0 && (
+        <div className="tw">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Parameter</th>
+                <th scope="col" className="n">From</th>
+                <th scope="col" className="n">To</th>
+                <th scope="col">Config</th>
+                <th scope="col" className="n">When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tuning.history.map((change, index) => {
+                const knob = tuning.knobs.find((k) => k.knob === change.knob);
+                return (
+                  <tr key={`${change.changedAtMs}:${change.knob}:${index}`}>
+                    <td>{knob?.label ?? change.knob}</td>
+                    <td className="n">{knob ? knobText(knob, change.previous) : change.previous}</td>
+                    <td className="n">{knob ? knobText(knob, change.next) : change.next}</td>
+                    <td><code>{change.configId}</code></td>
+                    <td className="n"><Since at={ms(change.changedAtMs)} verb="" /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function Discovery({ flow }: { flow: WalletFlowState }) {
   const config = flow.followedWallets;
   const cohort: WalletEntry[] = (config?.wallets ?? []).map((wallet) => ({
@@ -804,6 +957,7 @@ export function WalletFlow({ snap, strategy }: { snap: Snapshot; strategy: strin
       <Live flow={flow} strategy={strategy} />
       <Positions flow={flow} />
       <Candidates flow={flow} />
+      <Tuning flow={flow} />
       <Discovery flow={flow} />
 
       <Panel

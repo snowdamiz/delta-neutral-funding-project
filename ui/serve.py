@@ -136,6 +136,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "wallets": wallets,
             }
             action = "solana-wallet-flow/config"
+        elif requested.path == "/operator/solana-wallets/tuning":
+            # Bounds, step limits and cooldowns are enforced in the database,
+            # which is the only place that knows the value in force. This only
+            # fixes the reason and refuses anything that is not a named knob
+            # set to a whole number.
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length > 8192:
+                    self.respond(b'{"error":"request_too_large"}', 413, "application/json")
+                    return
+                incoming = json.loads(self.rfile.read(length))
+                changes = incoming["changes"]
+                if (
+                    set(incoming) != {"changes"}
+                    or not isinstance(changes, dict)
+                    or not 1 <= len(changes) <= 20
+                    or any(
+                        not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9]{0,60}", knob)
+                        or not isinstance(value, str)
+                        or not re.fullmatch(r"0|[1-9][0-9]{0,18}", value)
+                        for knob, value in changes.items()
+                    )
+                ):
+                    raise ValueError
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                self.respond(b'{"error":"invalid_tuning"}', 400, "application/json")
+                return
+            payload = {
+                "reason": "strategy tuned from local operator console",
+                "changes": changes,
+            }
+            action = "solana-wallet-flow/tuning"
         elif strategy_control := re.fullmatch(
             r"/operator/strategies/([a-z0-9_]{1,64})/(start|stop)",
             requested.path,
