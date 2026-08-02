@@ -102,6 +102,22 @@ BEGIN
     RAISE EXCEPTION 'the knob did not move after its cooldown elapsed';
   END IF;
 
+  -- A knob must be able to come back. Restoring a value reproduces a
+  -- configuration that already exists, and its hash is its identity, so the
+  -- config already carrying those parameters is promoted rather than minted
+  -- again — otherwise every adjustment would be one-way.
+  PERFORM pg_temp.tune('t-back', '{"maxEntryImpactBps": "300"}'::jsonb, 1000001802000);
+  IF (SELECT id FROM solana_strategy_configs WHERE active) <> 'solana-wallet-flow-v3' THEN
+    RAISE EXCEPTION 'returning to a previous value did not promote its config: %',
+      (SELECT id FROM solana_strategy_configs WHERE active);
+  END IF;
+  IF (SELECT count(*) FROM solana_strategy_configs) <> 4 THEN
+    RAISE EXCEPTION 'returning to a previous value minted a duplicate config';
+  END IF;
+  IF (SELECT count(*) FROM solana_strategy_configs WHERE active) <> 1 THEN
+    RAISE EXCEPTION 'promotion left more than one active config';
+  END IF;
+
   -- Live capital is not the place to discover a parameter change.
   INSERT INTO strategy_execution_modes (strategy_id, mode)
   VALUES ('solana_wallet_flow_quant', 'live')
