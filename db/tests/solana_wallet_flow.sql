@@ -165,6 +165,52 @@ BEGIN
     RAISE EXCEPTION 'an idle wallet cursor was refused as a continuity gap';
   END IF;
 
+  -- Re-observing a captured acquisition is a no-op, not a conflict. The
+  -- adapter re-derives the same on-chain fact with a fresh observation time
+  -- and a session-scoped event id whenever a sweep re-reads a signature; when
+  -- that raised, the tick failed and the cursor could never advance past it.
+  v_event := '{
+    "schemaVersion": 1,
+    "eventId": "session-two:solana-acquisition-a",
+    "eventType": "SolanaWalletAcquisition",
+    "source": "solana-wallet:11111111111111111111111111111111:mint-a",
+    "observedAtMs": "999000",
+    "sourceSlot": "12",
+    "sourceSequence": "swap-2",
+    "idempotencyKey": "solana-acquisition:wallet:swap-2:mint-a",
+    "rawPayloadHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "payload": {
+      "wallet": "11111111111111111111111111111111",
+      "signature": "swap-2",
+      "confirmedAtMs": "102000",
+      "inputMint": "So11111111111111111111111111111111111111112",
+      "inputAmountAtoms": "100000",
+      "outputMint": "4Nd1mYsfz4S6MWn7p8QK5TyHcV1g2JkL9XaBcDeFgHiJ",
+      "outputAmountAtoms": "250000",
+      "outputDecimals": "6",
+      "routePrograms": ["JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"]
+    }
+  }'::jsonb;
+  v_result := record_solana_wallet_flow_event(v_event);
+  IF v_result->>'inserted' <> 'false'
+     OR v_result->>'eventId' <> 'solana-acquisition-a' THEN
+    RAISE EXCEPTION 're-observed acquisition was not idempotent: %', v_result;
+  END IF;
+  IF (SELECT count(*) FROM solana_wallet_acquisitions WHERE signature = 'swap-2') <> 2 THEN
+    RAISE EXCEPTION 're-observation duplicated a captured acquisition';
+  END IF;
+
+  -- Different evidence under the same key is still a conflict.
+  BEGIN
+    PERFORM record_solana_wallet_flow_event(
+      jsonb_set(v_event, '{payload,outputAmountAtoms}', '"999999"'));
+    RAISE EXCEPTION 'a changed payload was accepted under a captured key';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM NOT LIKE '%idempotency conflict' THEN
+      RAISE;
+    END IF;
+  END;
+
   -- The cursor may repeat while idle; it may never go backwards. The payload
   -- check refuses a regressed cursor before this, so the trigger is exercised
   -- directly here as the second line of defence it is.
